@@ -1,0 +1,1285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 2.1 · What a Server Actually Is — From Commit to Production</title>
+<style>
+/* ============================================================
+   DESIGN TOKENS  (same system as the roadmap)
+   ============================================================ */
+:root{
+  color-scheme: dark light;
+  --font-sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", Consolas, "SFMono-Regular", Menlo, monospace;
+
+  --bg:#0a0e17; --bg-alt:#0e1421; --surface:#131b2b; --surface-2:#19233a;
+  --border:#243049; --border-strong:#37456a;
+  --text:#e8eefb; --text-dim:#a7b4cd; --text-faint:#78869f;
+
+  --accent:#6ea8ff;  --accent-soft:rgba(110,168,255,.14);
+  --green:#4fd39c;   --green-soft:rgba(79,211,156,.13);
+  --amber:#f2b754;   --amber-soft:rgba(242,183,84,.13);
+  --red:#ff7f76;     --red-soft:rgba(255,127,118,.13);
+  --purple:#b28cff;  --purple-soft:rgba(178,140,255,.13);
+  --teal:#4fd0d9;    --teal-soft:rgba(79,208,217,.13);
+
+  --radius:14px; --radius-sm:8px;
+  --shadow:0 1px 2px rgba(0,0,0,.45), 0 14px 34px -18px rgba(0,0,0,.75);
+  --maxw:1220px; --readw:840px;
+}
+:root[data-theme="light"]{
+  color-scheme: light;
+  --bg:#f7f9fc; --bg-alt:#eef2f8; --surface:#ffffff; --surface-2:#f2f5fa;
+  --border:#dde3ee; --border-strong:#c2ccdd;
+  --text:#131a26; --text-dim:#4b586e; --text-faint:#75839a;
+  --accent:#1f5fd0; --accent-soft:rgba(31,95,208,.09);
+  --green:#0f8a5f;  --green-soft:rgba(15,138,95,.10);
+  --amber:#9a6a06;  --amber-soft:rgba(154,106,6,.10);
+  --red:#c3352b;    --red-soft:rgba(195,53,43,.09);
+  --purple:#6d3ecb; --purple-soft:rgba(109,62,203,.09);
+  --teal:#07767e;   --teal-soft:rgba(7,118,126,.10);
+  --shadow:0 1px 2px rgba(18,28,45,.06), 0 12px 28px -18px rgba(18,28,45,.25);
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    color-scheme: light;
+    --bg:#f7f9fc; --bg-alt:#eef2f8; --surface:#ffffff; --surface-2:#f2f5fa;
+    --border:#dde3ee; --border-strong:#c2ccdd;
+    --text:#131a26; --text-dim:#4b586e; --text-faint:#75839a;
+    --accent:#1f5fd0; --accent-soft:rgba(31,95,208,.09);
+    --green:#0f8a5f;  --green-soft:rgba(15,138,95,.10);
+    --amber:#9a6a06;  --amber-soft:rgba(154,106,6,.10);
+    --red:#c3352b;    --red-soft:rgba(195,53,43,.09);
+    --purple:#6d3ecb; --purple-soft:rgba(109,62,203,.09);
+    --teal:#07767e;   --teal-soft:rgba(7,118,126,.10);
+    --shadow:0 1px 2px rgba(18,28,45,.06), 0 12px 28px -18px rgba(18,28,45,.25);
+  }
+}
+
+/* ============================================================ BASE */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth; scroll-padding-top:80px}
+body{margin:0; background:var(--bg); color:var(--text);
+  font-family:var(--font-sans); font-size:16.5px; line-height:1.72; -webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{line-height:1.28; margin:0 0 .5em; letter-spacing:-.015em; font-weight:680}
+h1{font-size:clamp(1.9rem,4vw,2.7rem)}
+h2{font-size:clamp(1.35rem,2.4vw,1.72rem); margin-top:2.6em; padding-top:.2em}
+h3{font-size:1.1rem; margin-top:2em; color:var(--text)}
+h4{font-size:.98rem; margin-top:1.5em; color:var(--text-dim)}
+p{margin:0 0 1.05em}
+a{color:var(--accent); text-decoration:none}
+a:hover{text-decoration:underline}
+strong{font-weight:660}
+em.term{font-style:normal; font-weight:680; color:var(--text)}
+code{font-family:var(--font-mono); font-size:.87em; background:var(--surface-2);
+  border:1px solid var(--border); border-radius:5px; padding:.1em .38em}
+ul,ol{padding-left:1.3em; margin:0 0 1.05em}
+li{margin:.35em 0}
+blockquote{margin:1.5em 0; padding:2px 0 2px 18px; border-left:3px solid var(--border-strong);
+  color:var(--text-dim); font-style:italic}
+blockquote footer{font-style:normal; font-size:.85rem; color:var(--text-faint); margin-top:.4em}
+hr{border:0; border-top:1px solid var(--border); margin:2.6rem 0}
+small{color:var(--text-faint)}
+sup a{font-size:.7em; padding:0 1px}
+
+/* ============================================================ BAR */
+header.bar{position:sticky; top:0; z-index:60;
+  background:color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter:blur(10px); border-bottom:1px solid var(--border)}
+.bar-in{padding:10px 22px; display:flex; align-items:center; gap:14px}
+.brand{font-weight:700; font-size:.92rem; white-space:nowrap}
+.brand a{color:var(--text)}
+.brand span{color:var(--accent)}
+.crumb{font-size:.82rem; color:var(--text-faint); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.bar .right{margin-left:auto; display:flex; gap:8px; align-items:center}
+button.ghost{font:inherit; font-size:.8rem; cursor:pointer; color:var(--text-dim);
+  background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:5px 11px}
+button.ghost:hover{border-color:var(--border-strong); color:var(--text)}
+#readbar{position:fixed; top:0; left:0; height:2px; background:var(--accent); z-index:70; width:0}
+
+/* ============================================================ LAYOUT */
+.shell{padding:0 40px;
+  display:grid; grid-template-columns:1fr; gap:36px}
+
+aside.toc{display:none}
+aside.toc .inner{position:sticky; top:74px; max-height:calc(100vh - 96px); overflow:auto;
+  padding:22px 0 40px; font-size:.86rem}
+aside.toc .lbl{font-size:.7rem; letter-spacing:.12em; text-transform:uppercase;
+  color:var(--text-faint); font-weight:700; margin:0 0 10px}
+aside.toc ol{list-style:none; padding:0; margin:0; counter-reset:t}
+aside.toc li{margin:0; counter-increment:t}
+aside.toc a{display:flex; gap:8px; padding:5px 10px 5px 8px; border-radius:6px;
+  color:var(--text-dim); border-left:2px solid transparent; line-height:1.4}
+aside.toc a:before{content:counter(t); font-family:var(--font-mono); font-size:.72rem;
+  color:var(--text-faint); flex:0 0 1.4em; text-align:right}
+aside.toc a:hover{background:var(--surface-2); color:var(--text); text-decoration:none}
+aside.toc a.on{color:var(--accent); border-left-color:var(--accent); background:var(--accent-soft)}
+article{min-width:0; padding-bottom:20px}
+
+/* ============================================================ HERO */
+.lead{padding:46px 0 26px; border-bottom:1px solid var(--border); margin-bottom:8px}
+.kicker{font-family:var(--font-mono); font-size:.74rem; letter-spacing:.16em;
+  text-transform:uppercase; color:var(--accent); margin-bottom:12px}
+.subtitle{font-size:1.1rem; color:var(--text-dim); max-width:var(--readw); margin-top:.6em}
+.meta{display:flex; flex-wrap:wrap; gap:8px; margin-top:20px}
+
+/* ============================================================ COMPONENTS */
+.pill{display:inline-block; font-family:var(--font-mono); font-size:.7rem; padding:3px 9px;
+  border-radius:999px; border:1px solid var(--border-strong); color:var(--text-dim); white-space:nowrap}
+.pill.a{color:var(--accent); border-color:var(--accent); background:var(--accent-soft)}
+.pill.g{color:var(--green); border-color:var(--green); background:var(--green-soft)}
+.pill.r{color:var(--red); border-color:var(--red); background:var(--red-soft)}
+.pill.p{color:var(--purple); border-color:var(--purple); background:var(--purple-soft)}
+
+.callout{border-left:3px solid var(--accent); background:var(--accent-soft);
+  border-radius:0 var(--radius-sm) var(--radius-sm) 0; padding:15px 19px; margin:1.7em 0}
+.callout.warn{border-color:var(--amber); background:var(--amber-soft)}
+.callout.bad{border-color:var(--red); background:var(--red-soft)}
+.callout.good{border-color:var(--green); background:var(--green-soft)}
+.callout.def{border-color:var(--purple); background:var(--purple-soft)}
+.callout .t{font-weight:700; font-size:.76rem; letter-spacing:.1em; text-transform:uppercase;
+  margin-bottom:6px; display:block; color:var(--text)}
+.callout > :last-child{margin-bottom:0}
+
+dl.terms{margin:1.4em 0; padding:0}
+dl.terms dt{font-weight:680; color:var(--text); margin-top:1em; font-size:.98rem}
+dl.terms dt:first-child{margin-top:0}
+dl.terms dd{margin:.25em 0 0; color:var(--text-dim); padding-left:0}
+
+pre{background:var(--bg-alt); border:1px solid var(--border); border-radius:var(--radius-sm);
+  padding:16px 18px; overflow-x:auto; font-family:var(--font-mono); font-size:.8rem;
+  line-height:1.5; margin:1.6em 0}
+pre code{background:none; border:0; padding:0; font-size:inherit}
+figure{margin:1.8em 0}
+figure figcaption{font-size:.82rem; color:var(--text-faint); margin-top:-.6em; padding-left:2px}
+
+.tablewrap{overflow-x:auto; margin:1.6em 0; border:1px solid var(--border); border-radius:var(--radius)}
+table{border-collapse:collapse; width:100%; font-size:.9rem; min-width:560px}
+th,td{padding:10px 14px; text-align:left; border-bottom:1px solid var(--border); vertical-align:top}
+th{background:var(--surface-2); font-size:.73rem; text-transform:uppercase; letter-spacing:.08em;
+  color:var(--text-dim); font-weight:700}
+tr:last-child td{border-bottom:0}
+td.y{color:var(--green); font-weight:600} td.n{color:var(--red); font-weight:600}
+
+.card{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+  padding:20px 22px; box-shadow:var(--shadow); margin:1.6em 0}
+.card > :first-child{margin-top:0}
+.grid2{display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; margin:1.6em 0}
+.grid2 .card{margin:0}
+
+/* misconceptions */
+.myth{border:1px solid var(--border); border-radius:var(--radius); margin:14px 0; overflow:hidden}
+.myth .m{background:var(--red-soft); border-bottom:1px solid var(--border); padding:11px 16px;
+  font-weight:660; display:flex; gap:10px}
+.myth .m:before{content:"✕"; color:var(--red); font-weight:700}
+.myth .r{padding:13px 16px}
+.myth .r:before{content:"Reality "; font-family:var(--font-mono); font-size:.68rem;
+  letter-spacing:.12em; text-transform:uppercase; color:var(--green); display:block; margin-bottom:4px}
+.myth .r > :last-child{margin-bottom:0}
+
+/* resources */
+.res{margin:1.4em 0}
+.res h4{margin:1.4em 0 .4em; color:var(--accent); font-size:.78rem;
+  letter-spacing:.1em; text-transform:uppercase}
+.res ul{list-style:none; padding:0; margin:0}
+.res li{border-bottom:1px dashed var(--border); padding:8px 0; margin:0}
+.res li:last-child{border-bottom:0}
+.res .why{display:block; font-size:.85rem; color:var(--text-dim)}
+.res .rank{font-family:var(--font-mono); font-size:.66rem; padding:1px 6px; border-radius:999px;
+  border:1px solid var(--green); color:var(--green); background:var(--green-soft); margin-left:6px}
+
+/* exercises */
+.ex{border:1px solid var(--border); border-left:3px solid var(--teal);
+  border-radius:0 var(--radius) var(--radius) 0; padding:16px 20px; margin:16px 0; background:var(--surface)}
+.ex .h{font-weight:680; margin-bottom:6px}
+.ex .h span{font-family:var(--font-mono); font-size:.72rem; color:var(--teal); margin-right:8px}
+.ex .out{font-size:.86rem; color:var(--text-faint); margin-top:8px; border-top:1px dashed var(--border); padding-top:8px}
+.ex > :last-child{margin-bottom:0}
+
+/* quiz */
+.quiz{counter-reset:q}
+.q{border:1px solid var(--border); border-radius:var(--radius); margin:12px 0;
+  background:var(--surface); overflow:hidden}
+.q > summary{cursor:pointer; list-style:none; padding:14px 18px; display:flex; gap:12px;
+  font-weight:600; align-items:flex-start}
+.q > summary::-webkit-details-marker{display:none}
+.q > summary:before{counter-increment:q; content:"Q" counter(q); font-family:var(--font-mono);
+  font-size:.72rem; color:var(--accent); background:var(--accent-soft);
+  border:1px solid var(--accent); border-radius:6px; padding:2px 7px; flex:0 0 auto; margin-top:2px}
+.q > summary::after{content:"show answer"; margin-left:auto; font-size:.7rem; font-weight:600;
+  letter-spacing:.08em; text-transform:uppercase; color:var(--text-faint); flex:0 0 auto; padding-top:4px}
+.q[open] > summary::after{content:"hide"}
+.q .ans{padding:2px 18px 16px; border-top:1px solid var(--border); margin-top:0;
+  background:var(--bg-alt); color:var(--text-dim)}
+.q .ans > :first-child{margin-top:1em}
+.q .ans > :last-child{margin-bottom:0}
+.q .ans strong{color:var(--text)}
+
+/* summary list */
+ul.takeaways{list-style:none; padding:0}
+ul.takeaways li{padding:9px 0 9px 30px; position:relative; border-bottom:1px dashed var(--border)}
+ul.takeaways li:last-child{border-bottom:0}
+ul.takeaways li:before{content:"▸"; position:absolute; left:6px; top:9px; color:var(--accent)}
+
+/* pager / footer */
+.pager{display:flex; gap:12px; margin:44px 0 30px; flex-wrap:wrap; max-width:none}
+.pager a, .pager .disabled{flex:1 1 250px; border:1px solid var(--border); border-radius:var(--radius);
+  padding:14px 18px; background:var(--surface); text-decoration:none; color:var(--text)}
+.pager a:hover{border-color:var(--accent); text-decoration:none}
+.pager .disabled{opacity:.45}
+.pager em{display:block; font-style:normal; font-size:.7rem; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--text-faint); margin-bottom:3px}
+.pager .next{text-align:right}
+footer.foot{border-top:1px solid var(--border); margin-top:20px; padding:24px 0 56px;
+  color:var(--text-faint); font-size:.85rem}
+
+@media print{
+  header.bar,aside.toc,#readbar,button.ghost,.pager{display:none}
+  body{background:#fff; color:#000; font-size:10.5pt}
+  .shell{display:block; max-width:none; padding:0}
+  .q{break-inside:avoid} .q .ans{display:block !important}
+  article > *{max-width:none}
+}
+</style>
+</head>
+<body>
+
+<div id="readbar"></div>
+<header class="bar">
+  <div class="bar-in">
+    <div class="brand"><a href="../../index.html">Commit&nbsp;<span>→</span>&nbsp;Production</a></div>
+    <div class="crumb">/ Module&nbsp;2 · Machines / Lesson&nbsp;2.1</div>
+    <div class="right">
+      <button class="ghost" id="expand">⇕ Expand all</button>
+      <button class="ghost" id="theme">◐ Theme</button>
+    </div>
+  </div>
+</header>
+
+<div class="shell">
+
+  <aside class="toc">
+    <div class="inner">
+      <p class="lbl">Lesson contents</p>
+      <ol id="tocList">
+        <li><a href="#s1">Problem Statement</a></li>
+        <li><a href="#s2">Historical Context</a></li>
+        <li><a href="#s3">Previous Solution</a></li>
+        <li><a href="#s4">Why It Failed</a></li>
+        <li><a href="#s5">New Solution</a></li>
+        <li><a href="#s6">Internal Mechanics</a></li>
+        <li><a href="#s7">Real Industry Examples</a></li>
+        <li><a href="#s8">Diagrams</a></li>
+        <li><a href="#s9">Advantages</a></li>
+        <li><a href="#s10">Limitations</a></li>
+        <li><a href="#s11">Common Misconceptions</a></li>
+        <li><a href="#s12">Practical Use Cases</a></li>
+        <li><a href="#s13">Summary</a></li>
+        <li><a href="#s14">Recommended Resources</a></li>
+        <li><a href="#s15">Exercise</a></li>
+        <li><a href="#s16">Quiz</a></li>
+      </ol>
+    </div>
+  </aside>
+
+  <article>
+    <div class="lead">
+      <div class="kicker">Module 2 · Lesson 2.1</div>
+      <h1>What a server actually is: CPU, RAM, disk, NIC — from bare metal to instance types</h1>
+      <p class="subtitle">
+        At the bottom of the map you drew in Module 1 sat one box: <em>the runtime</em> — a server.
+        In a few lessons you will rent one for $5 a month and start running commands on it. Before you
+        do, open the box. This lesson is the physical machine: the four parts every server is made of,
+        how they cooperate to run your code, why the gaps between their speeds decide everything about
+        performance, and how "renting a server" in the cloud maps back onto real silicon.
+      </p>
+      <div class="meta">
+        <span class="pill a">~70 min read</span>
+        <span class="pill">Prerequisites: Module 1 (esp. 1.5)</span>
+        <span class="pill">Conceptual · hands-on at the end</span>
+        <span class="pill g">Opens Module 2 · Milestone 2</span>
+      </div>
+    </div>
+
+    <div class="callout def">
+      <span class="t">Learning objectives</span>
+      <p>By the end of this lesson you will be able to:</p>
+      <ol style="margin-bottom:0">
+        <li>Name the four core components of any server — CPU, RAM, disk, NIC — and state what each does and its size/speed/volatility trade-off.</li>
+        <li>Explain how a program stored on disk becomes a running process executing on the CPU.</li>
+        <li>Reproduce the memory hierarchy and explain why the latency gaps between its levels drive almost every performance decision you will ever make.</li>
+        <li>Explain what <em>bare metal</em>, <em>hypervisor</em>, <em>virtual machine</em> and <em>instance</em> mean, and how one physical host is sliced into many.</li>
+        <li>Read a cloud instance spec sheet — vCPU, GiB RAM, storage type, network Gbps — and know what you are paying for and where the catch is.</li>
+      </ol>
+    </div>
+
+    <div class="callout">
+      <span class="t">Where this sits on the map</span>
+      <p>
+        Lesson 1.5 ended by pointing at the <em>runtime</em> node — "the machine where the process
+        actually runs" — and promising Module 2 would open it. This is that lesson. Everything here is
+        the hardware underneath every other node: the CI runner is one of these machines, the registry
+        runs on these machines, and your production container runs on one too. Module 2.2 then puts the
+        operating system on top of this hardware; for now we stay at the level of the metal.
+      </p>
+    </div>
+
+    <!-- ============================== 1 ============================== -->
+    <h2 id="s1">1 · Problem Statement</h2>
+
+    <p>
+      You are about to pay a stranger $5 a month for "a server", type an IP address into an SSH
+      client, and start running your production software on a machine you will never physically see.
+      That is a strange thing to do without knowing what the thing <em>is</em>. And the gaps in that
+      knowledge are not academic — they show up as the exact questions you will be unable to answer in
+      your first month of operating real infrastructure:
+    </p>
+    <ul>
+      <li>"The spec says <strong>1 vCPU, 1&nbsp;GB RAM, 25&nbsp;GB SSD</strong>. Is that a lot? Enough for what? What breaks first when it isn't?"</li>
+      <li>"My app was fine, then it got <strong>slow</strong>. Is it out of CPU, out of memory, or waiting on the disk? These have completely different fixes, and I can't tell them apart."</li>
+      <li>"The process got <strong>killed</strong> and the logs say <code>Out of memory</code>. What ran out, exactly? Why does running out of memory kill things when running out of disk usually just returns an error?"</li>
+      <li>"Two instances have the same price but one is <strong>'burstable'</strong> and one is 'dedicated'. My app was fast for twenty minutes and then fell off a cliff. What happened?"</li>
+      <li>"Why is reading from the database across the network <strong>thousands of times slower</strong> than reading a variable, when both are 'just reading data'?"</li>
+    </ul>
+
+    <div class="callout bad">
+      <span class="t">The core problem</span>
+      <p>
+        A server is not one thing; it is <strong>four very different things wired together</strong>,
+        each with wildly different speed, capacity and cost, and each of which can independently become
+        the bottleneck. If you treat "the server" as a single opaque unit — the way most developers do
+        — then performance is a mystery, capacity is a guess, cost is a dartboard, and every incident
+        is unfalsifiable. This lesson replaces the opaque box with four labelled parts and, crucially,
+        the <em>ratios</em> between them.
+      </p>
+    </div>
+
+    <p>
+      Here is the promise. By the end you will look at <code>1 vCPU / 1&nbsp;GB / 25&nbsp;GB SSD /
+      1&nbsp;TB transfer</code> and read it the way a mechanic reads an engine spec: not as trivia, but
+      as a set of limits that tell you what this machine can and cannot be asked to do. That is the
+      foundation for every capacity, cost and performance decision in the rest of the course.
+    </p>
+
+    <!-- ============================== 2 ============================== -->
+    <h2 id="s2">2 · Historical Context</h2>
+
+    <p>
+      The word "server" has drifted so far that it now means three different things, and untangling
+      them is half the battle. Watching the history happen is the cleanest way to separate them.
+    </p>
+
+    <h3>The three meanings of "server"</h3>
+    <dl class="terms">
+      <dt>Server as a <em>role</em></dt>
+      <dd>A program that waits for requests and answers them — a web server, a database server. This is software. It is the meaning implied by "client/server".</dd>
+      <dt>Server as a <em>physical machine</em></dt>
+      <dd>A computer built to run those programs continuously: rack-mounted, redundant power, lots of RAM and cores. This is hardware you could stub your toe on.</dd>
+      <dt>Server as a <em>rented instance</em></dt>
+      <dd>A slice of a physical machine, rented by the hour, that behaves like its own computer. This is what you will actually buy, and it is a relatively recent invention.</dd>
+    </dl>
+    <p>
+      This lesson is mostly about the second meaning (the hardware) so that the third meaning (your
+      instance) stops being magic. Keep the distinction sharp: when someone says "restart the server",
+      you should always ask <em>which sense</em>.
+    </p>
+
+    <h3>1950s–1970s · One machine, one program at a time</h3>
+    <p>
+      Early computers ran one job at a time for one organisation. The machine <em>was</em> the
+      computing resource; the idea of "renting a fraction of one" made no sense because a single job
+      used the whole thing. But the pressure to share an expensive machine produced the first
+      important idea we will meet again: <em class="term">time-sharing</em> — letting several users
+      interleave on one machine so fast it feels dedicated to each. Hold that thought; the cloud is
+      time-sharing with a business model.
+    </p>
+
+    <h3>1980s–1990s · Commodity hardware and the client/server split</h3>
+    <p>
+      Cheap microprocessors turned computers into commodities. Businesses filled rooms with
+      x86 machines, and software split into <em>clients</em> (on desktops) talking to
+      <em>servers</em> (in the back room). "A server" became a specific box you bought, named, racked,
+      and cabled. Its four parts — processor, memory, disk, network card — are exactly the four parts
+      your cloud instance still has today. The vocabulary you are about to learn is thirty years old
+      and unchanged, because the physics didn't change.
+    </p>
+
+    <h3>2000s · Virtualization breaks "one box, one server"</h3>
+    <p>
+      A physical server spent most of its life nearly idle — a machine bought to handle the busy hour
+      wastes the other twenty-three. VMware and others made <em class="term">virtualization</em>
+      practical on commodity hardware: software called a <em class="term">hypervisor</em> could carve
+      one physical machine into many isolated <em>virtual machines</em>, each believing it owned a
+      whole computer. Suddenly one expensive box could host dozens of "servers", and the tie between
+      "a server" and "a physical object" was cut for good.
+    </p>
+
+    <h3>2006–present · The cloud rents the slices by the hour</h3>
+    <p>
+      Amazon launched EC2 (Elastic Compute Cloud) in 2006 and turned virtualization into a utility:
+      an API call gives you a virtual machine — an <em class="term">instance</em> — in seconds, billed
+      by the hour, on hardware you never see or own. This is the direct answer to Module 1's story:
+      once a server is created by an API call rather than a purchase order, operations becomes
+      programming, and the whole pipeline you mapped becomes possible. Your $5 VPS is a small instance
+      on someone else's very large physical machine — and the point of this lesson is that
+      "very large physical machine" is still just CPU, RAM, disk and NIC.
+    </p>
+
+    <!-- ============================== 3 ============================== -->
+    <h2 id="s3">3 · The Previous Solution (in detail)</h2>
+
+    <p>
+      Before the cloud, "getting a server" meant acquiring and operating a physical machine yourself —
+      <em class="term">on-premises</em> (in your own building) or <em class="term">colocated</em> (your
+      machine in a rented rack in someone's data centre). This is not a museum piece: banks, hospitals
+      and plenty of companies still do it, often for good reasons. Take it seriously so you can see
+      exactly what the cloud changed.
+    </p>
+
+    <p>The lifecycle of one pre-cloud server:</p>
+<pre><code>1. FORECAST   Estimate peak load for the next 3 years (you will be wrong).
+2. SPECIFY    Choose CPU sockets, RAM, disks, RAID, NICs, power supplies.
+3. PROCURE    Purchase order → vendor → 4–12 week lead time. Capital expense.
+4. RACK       Mount it, cable power (usually two feeds) and network, label it.
+5. PROVISION  Install an OS from disc/PXE, patch it, configure it by hand.
+6. OPERATE    Monitor temperature, disks, PSUs. Replace failed parts yourself.
+7. DEPRECIATE Run it ~3–5 years. Pay for power + cooling + rack space the whole time.
+8. DISPOSE    Wipe disks, decommission, e-waste. Buy the replacement (goto 1).</code></pre>
+
+    <p>The controls and assumptions baked into this model:</p>
+    <dl class="terms">
+      <dt>Capacity is bought up front, for the peak</dt>
+      <dd>You size for the busiest moment you can imagine, then pay for that capacity 24/7 forever, even though you use it for an hour a day.</dd>
+      <dt>The unit of failure is the whole box</dt>
+      <dd>One machine has one set of power supplies, one motherboard. When it dies, everything on it dies together, and recovery means physical hands.</dd>
+      <dt>Provisioning is slow and manual</dt>
+      <dd>Weeks from "we need a server" to "the server exists", then hours of hand-configuration — the snowflake server from Module 1 is born right here.</dd>
+      <dt>Cost is capital, not usage</dt>
+      <dd>You spend a large lump sum to <em>own</em> the machine (<em class="term">CapEx</em>), rather than paying for what you use (<em class="term">OpEx</em>). Idle capacity is money already spent.</dd>
+    </dl>
+
+    <p>
+      Every one of these was a sensible answer when a server was a physical asset. And for steady,
+      predictable, high-utilisation workloads, owning the metal is still often <em>cheaper</em> than
+      renting it. The model didn't become wrong; it became a bad fit for the workload most of us
+      actually have — spiky, uncertain, and changing faster than a procurement cycle.
+    </p>
+
+    <!-- ============================== 4 ============================== -->
+    <h2 id="s4">4 · Why It Failed (for most workloads)</h2>
+
+    <p>
+      Five pressures pushed the industry from owning boxes to renting slices. Notice that most of them
+      are about <em>the ratio between capacity you bought and capacity you use</em> — the same
+      batch-size-style waste you saw in Module 1, in a different costume.
+    </p>
+
+    <h3>4.1 Utilisation: you pay for the peak and use the trough</h3>
+    <p>
+      A machine sized for Black Friday sits 5–15&nbsp;% utilised the rest of the year. You bought
+      100&nbsp;% of a machine to use 10&nbsp;% of it on average. Industry-wide, pre-virtualization
+      server utilisation was notoriously low — rooms full of expensive metal, mostly idle, all drawing
+      power. That gap between purchased and used capacity is pure waste, and it is structural, not a
+      failure of discipline.
+    </p>
+
+    <h3>4.2 Capacity mismatch cuts both ways</h3>
+    <p>
+      Guess too high and you waste money on idle metal. Guess too low and you cannot serve your users
+      until a new machine is procured, racked and provisioned — <em>weeks</em> later. There is no dial;
+      capacity comes in the granularity of "one whole physical server bought months ago." For a
+      workload whose demand you cannot predict, both errors are expensive and one of them is fatal.
+    </p>
+
+    <h3>4.3 Lead time throttles everything</h3>
+    <p>
+      When a new environment takes weeks to appear, you stop creating environments. No throwaway
+      staging box, no per-feature test machine, no "let me just spin one up to try this." The friction
+      of provisioning silently shapes your entire engineering culture toward long-lived, precious,
+      hand-tended servers — the exact opposite of the disposable, reproducible infrastructure Module 1
+      argued for.
+    </p>
+
+    <h3>4.4 The whole box is one failure domain</h3>
+    <p>
+      Redundancy in the physical world is expensive and coarse: to survive a machine failure you buy a
+      <em>second</em> whole machine and hope they don't fail together. Fine-grained resilience — "run
+      three copies of just this one service across three failure domains" — is impractical when your
+      unit of infrastructure is a $6,000 box with a 6-week lead time.
+    </p>
+
+    <h3>4.5 Capital and specialised labour raise the floor</h3>
+    <p>
+      Owning servers means capital tied up in depreciating hardware, plus people who can rack, cable,
+      cool and repair them, plus the building to hold them. For a small team or a solo engineer, that
+      floor is prohibitive. The cloud converts all of it into a per-hour line item you can start and
+      stop at will.
+    </p>
+
+    <div class="callout warn">
+      <span class="t">What virtualization actually fixed</span>
+      <p>
+        Slicing one physical machine into many rentable virtual ones attacks every item above at once:
+        idle capacity is resold to other tenants (utilisation), you rent exactly the slice you need and
+        change it in minutes (mismatch and lead time), copies can be spread across many physical hosts
+        (failure domains), and you pay by the hour with no capital outlay (cost). The catch — and there
+        is always a catch — is that you are now <em>sharing</em> a physical machine with strangers, which
+        §6.7 and §7 will make you feel in your latency graphs.
+      </p>
+    </div>
+
+    <!-- ============================== 5 ============================== -->
+    <h2 id="s5">5 · The New Solution</h2>
+
+    <p>
+      The "solution" here is really two things: a clear model of <strong>what the hardware is</strong>,
+      and a clear model of <strong>how that hardware gets sliced and rented</strong>. Definitions first,
+      because every one of these words will be on your cloud provider's pricing page.
+    </p>
+
+    <h3>5.1 The four parts of any server</h3>
+    <dl class="terms">
+      <dt>CPU — the <em>Central Processing Unit</em></dt>
+      <dd>The part that actually executes instructions: arithmetic, comparisons, moving data around. Measured in <em>cores</em> (independent execution units) and <em>clock speed</em> (GHz, cycles per second). This is "how fast can I do work".</dd>
+      <dt>RAM — <em>Random Access Memory</em> (main memory)</dt>
+      <dd>Fast, <em>volatile</em> working memory that holds the code and data of everything currently running. "Volatile" = its contents vanish when power is lost. Measured in gigabytes. This is "how much can I be working on at once".</dd>
+      <dt>Disk — persistent storage (HDD or SSD)</dt>
+      <dd>Slow, <em>non-volatile</em> storage that keeps data when the power is off: the OS, your files, the database on disk. Measured in gigabytes/terabytes. This is "how much can I keep, and how durably".</dd>
+      <dt>NIC — the <em>Network Interface Card</em></dt>
+      <dd>The hardware link to the network, and through it the internet. Measured in bandwidth (Gbps). This is "how fast can I talk to the outside world" — the on-ramp for the entire request path from Module 1.</dd>
+    </dl>
+    <p>
+      There is also a <em class="term">motherboard</em> tying them together with <em class="term">buses</em>
+      (the wiring data travels on), and a power supply and cooling. But for reasoning about software,
+      those four parts and the speeds between them are the whole story.
+    </p>
+
+    <h3>5.2 The words on the pricing page</h3>
+    <dl class="terms">
+      <dt>Bare metal</dt>
+      <dd>A whole physical machine, dedicated to you, no virtualization layer. Maximum performance and isolation; minimum flexibility.</dd>
+      <dt>Hypervisor</dt>
+      <dd>The software layer that divides one physical machine into many isolated virtual machines and shares the real CPU/RAM/disk/NIC among them. Also called a <em>virtual machine monitor</em>.</dd>
+      <dt>Virtual machine (VM)</dt>
+      <dd>A software-defined computer running on a slice of a physical host, with its own OS, that believes it has its own CPU, memory, disk and network.</dd>
+      <dt>Instance</dt>
+      <dd>A cloud provider's name for a VM you rent. An <em class="term">instance type</em> (e.g. <code>t3.micro</code>) is a named bundle of vCPU + RAM + network specs at a price.</dd>
+      <dt>vCPU (virtual CPU)</dt>
+      <dd>The unit of CPU you rent. Usually <strong>one hardware thread</strong> of a physical core — <em>not</em> a whole physical CPU, and often <em>not</em> even a dedicated core. This word hides more than any other on the page; §6.7 dissects it.</dd>
+      <dt>Image</dt>
+      <dd>A snapshot of a disk (OS + preinstalled software) used to create an instance's starting state — the ancestor of the container image from Module 1.</dd>
+    </dl>
+
+    <p>
+      With this vocabulary, "renting a server" decodes cleanly: a hypervisor on a big physical machine
+      hands your <em>instance</em> a slice of real CPU (measured in <em>vCPUs</em>), a slice of real
+      RAM, a slice of real disk, and a share of a real NIC — and bills you by the hour. The rest of the
+      lesson is about what those slices can actually do, which comes down to speed.
+    </p>
+
+    <!-- ============================== 6 ============================== -->
+    <h2 id="s6">6 · Internal Mechanics</h2>
+
+    <p>
+      Now the machine in motion. We will (6.1) watch the CPU run an instruction, (6.2) confront the
+      single most important table in this course — the memory hierarchy and its latencies — then walk
+      (6.3) RAM, (6.4) disk, (6.5) the NIC, (6.6) how all four cooperate on one real request, and
+      finally (6.7–6.8) how the hypervisor slices them and how to read the resulting spec sheet.
+    </p>
+
+    <h3>6.1 The CPU: fetch, decode, execute, repeat</h3>
+    <p>
+      A CPU does something almost insultingly simple, a few billion times per second. It repeats a
+      cycle:
+    </p>
+    <ol>
+      <li><strong>Fetch</strong> the next instruction from memory (the address is held in a register called the program counter).</li>
+      <li><strong>Decode</strong> it — what operation is this, on what operands?</li>
+      <li><strong>Execute</strong> it — add two numbers, compare them, load a value, jump elsewhere.</li>
+      <li>Advance and repeat.</li>
+    </ol>
+    <p>
+      The <em class="term">clock speed</em> is how many such cycles happen per second: 3&nbsp;GHz is
+      three billion cycles per second, i.e. one cycle roughly every 0.3 nanoseconds. Some vocabulary
+      you will meet on spec sheets:
+    </p>
+    <dl class="terms">
+      <dt>Core</dt>
+      <dd>A complete, independent execution unit. A 4-core CPU can genuinely run 4 streams of instructions at the same instant. This is <em>real</em> parallelism.</dd>
+      <dt>Thread / hyper-threading (SMT)</dt>
+      <dd>A trick where one physical core exposes <em>two</em> logical processors, interleaving two instruction streams to use idle moments in the core's pipeline. It is <em>not</em> two cores' worth of work — typically a 15–30&nbsp;% boost, not 100&nbsp;%. And <strong>a "vCPU" you rent is usually one of these threads.</strong></dd>
+      <dt>Register</dt>
+      <dd>A tiny, blazing-fast storage slot <em>inside</em> the core (there are only a few dozen). Operands must be in registers to be computed on. This is the fastest memory that exists.</dd>
+      <dt>Cache (L1/L2/L3)</dt>
+      <dd>Small, fast memory on the CPU chip that holds recently-used data so the core doesn't have to wait for slow main memory. L1 is smallest and fastest; L3 is largest and slowest; all are far faster than RAM.</dd>
+    </dl>
+    <p>
+      Why all these layers of memory? Because of one brutal fact: <strong>the CPU is far, far faster
+      than the memory it reads from.</strong> A 3&nbsp;GHz core can do an addition in a fraction of a
+      nanosecond, but fetching a value from main memory takes ~100&nbsp;nanoseconds — hundreds of
+      cycles the core would otherwise spend <em>waiting</em>. Every cache exists to hide that wait. And
+      that gap is best understood as a table.
+    </p>
+
+    <h3 id="latency">6.2 The memory hierarchy — the most important table in this course</h3>
+    <p>
+      Each level of storage is faster but smaller and more expensive per byte as you go up, slower but
+      larger and cheaper as you go down. The raw latencies span <em>nine orders of magnitude</em>. To
+      make that graspable, the right-hand column scales every latency by the same factor
+      (≈&nbsp;1&nbsp;billion, so "1&nbsp;ns → 1&nbsp;second") to translate machine time into human time.
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Level</th><th>Typical latency</th><th>Capacity</th><th>Volatile?</th><th>If 1 ns were 1 second…</th></tr></thead>
+        <tbody>
+          <tr><td><b>CPU register</b></td><td>~0.3 ns</td><td>&lt; 1 KB</td><td>yes</td><td>≈ 0.3 seconds — a blink</td></tr>
+          <tr><td><b>L1 cache</b></td><td>~1 ns</td><td>~64 KB/core</td><td>yes</td><td>1 second</td></tr>
+          <tr><td><b>L2 cache</b></td><td>~4 ns</td><td>~1 MB/core</td><td>yes</td><td>~4 seconds</td></tr>
+          <tr><td><b>L3 cache</b></td><td>~15 ns</td><td>tens of MB</td><td>yes</td><td>~15 seconds</td></tr>
+          <tr><td><b>Main memory (RAM)</b></td><td>~100 ns</td><td>GBs</td><td>yes</td><td>~1.5 minutes</td></tr>
+          <tr><td><b>NVMe SSD (random read)</b></td><td>~20 µs</td><td>hundreds of GB–TBs</td><td class="n">no</td><td>~5.5 hours</td></tr>
+          <tr><td><b>SATA SSD</b></td><td>~100 µs</td><td>TBs</td><td class="n">no</td><td>~1 day</td></tr>
+          <tr><td><b>Network RTT, same datacenter</b></td><td>~0.5 ms</td><td>—</td><td>—</td><td>~6 days</td></tr>
+          <tr><td><b>Spinning disk (HDD) seek</b></td><td>~10 ms</td><td>TBs</td><td class="n">no</td><td>~4 months</td></tr>
+          <tr><td><b>Network RTT, cross-continent</b></td><td>~150 ms</td><td>—</td><td>—</td><td>~4.75 years</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p><small>
+      Numbers are round orders of magnitude, not exact figures for any specific chip — the ratios are
+      the point and they are stable. This is the "latency numbers every programmer should know" table
+      (§14), which every backend engineer eventually memorises the shape of.
+    </small></p>
+
+    <div class="callout def">
+      <span class="t">Read this table as a set of instincts</span>
+      <p>
+        Look at the human-time column and let a few facts land. Reading from RAM (1.5&nbsp;min) instead
+        of cache (1&nbsp;s) is a real cost. Reading from an SSD (5.5&nbsp;hours) instead of RAM is a
+        different <em>universe</em>. Crossing the network to another continent (nearly 5&nbsp;years!)
+        dwarfs everything the machine does locally. This is why <strong>caching in RAM is
+        transformative</strong>, why <strong>a database query over the network is the expensive part of
+        most requests</strong>, and why the entire discipline of performance is, at bottom, "stay as
+        high up this table as you can, as often as you can." You will meet Redis (a RAM cache) in the
+        project for exactly this reason.
+      </p>
+    </div>
+
+    <h3>6.3 RAM: the workbench where running things live</h3>
+    <p>
+      RAM is where the code and data of every running program sit while they run. When you launch your
+      API, the OS loads it from disk into RAM and the CPU runs it from there. RAM is fast (~100&nbsp;ns)
+      and <em>volatile</em>: cut the power and it is blank. Two consequences drive everything later:
+    </p>
+    <ul>
+      <li><strong>It is finite and shared.</strong> Every process wants some. When the total demanded exceeds what exists, something has to give — the OS starts <em>swapping</em> to disk (catastrophically slow, per the table) or the <em>OOM killer</em> terminates a process outright. That is the <code>Out of memory</code> from §1, and Lesson 2.4 is devoted to it.</li>
+      <li><strong>It does not survive a restart.</strong> Anything you want to keep must be written to disk. This is precisely why a database has an on-disk representation and why "it was in memory" is never a durability guarantee.</li>
+    </ul>
+    <p>
+      A useful mental image: RAM is your desk. A big desk lets you keep many documents open at once; a
+      small desk forces you to keep fetching from the filing cabinet (disk). The desk's <em>size</em>
+      is your RAM in gigabytes; the cost of walking to the cabinet is the RAM→SSD cliff in the table.
+    </p>
+
+    <h3>6.4 Disk: durable, slow, and measured in more than gigabytes</h3>
+    <p>
+      Disk keeps data when the power is off. Two families, and the difference is enormous:
+    </p>
+    <dl class="terms">
+      <dt>HDD (hard disk drive)</dt>
+      <dd>Spinning magnetic platters with a moving head. Cheap per gigabyte, but a random read means physically moving the head — hence the brutal ~10&nbsp;ms seek in the table. Great for cold, large, sequential data; terrible for random access.</dd>
+      <dt>SSD (solid-state drive)</dt>
+      <dd>Flash memory, no moving parts. Orders of magnitude faster for random access (~20–100&nbsp;µs). NVMe SSDs (connected over the fast PCIe bus) are faster still. Almost all cloud instance storage today is SSD.</dd>
+    </dl>
+    <p>
+      Crucially, disk performance is <em>three</em> numbers, not one, and confusing them causes real
+      outages:
+    </p>
+    <dl class="terms">
+      <dt>Latency</dt>
+      <dd>How long one operation takes (the table's figures). Matters for a single small read.</dd>
+      <dt>IOPS (I/O operations per second)</dt>
+      <dd>How many separate reads/writes per second. A database doing many tiny random reads lives or dies by IOPS. <strong>Cloud disks often cap IOPS</strong>, and hitting that cap looks exactly like "the app got mysteriously slow."</dd>
+      <dt>Throughput (bandwidth)</dt>
+      <dd>How many megabytes per second for large sequential transfers. Matters for streaming big files or bulk copies.</dd>
+    </dl>
+    <p>
+      And one more property that has no speed at all: <em class="term">durability</em> — the
+      probability your data survives. A single disk fails; production data lives on redundant storage
+      (replication, RAID, or cloud block storage that is transparently replicated) precisely because
+      one disk's durability is not enough. Lesson 2.5 goes deep here.
+    </p>
+
+    <h3>6.5 The NIC: the on-ramp to everything remote</h3>
+    <p>
+      The network interface connects the machine to the network, and it has the same two-numbers story
+      as everything else:
+    </p>
+    <ul>
+      <li><strong>Bandwidth</strong> — how much data per second (Gbps). This is what "1&nbsp;Gbps network" on a spec sheet means, and what your monthly "1&nbsp;TB transfer" allowance meters.</li>
+      <li><strong>Latency</strong> — how long a round trip takes, dominated by physical distance and the speed of light. Look again at the table: same-datacenter is ~0.5&nbsp;ms, cross-continent ~150&nbsp;ms. No amount of bandwidth fixes latency; they are different problems.</li>
+    </ul>
+    <p>
+      The NIC is where Module 1's <em>request path</em> physically enters and leaves this machine, and
+      where Module 4 (networking) will plug in. For now, just register that talking to anything off
+      this box — the database on another host, an API across the internet — is the slowest thing in the
+      table by a wide margin, and therefore usually the first thing to optimise or cache.
+    </p>
+
+    <h3>6.6 How the four parts cooperate on one real request</h3>
+    <p>
+      Put it together. A user hits your API endpoint that looks up a task by id. Watch which component
+      does the work and, roughly, where the time goes:
+    </p>
+<pre><code>1. NIC      packet arrives from the network         ← request path enters here
+2. CPU+RAM  the OS and your process (already in RAM) wake to handle it
+3. CPU      your code runs: parse the request, decide what to do   (nanoseconds)
+4. RAM      read variables, request objects — fast                 (~100 ns each)
+5. ??? the data isn't in memory, so you query the database:
+      · if the DB is on THIS box, hit its cache in RAM             (~100 ns)
+      · if it must read the DB's disk                              (~20–100 µs)
+      · if the DB is on ANOTHER host, add a network round trip     (~0.5 ms)
+6. CPU      format the response                                    (nanoseconds)
+7. NIC      send the response back out                             ← request path leaves</code></pre>
+    <p>
+      The lesson of the walkthrough is stark: steps 3, 4 and 6 — "your code" — are essentially free
+      compared to step 5. In almost every real web service, the request spends the overwhelming
+      majority of its time <em>waiting</em>: on the database's disk, or on the network to another host.
+      This is why "my code is slow" is usually wrong and "my code is <em>waiting</em>" is usually right,
+      and it is the single most useful instinct this lesson can give you.
+    </p>
+
+    <h3>6.7 Virtualization mechanics: how one machine becomes many</h3>
+    <p>
+      Now the slicing. A hypervisor sits between the physical hardware and the virtual machines and
+      hands each VM a controlled illusion of its own hardware.
+    </p>
+    <dl class="terms">
+      <dt>Type 1 (bare-metal) hypervisor</dt>
+      <dd>Runs directly on the hardware (e.g. KVM, Xen, VMware ESXi). This is what clouds use — thin, fast, and the VMs run nearly at native speed.</dd>
+      <dt>Type 2 (hosted) hypervisor</dt>
+      <dd>Runs as an app inside a normal OS (e.g. VirtualBox on your laptop). Convenient for development; more overhead.</dd>
+    </dl>
+    <p>How each resource is shared, and where the catch hides:</p>
+    <ul>
+      <li><strong>CPU:</strong> the hypervisor time-slices physical cores/threads among VMs — the 1970s time-sharing idea, industrialised. A <em>vCPU</em> is a schedulable share of a hardware thread. If your VM is promised "1 vCPU" but the host is busy, your VM waits its turn — visible as <em class="term">CPU steal</em> (time the CPU was ready but the hypervisor gave the physical core to someone else).</li>
+      <li><strong>RAM:</strong> partitioned among VMs. Some hosts <em>overcommit</em> — promising more total RAM than physically exists, betting not everyone uses it at once. When the bet is wrong, performance collapses.</li>
+      <li><strong>Disk &amp; NIC:</strong> shared too, which is why cloud disks and networks come with <em>quotas</em> (IOPS caps, bandwidth caps, transfer allowances) — the provider must stop one tenant starving the others.</li>
+    </ul>
+    <div class="callout warn">
+      <span class="t">The noisy neighbour, and why "1 vCPU" is slippery</span>
+      <p>
+        Because you share a physical host with strangers, their load can steal cycles, cache and disk
+        bandwidth from you — the <em>noisy neighbour</em> problem. And "1 vCPU" almost never means "one
+        dedicated core you always have": it usually means "a scheduled share of one hardware thread,
+        subject to the host's other tenants." <strong>Burstable</strong> instance types make this
+        explicit and cheap: they let you briefly exceed a low baseline using <em>CPU credits</em>, then
+        throttle you hard to the baseline once the credits run out. That is the "fast for twenty
+        minutes, then a cliff" mystery from §1 — you spent your credits.
+      </p>
+    </div>
+
+    <h3>6.8 Reading a spec sheet: instance families and the $5 box</h3>
+    <p>
+      Cloud instances come in <em>families</em> tuned to different bottlenecks — because, per §1, the
+      bottleneck is never just "the server", it is one of the four parts:
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Family</th><th>Balance</th><th>Use when the bottleneck is…</th><th>Example</th></tr></thead>
+        <tbody>
+          <tr><td><b>General purpose</b></td><td>Even CPU:RAM ratio</td><td>nothing in particular / you don't know yet</td><td>AWS <code>t3</code>, <code>m5</code></td></tr>
+          <tr><td><b>Compute optimized</b></td><td>More CPU per GB</td><td>CPU (video encoding, heavy computation)</td><td>AWS <code>c5</code></td></tr>
+          <tr><td><b>Memory optimized</b></td><td>More RAM per vCPU</td><td>RAM (big caches, in-memory databases)</td><td>AWS <code>r5</code>, <code>x1</code></td></tr>
+          <tr><td><b>Storage optimized</b></td><td>Fast/large local disk</td><td>disk IOPS or capacity (data warehouses)</td><td>AWS <code>i3</code></td></tr>
+          <tr><td><b>Burstable</b></td><td>Cheap, credit-limited CPU</td><td>mostly-idle workloads with occasional spikes</td><td>AWS <code>t3</code>, most $5 VPSes</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>Now decode the box you will actually rent for the course project:</p>
+<pre><code>  $5/month VPS
+  ├─ 1 vCPU        → one shared hardware thread; fine for a small app,
+  │                  will be your ceiling under real CPU load
+  ├─ 1 GB RAM      → your true constraint; the OS takes a chunk, leaving
+  │                  a few hundred MB for your app + database. Watch the OOM killer.
+  ├─ 25 GB SSD     → plenty for the OS, code and a small database; SSD, so
+  │                  random reads are fast — but IOPS may be capped
+  └─ 1 TB transfer → monthly network allowance out the NIC; generous for
+                     a small app, meterable if you serve large files</code></pre>
+    <p>
+      Read that not as "small and cheap" but as "a machine whose first limit is RAM, whose CPU is a
+      shared thread, and whose disk and network have quotas." That single sentence will explain the
+      majority of the operational surprises you meet in the next few modules — and you could not have
+      written it before this lesson.
+    </p>
+
+    <!-- ============================== 7 ============================== -->
+    <h2 id="s7">7 · Real Industry Examples</h2>
+
+    <h3>The $5 droplet / VPS, decoded</h3>
+    <p>
+      Providers like DigitalOcean, Hetzner, Linode and Vultr sell entry instances at roughly this tier:
+      1 shared vCPU, 1&nbsp;GB RAM, ~25&nbsp;GB SSD, ~1&nbsp;TB transfer. It is a genuine Linux machine,
+      and it is enough to run a small containerised app, a database and a reverse proxy — which is
+      exactly what the course project will do. The art, which this lesson has equipped you for, is
+      knowing that on this box RAM is the scarce resource and planning accordingly.
+    </p>
+
+    <h3>AWS <code>t3.micro</code> vs <code>m5.large</code>: the burstable trap</h3>
+    <p>
+      A <code>t3.micro</code> (2 vCPU burstable, 1&nbsp;GB) looks like a bargain next to an
+      <code>m5.large</code> (2 vCPU, 8&nbsp;GB). But the <code>t3</code> earns CPU credits slowly while
+      idle and spends them fast under load; a sustained-CPU workload drains its credits and gets
+      throttled to a low baseline — the classic "our benchmark was great, production fell off a cliff
+      after 20 minutes." The <code>m5</code> gives you its vCPUs continuously. Same "2 vCPU" on the
+      spec sheet; completely different machines under sustained load. This is §6.7 made concrete, and
+      it costs teams real money and real incidents every day.
+    </p>
+
+    <h3>The noisy-neighbour incident</h3>
+    <p>
+      A common war story: an app's latency mysteriously doubles for an hour, with no code change and no
+      traffic spike, then recovers on its own. The cause is invisible from inside the VM — another
+      tenant on the same physical host ran a heavy batch job, stealing CPU, cache and disk bandwidth.
+      The tell is <em>CPU steal</em> showing up in metrics (Module 12). The fix is often to move to a
+      dedicated-CPU instance type. You cannot even <em>suspect</em> this cause without the mental model
+      of a shared physical host from §6.7.
+    </p>
+
+    <h3>Why "the database is on another server" is a design decision, not a detail</h3>
+    <p>
+      Look again at §6.6 step 5 and the table: putting your database on a <em>separate</em> host adds a
+      network round trip (~0.5&nbsp;ms in-datacenter) to every query, versus a RAM hit (~100&nbsp;ns) if
+      it were local. Teams still do it — for isolation, independent scaling and durability — but it is a
+      deliberate trade of latency for operational flexibility, and the latency table is exactly why
+      that trade is real and why caching (Redis) exists to soften it.
+    </p>
+
+    <!-- ============================== 8 ============================== -->
+    <h2 id="s8">8 · Diagrams</h2>
+
+    <h3>8.1 The anatomy of a server</h3>
+    <figure>
+<pre><code>                         ┌───────────────────────────────────────┐
+                         │              MOTHERBOARD                │
+                         │                                         │
+   ┌──────────────┐      │   ┌───────────────────────────────┐    │
+   │   CPU        │◀────▶│   │            RAM                 │    │
+   │  ┌────┐┌────┐│ fast │   │   fast · volatile · GBs        │    │
+   │  │core││core││ bus  │   │   "the desk you work on"       │    │
+   │  └────┘└────┘│      │   └───────────────────────────────┘    │
+   │  L1 L2 caches│      │                                         │
+   │  L3 cache    │      │   ┌──────────────┐   ┌──────────────┐   │
+   │  registers   │      │   │    DISK      │   │     NIC      │   │
+   └──────────────┘      │   │ SSD/HDD      │   │ network link │   │
+        executes         │   │ slow·durable │   │ to the world │   │
+       instructions      │   │ TBs          │   │ Gbps         │   │
+                         │   └──────┬───────┘   └──────┬───────┘   │
+                         └──────────┼──────────────────┼──────────┘
+                                    ▼                  ▼
+                              persistent data    the network
+                              (survives reboot)  (Module 4)</code></pre>
+      <figcaption>Four parts on one board. Speed decreases and capacity increases as you move CPU → RAM → disk; the NIC is the door to everything remote.</figcaption>
+    </figure>
+
+    <h3>8.2 The memory hierarchy — small+fast on top, big+slow below</h3>
+    <figure>
+<pre><code>            ▲ faster, smaller, costlier per byte
+            │
+        ┌───┴───┐        registers    ~0.3 ns    &lt;1 KB
+        │       │        L1 cache      ~1 ns      64 KB
+        │  CPU  │        L2 cache      ~4 ns      1 MB
+        │ chip  │        L3 cache      ~15 ns     tens of MB
+        └───┬───┘  ─────────────────── the "memory wall" ──────
+            │              RAM         ~100 ns    GBs
+      ──────┼──────────────────────── volatile / non-volatile ──
+            │              NVMe SSD    ~20 µs     hundreds GB
+            │              SATA SSD    ~100 µs    TBs
+            │              HDD seek    ~10 ms     TBs
+            │              network     0.5–150 ms  —
+            ▼ slower, larger, cheaper per byte
+
+   Rule of thumb: every step DOWN is roughly 10–100× slower.
+   Performance work = keeping hot data as HIGH on this ladder as possible.</code></pre>
+    </figure>
+
+    <h3>8.3 One physical host, sliced into instances</h3>
+    <figure>
+<pre><code>   ┌──────────────────────────────────────────────────────────────┐
+   │   PHYSICAL HOST   (e.g. 64 cores, 512 GB RAM, NVMe, 25 Gbps)   │
+   │                                                                │
+   │   ┌────────────────────── HYPERVISOR ───────────────────────┐ │
+   │   │   time-slices CPU · partitions RAM · shares disk & NIC   │ │
+   │   └───┬──────────────┬──────────────┬──────────────┬────────┘ │
+   │       ▼              ▼              ▼              ▼           │
+   │  ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐      │
+   │  │  VM  A  │    │  VM  B  │    │  VM  C  │    │ YOUR VM │      │
+   │  │ 2 vCPU  │    │ 4 vCPU  │    │ 1 vCPU  │    │ 1 vCPU  │      │
+   │  │ 4 GB    │    │ 16 GB   │    │ 1 GB    │    │ 1 GB    │ ◀── your
+   │  │ (someone│    │ (someone│    │ (someone│    │  $5 box  │    $5 VPS
+   │  │  else)  │    │  else)  │    │  else)  │    │         │      │
+   │  └─────────┘    └─────────┘    └─────────┘    └─────────┘      │
+   │       └──── all share the SAME real CPU/RAM/disk/NIC ────┘      │
+   └──────────────────────────────────────────────────────────────┘
+
+   "Noisy neighbour": VM B's heavy job can steal cycles & bandwidth from YOUR VM.
+   "1 vCPU" = a scheduled share of ONE hardware thread, not a dedicated core.</code></pre>
+    </figure>
+
+    <!-- ============================== 9 ============================== -->
+    <h2 id="s9">9 · Advantages</h2>
+    <p>What understanding the machine at this level actually buys you:</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Capability</th><th>Because you now know…</th></tr></thead>
+        <tbody>
+          <tr><td><b>Right-size an instance</b></td><td>which of CPU/RAM/disk/network your workload is limited by, so you buy the family that relieves <em>that</em> limit instead of guessing</td></tr>
+          <tr><td><b>Diagnose "it got slow"</b></td><td>the three suspects (CPU-bound, memory-bound, I/O-bound) are distinct and have distinct fixes; you can ask the right question first</td></tr>
+          <tr><td><b>Predict the OOM kill</b></td><td>RAM is finite and volatile; when demand exceeds it, the OS swaps or kills — so you plan headroom instead of being surprised</td></tr>
+          <tr><td><b>Read a pricing page honestly</b></td><td>"1 vCPU", "burstable", "1 TB transfer" and "IOPS" decode into real limits and real catches</td></tr>
+          <tr><td><b>Make latency-aware designs</b></td><td>the hierarchy tells you a cache in RAM beats a disk read beats a network call by orders of magnitude — so caching and data locality are obvious, not clever</td></tr>
+          <tr><td><b>Explain the noisy neighbour</b></td><td>shared physical hosts mean invisible-from-inside slowdowns; you know to look for CPU steal and consider dedicated instances</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ============================== 10 ============================== -->
+    <h2 id="s10">10 · Limitations</h2>
+    <p>This is a deliberately simplified model. Know its edges before you over-trust it.</p>
+    <dl class="terms">
+      <dt>Real CPUs are far more complex than fetch-decode-execute</dt>
+      <dd>Modern cores pipeline, execute out of order, predict branches and speculate. The simple loop is a true <em>mental</em> model, not an accurate microarchitectural one. You rarely need the details — until you profile very hot code.</dd>
+      <dt>The latency numbers are order-of-magnitude, and they move</dt>
+      <dd>Exact figures vary by chip, generation and vendor, and improve over time. Trust the <em>ratios and their stability</em>, not the specific nanoseconds.</dd>
+      <dt>NUMA and multi-socket effects are ignored</dt>
+      <dd>On big machines, memory is not uniformly fast from every core (<em>non-uniform memory access</em>). Irrelevant on your 1-vCPU box; real on the 64-core host it lives on.</dd>
+      <dt>The cloud abstracts the hardware on purpose</dt>
+      <dd>You usually cannot know which physical CPU or disk you are on, and it can change under you (live migration). The model tells you what is <em>possible</em>; the provider decides specifics.</dd>
+      <dt>Serverless and managed services hide it further</dt>
+      <dd>With Lambda/Cloud Run or a managed database, you may never pick an instance at all. The hardware is still there and still bound by this table — you have simply delegated the sizing. Knowing the model is how you keep those services from being black boxes.</dd>
+    </dl>
+
+    <!-- ============================== 11 ============================== -->
+    <h2 id="s11">11 · Common Misconceptions</h2>
+
+    <div class="myth">
+      <div class="m">"1 vCPU means one whole CPU (or one whole core) that's always mine."</div>
+      <div class="r"><p>A vCPU is usually a <em>single hardware thread</em> (half of one physical core's throughput, via hyper-threading), and on shared/burstable types it is only a <em>scheduled share</em> of that thread — you get it when the hypervisor grants it. "2 vCPU burstable" and "2 vCPU dedicated" can perform very differently under sustained load. Read the fine print about burst credits and dedicated vs shared.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"More GHz always means faster."</div>
+      <div class="r"><p>Clock speed is one factor. Work-per-second also depends on instructions per cycle, core count, cache sizes, and — most often — whether the CPU is even the bottleneck. A 3.5&nbsp;GHz core waiting on a database is no faster than a 2.5&nbsp;GHz one waiting on the same database. Find the bottleneck before optimising the clock.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"RAM and disk (storage) are basically the same kind of memory."</div>
+      <div class="r"><p>They differ on two axes that matter constantly: <strong>speed</strong> (RAM is ~100–1000× faster) and <strong>volatility</strong> (RAM is wiped on power loss; disk persists). "8 GB of memory" and "256 GB of storage" describe completely different things. Anything you must not lose has to reach the disk; anything you are actively working on lives in RAM.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"The cloud means there are no physical servers anymore."</div>
+      <div class="r"><p>"The cloud is just someone else's computer." Every instance runs on a real physical machine with real CPUs, RAM, disks and NICs in a real building. The cloud abstracts <em>ownership and provisioning</em>, not the hardware. The physics of the latency table is unchanged and inescapable.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"SSDs are so fast now they're basically as good as RAM."</div>
+      <div class="r"><p>Fast SSDs are ~20–100 microseconds; RAM is ~100 nanoseconds — a 100–1000× gap that the human-time column renders as "5 hours vs 1.5 minutes." SSDs are transformative compared to spinning disks, but the RAM→SSD cliff is still one of the largest in the table, which is exactly why in-memory caches exist.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"My VM is a whole computer that's fully isolated from everyone else."</div>
+      <div class="r"><p>It is <em>logically</em> isolated (you can't see other tenants' data), but it is <em>physically shared</em> — you contend for the same cores, caches, disk and network. That contention is the noisy-neighbour effect, and it is why the same instance can be fast one hour and slow the next with no change on your side.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"If the app is slow, I need a faster CPU / more vCPUs."</div>
+      <div class="r"><p>Usually not. Most web workloads are <em>I/O-bound</em> — waiting on the database, disk or network — not CPU-bound. Adding vCPUs to an I/O-bound app buys nothing; you must first identify which of the four resources is the actual limit (Module 12's job). "Slow" is a symptom with at least three different diseases.</p></div>
+    </div>
+
+    <!-- ============================== 12 ============================== -->
+    <h2 id="s12">12 · Practical Use Cases</h2>
+
+    <h3>Sizing your first box</h3>
+    <p>
+      For the course project — a small React/Express/Postgres/Redis app — the $5 tier (1&nbsp;vCPU,
+      1&nbsp;GB) is a deliberate, instructive choice: it is enough to run everything, and tight enough
+      that you will <em>feel</em> RAM as the constraint and have to reason about it. That discomfort is
+      the point; it teaches capacity thinking that a giant box would hide.
+    </p>
+
+    <h3>Choosing burstable vs dedicated</h3>
+    <p>
+      A personal project, a low-traffic internal tool, a staging box: burstable is ideal — cheap, and
+      your rare spikes are covered by credits. A service under sustained CPU load (video processing, a
+      busy API doing real computation): dedicated, or you will hit the credit cliff in production. Match
+      the instance's <em>CPU personality</em> to your load's shape, not just the vCPU count.
+    </p>
+
+    <h3>Naming the bottleneck before spending money</h3>
+    <p>
+      When something is slow, resist "make it bigger." Ask which resource is saturated: CPU near
+      100&nbsp;% (compute-bound → more/faster CPU or better algorithms), RAM full and swapping
+      (memory-bound → more RAM or smaller working set), disk at its IOPS cap (I/O-bound → faster disk or
+      caching), or network saturated (bandwidth/latency → caching, closer regions, a CDN). Each disease
+      has its own cure; the model tells them apart. You will do this for real with metrics in Module 12.
+    </p>
+
+    <h3>Reading any pricing page in ten seconds</h3>
+    <p>
+      Scan for the four numbers (vCPU, RAM, storage type+size, network), then find the three catches:
+      is the CPU shared/burstable, are the IOPS capped, and is network transfer metered? Those three
+      footnotes are where the surprises — and the real cost differences between look-alike instances —
+      hide.
+    </p>
+
+    <!-- ============================== 13 ============================== -->
+    <h2 id="s13">13 · Summary</h2>
+    <ul class="takeaways">
+      <li>"Server" means three things — a software <strong>role</strong>, a physical <strong>machine</strong>, and a rented <strong>instance</strong>. Always know which one is meant.</li>
+      <li>Every server is <strong>four parts</strong>: CPU (executes instructions), RAM (fast volatile working memory), disk (slow durable storage), NIC (the link to the network). Each can independently be the bottleneck.</li>
+      <li>A CPU repeats fetch→decode→execute billions of times a second; <strong>cores</strong> give real parallelism, <strong>threads</strong> (SMT) give a partial boost, and a rented <strong>vCPU</strong> is usually one hardware thread — often only a scheduled share of one.</li>
+      <li>The <strong>memory hierarchy</strong> spans nine orders of magnitude in latency. Every step down (register → cache → RAM → SSD → network) is ~10–100× slower. This table is the root of nearly all performance reasoning.</li>
+      <li>RAM is <strong>finite and volatile</strong>: exceed it and the OS swaps or the OOM killer strikes; lose power and it's gone — so durable data must reach the disk.</li>
+      <li>Disk is <strong>three numbers</strong> (latency, IOPS, throughput) plus durability — not one. Cloud disks cap IOPS, and hitting the cap looks like a mystery slowdown.</li>
+      <li>The NIC is the request path's on-ramp; talking to anything remote is the <strong>slowest</strong> thing in the table, which is why caching and data locality dominate design.</li>
+      <li>On one real request, "your code" is nearly free; the request mostly <strong>waits</strong> on the database's disk or the network. "Slow" usually means "waiting", not "computing".</li>
+      <li>A <strong>hypervisor</strong> time-slices one physical host into many <strong>VMs/instances</strong>, sharing real CPU/RAM/disk/NIC — enabling the cloud, at the cost of <strong>noisy neighbours</strong>, CPU steal, and burstable-credit cliffs.</li>
+      <li>You can now read <code>1 vCPU / 1&nbsp;GB / 25&nbsp;GB SSD / 1&nbsp;TB</code> as a set of real limits — RAM-first, shared CPU, quota'd disk and network — which explains most of the operational surprises in the modules ahead.</li>
+    </ul>
+
+    <!-- ============================== 14 ============================== -->
+    <h2 id="s14">14 · Recommended Resources</h2>
+    <p><small>Curated, not exhaustive. <span class="rank">start here</span> marks the one to use first in each group.</small></p>
+
+    <div class="res">
+      <h4>Official / authoritative documentation</h4>
+      <ul>
+        <li><b>AWS — "Amazon EC2 Instance Types"</b> <span class="rank">start here</span>
+          <span class="why">The canonical instance-family reference (general purpose / compute / memory / storage optimized, and the burstable <code>t</code> family with CPU credits). Read it as a worked example of §6.8, even if you deploy elsewhere.</span></li>
+        <li><b>DigitalOcean / Hetzner / Linode droplet &amp; pricing docs</b>
+          <span class="why">The concrete $5-tier specs you will actually rent for the project. Match each number to the four parts.</span></li>
+        <li><b>AWS EBS "volume types" / cloud block-storage IOPS docs</b>
+          <span class="why">Where latency vs IOPS vs throughput and the caps become explicit. The best cure for the "why did my disk get slow" mystery.</span></li>
+      </ul>
+
+      <h4>Talks &amp; video</h4>
+      <ul>
+        <li><b>"Latency Numbers Every Programmer Should Know" (interactive versions online)</b> <span class="rank">start here</span>
+          <span class="why">The table in §6.2, animated and explorable across the years. Ten minutes here builds the single most valuable performance instinct you will own.</span></li>
+        <li><b>Any good "how a CPU works" / fetch-decode-execute explainer (e.g. Crash Course Computer Science)</b>
+          <span class="why">Visual reinforcement of §6.1 — registers, clock, the execute cycle — without needing electronics background.</span></li>
+      </ul>
+
+      <h4>Books</h4>
+      <ul>
+        <li><b><em>Computer Systems: A Programmer's Perspective</em> — Bryant &amp; O'Hallaron</b> <span class="rank">start here</span>
+          <span class="why">The definitive bridge from "I write programs" to "I understand the machine underneath." Chapters on the memory hierarchy and on processors are exactly this lesson at full depth. Read selectively.</span></li>
+        <li><b><em>What Every Programmer Should Know About Memory</em> — Ulrich Drepper (free PDF)</b>
+          <span class="why">Long and deep, but the opening sections on caches and RAM are the authoritative account of why the hierarchy is shaped as it is. Skim now; return when you profile hot code.</span></li>
+      </ul>
+
+      <h4>Interactive labs &amp; practice</h4>
+      <ul>
+        <li><b>Your own $5 VPS + <code>lscpu</code>, <code>free -h</code>, <code>lsblk</code>, <code>ip addr</code></b> <span class="rank">start here</span>
+          <span class="why">The four commands that print the four parts of your real machine. This lesson's exercise is built on them; nothing teaches the model like reading it off hardware you rented.</span></li>
+        <li><b><code>htop</code> and <code>iostat</code></b>
+          <span class="why">Watch CPU, RAM and disk I/O move in real time. Preview of Module 12; run them while your machine is busy and idle.</span></li>
+      </ul>
+    </div>
+
+    <!-- ============================== 15 ============================== -->
+    <h2 id="s15">15 · Exercise</h2>
+    <p>
+      Module 2's project increment is to <strong>provision your first Linux server and inventory it</strong>
+      (no app yet). This lesson's exercises begin that inventory at the hardware level. Do at least E1,
+      E2 and E4. You will need the $5 VPS; if you haven't created it, E1 walks you through starting.
+    </p>
+
+    <div class="ex">
+      <div class="h"><span>E1</span>Rent the machine and read its four parts</div>
+      <p>
+        Create a $5 instance on any provider (DigitalOcean, Hetzner, Linode, Vultr) running Ubuntu LTS.
+        SSH in, then run and record the output of:
+      </p>
+<pre><code>lscpu        # CPU: how many vCPUs? what model? what caches?
+free -h      # RAM: total, used, free — how much is really available to you?
+lsblk        # DISK: what block devices, what size?
+ip addr      # NIC: your network interface(s) and IP
+uptime       # load average — a first look at how busy the CPU is</code></pre>
+      <div class="out">Deliverable: a four-line inventory (CPU / RAM / disk / NIC) of your real server, in <code>NOTES.md</code>, with today's date. This is the start of your Milestone&nbsp;2 inventory.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E2</span>Decode your spec sheet</div>
+      <p>
+        Open your provider's page for the exact plan you bought. For each of the four numbers (vCPU,
+        RAM, storage, transfer), write one sentence on what it means and what would happen if you hit
+        its limit. Then find the three catches: is the CPU shared/burstable? Are IOPS capped? Is
+        transfer metered (and what's the overage cost)?
+      </p>
+      <div class="out">Deliverable: the four meanings and the three catches, in your own words. Predict which resource you think will run out first — you'll check the prediction in later modules.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E3</span>Feel the memory hierarchy</div>
+      <p>
+        Without running anything, estimate using the §6.2 table: if a request needs 1 value from
+        RAM, then 1 value from a local SSD, then 1 value from a database on another server in the same
+        datacenter, roughly what fraction of the total wait is each step? Then say what caching in RAM
+        would do to that fraction.
+      </p>
+      <div class="out">Deliverable: three rough percentages and one sentence on the effect of a cache. The goal is the <em>ratios</em>, not precision.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E4</span>Name three bottlenecks</div>
+      <p>
+        For three programs you have written or used — e.g. a video encoder, a REST API backed by a
+        database, and a log-processing script — predict whether each is primarily CPU-bound,
+        memory-bound, disk/IO-bound, or network-bound, and justify each in one sentence.
+      </p>
+      <div class="out">Deliverable: three programs, each tagged with its likely bottleneck and a reason. This is the diagnostic instinct from §12, rehearsed before you need it under pressure.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E5</span>Optional: buy vs rent</div>
+      <p>
+        For a hypothetical steady workload that uses 80&nbsp;% of a machine 24/7 for three years, sketch
+        the argument for <em>owning</em> a server versus renting a cloud instance. What changes your
+        answer if the workload is instead spiky and unpredictable?
+      </p>
+      <div class="out">Deliverable: a short paragraph. If you can argue both sides, you understand why both on-prem and cloud still exist.</div>
+    </div>
+
+    <!-- ============================== 16 ============================== -->
+    <h2 id="s16">16 · Quiz</h2>
+    <div class="callout warn">
+      <span class="t">How to use this</span>
+      <p>
+        Answer in your own words <strong>before</strong> revealing the model answer. Two or three
+        sentences each. You're ready for Lesson 2.2 (what the operating system does with this hardware)
+        when you can answer Q1, Q3, Q5 and Q7 cold and have completed E1 and E2 on a real machine.
+      </p>
+    </div>
+
+    <div class="quiz">
+
+      <details class="q"><summary>Name the four core components of a server and, in one phrase each, what each is for.</summary>
+        <div class="ans"><p><strong>CPU</strong> — executes instructions (does the work). <strong>RAM</strong> — fast, volatile working memory holding what's currently running. <strong>Disk</strong> — slow, durable storage that survives power loss. <strong>NIC</strong> — the network link to everything off the machine. Each can independently be the bottleneck, which is why "the server is slow" is never a complete diagnosis.</p></div>
+      </details>
+
+      <details class="q"><summary>Explain the difference between RAM and disk on the two axes that matter, and give one consequence of each difference.</summary>
+        <div class="ans"><p><strong>Speed:</strong> RAM (~100&nbsp;ns) is roughly 100–1000× faster than even a fast SSD (~20–100&nbsp;µs) — consequence: hot data is cached in RAM to avoid the disk cliff. <strong>Volatility:</strong> RAM is wiped on power loss, disk persists — consequence: anything you must not lose (a database's data) has to be written to disk; "it was in memory" is never durability.</p></div>
+      </details>
+
+      <details class="q"><summary>Why does the memory hierarchy exist at all — why not just make everything as fast as registers?</summary>
+        <div class="ans"><p>Because fast memory is small and extremely expensive per byte, and slow memory is large and cheap. You cannot afford terabytes of register-speed memory, and the CPU is far faster than affordable large memory. The hierarchy is a compromise: keep a little very-fast memory close to the CPU (registers, caches) holding the hottest data, backed by progressively larger, slower, cheaper layers. Caching works because programs reuse the same data (locality).</p></div>
+      </details>
+
+      <details class="q"><summary>Using the latency table, explain why a database query to another server in the same datacenter is "expensive" even though it's fast in human terms.</summary>
+        <div class="ans"><p>A same-datacenter round trip is ~0.5&nbsp;ms. That sounds tiny, but compared to a RAM read (~100&nbsp;ns) it is roughly 5,000× slower, and compared to a CPU operation it is millions of cycles the machine spends <em>waiting</em>. In the human-time scaling (1&nbsp;ns → 1&nbsp;s), it's ~6 days versus ~1.5 minutes for RAM. So in a request that otherwise runs in nanoseconds, the network query dominates the total time — which is why caching results in RAM (e.g. Redis) is so effective.</p></div>
+      </details>
+
+      <details class="q"><summary>What is a vCPU, really? Why can two instances both advertising "2 vCPU" perform very differently?</summary>
+        <div class="ans"><p>A vCPU is the unit of CPU you rent — usually a single <em>hardware thread</em> (via SMT/hyper-threading), which is roughly half a physical core's throughput, and on shared/burstable types only a <em>scheduled share</em> of that thread. Two "2 vCPU" instances differ because one may be <strong>burstable</strong> (a low baseline plus CPU credits that deplete under sustained load, then throttle hard) while the other is <strong>dedicated</strong> (continuous access). Same spec-sheet number, different behaviour under sustained load.</p></div>
+      </details>
+
+      <details class="q"><summary>Your app is "slow." Name the three main hardware suspects and how you'd distinguish them.</summary>
+        <div class="ans"><p><strong>CPU-bound:</strong> CPU near 100&nbsp;% — the machine is computing flat out (fix: faster/more CPU, better algorithms). <strong>Memory-bound:</strong> RAM full and the system swapping to disk, or the OOM killer firing (fix: more RAM or a smaller working set). <strong>I/O-bound:</strong> CPU low but requests waiting, disk at its IOPS cap or the network saturated (fix: faster disk, caching, closer regions). You distinguish them with metrics (Module 12) — CPU utilisation, memory/swap usage, disk IOPS/latency, network throughput — not by guessing. Most web apps are I/O-bound.</p></div>
+      </details>
+
+      <details class="q"><summary>What is a hypervisor, and what does it enable and cost?</summary>
+        <div class="ans"><p>A hypervisor is software that divides one physical machine into many isolated virtual machines, time-slicing the real CPU and partitioning the real RAM/disk/NIC among them. It <em>enables</em> the cloud: high utilisation (idle capacity resold to other tenants), per-hour rental, fast provisioning, and spreading copies across hosts. It <em>costs</em> a little overhead and, more importantly, introduces sharing — noisy neighbours, CPU steal, and burstable-credit throttling — because you no longer have the physical machine to yourself.</p></div>
+      </details>
+
+      <details class="q"><summary>Decode "1 vCPU, 1 GB RAM, 25 GB SSD, 1 TB transfer" — which resource is the likely first constraint for a small web app, and why?</summary>
+        <div class="ans"><p><strong>RAM (1&nbsp;GB) is the likely first constraint.</strong> The OS itself consumes a few hundred MB, leaving only a few hundred for your app plus a database plus a cache — so you can hit the OOM killer well before you exhaust the CPU, the 25&nbsp;GB SSD (ample for a small app) or the 1&nbsp;TB transfer (generous unless serving large files). The vCPU is a shared thread and will be your ceiling under real CPU load, but for a typical small app memory pressure bites first.</p></div>
+      </details>
+
+      <details class="q"><summary>Someone says "the cloud means there are no more physical servers." Correct them.</summary>
+        <div class="ans"><p>Every cloud instance runs on a real physical machine — CPUs, RAM, disks, NICs — in a real data centre; "the cloud is just someone else's computer." What the cloud abstracts away is <em>ownership and provisioning</em>: you rent a hypervisor-managed slice by the hour instead of buying and racking hardware. The physics of the latency table and the four components is entirely unchanged and inescapable.</p></div>
+      </details>
+
+      <details class="q"><summary>Why is "add more vCPUs" often the wrong fix for a slow web service?</summary>
+        <div class="ans"><p>Because most web services are <em>I/O-bound</em>, not CPU-bound — the request spends its time waiting on the database, disk, or network, not computing. Adding vCPUs to a workload that isn't CPU-limited buys nothing; the extra cores sit idle while requests still wait on the same slow database. You must identify the actual saturated resource first (CPU vs memory vs disk IOPS vs network) and relieve <em>that</em> one. Scaling the wrong resource costs money and fixes nothing.</p></div>
+      </details>
+
+    </div>
+
+    <div class="callout good">
+      <span class="t">Next: Lesson 2.2</span>
+      <p>
+        You now know what the hardware <em>is</em>. But you never actually talk to CPU, RAM or disk
+        directly — a layer of software stands between your code and the metal, deciding who gets the CPU,
+        who gets memory, and who is allowed to touch the disk and network. That layer is the
+        <strong>operating system</strong>, and Lesson 2.2 opens it: the kernel, user space, system calls,
+        and the privilege boundary that keeps one crashing program from taking down the machine. Keep
+        your E1 inventory handy — 2.2 explains what all those processes and numbers actually are.
+      </p>
+    </div>
+
+    <hr>
+
+    <nav class="pager" aria-label="Lesson navigation">
+      <a href="../01-foundations/lesson-05-the-whole-map.html"><em>Previous lesson</em>← 1.5 · What really happens between git push and production</a>
+      <span class="disabled next"><em>Next lesson</em>2.2 · What an operating system does <small>(not yet generated)</small></span>
+    </nav>
+
+    <footer class="foot">
+      <b>From Commit to Production</b> · Module 2 · Lesson 2.1 — <em>What a Server Actually Is</em><br>
+      <small>Self-contained offline document · no external assets · regenerated in full when revised.
+      Roadmap: <a href="../../index.html">course/index.html</a></small>
+    </footer>
+  </article>
+</div>
+
+<script>
+(function(){
+  var root = document.documentElement;
+
+  /* ---------- theme ---------- */
+  var KEY='ftp.theme', saved=null;
+  try { saved = localStorage.getItem(KEY); } catch(e){}
+  if (saved) root.setAttribute('data-theme', saved);
+  document.getElementById('theme').addEventListener('click', function(){
+    var cur = root.getAttribute('data-theme');
+    if (!cur) cur = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    var next = cur === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem(KEY, next); } catch(e){}
+  });
+
+  /* ---------- expand/collapse all quiz answers ---------- */
+  var btn = document.getElementById('expand');
+  btn.addEventListener('click', function(){
+    var all = document.querySelectorAll('details.q');
+    var anyClosed = Array.prototype.some.call(all, function(d){ return !d.open; });
+    Array.prototype.forEach.call(all, function(d){ d.open = anyClosed; });
+    btn.textContent = anyClosed ? '⇕ Collapse all' : '⇕ Expand all';
+  });
+
+  /* ---------- reading progress bar ---------- */
+  var barEl = document.getElementById('readbar');
+  function onScroll(){
+    var h = document.documentElement;
+    var max = h.scrollHeight - h.clientHeight;
+    barEl.style.width = (max > 0 ? (h.scrollTop / max * 100) : 0) + '%';
+  }
+  addEventListener('scroll', onScroll, {passive:true});
+  onScroll();
+
+  /* ---------- TOC scroll-spy ---------- */
+  var links = Array.prototype.slice.call(document.querySelectorAll('#tocList a'));
+  var targets = links.map(function(a){ return document.querySelector(a.getAttribute('href')); })
+                     .filter(Boolean);
+  if ('IntersectionObserver' in window && targets.length){
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if (!e.isIntersecting) return;
+        links.forEach(function(a){
+          a.classList.toggle('on', a.getAttribute('href') === '#' + e.target.id);
+        });
+      });
+    }, { rootMargin:'-80px 0px -70% 0px', threshold:0 });
+    targets.forEach(function(t){ io.observe(t); });
+  }
+})();
+</script>
+</body>
+</html>

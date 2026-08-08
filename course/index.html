@@ -1,0 +1,1147 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roadmap · From Commit to Production — A DevOps Course for Software Engineers</title>
+<style>
+/* ============================================================
+   DESIGN TOKENS
+   ============================================================ */
+:root{
+  color-scheme: dark light;
+  --font-sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", Consolas, "SFMono-Regular", Menlo, monospace;
+
+  --bg:#0a0e17;
+  --bg-alt:#0e1421;
+  --surface:#131b2b;
+  --surface-2:#19233a;
+  --border:#243049;
+  --border-strong:#37456a;
+
+  --text:#e8eefb;
+  --text-dim:#a7b4cd;
+  --text-faint:#78869f;
+
+  --accent:#6ea8ff;      --accent-soft:rgba(110,168,255,.14);
+  --green:#4fd39c;       --green-soft:rgba(79,211,156,.13);
+  --amber:#f2b754;       --amber-soft:rgba(242,183,84,.13);
+  --red:#ff7f76;         --red-soft:rgba(255,127,118,.13);
+  --purple:#b28cff;      --purple-soft:rgba(178,140,255,.13);
+  --teal:#4fd0d9;        --teal-soft:rgba(79,208,217,.13);
+
+  --radius:14px;
+  --radius-sm:8px;
+  --shadow:0 1px 2px rgba(0,0,0,.45), 0 14px 34px -18px rgba(0,0,0,.75);
+  --maxw:1140px;
+}
+:root[data-theme="light"]{
+  color-scheme: light;
+  --bg:#f7f9fc; --bg-alt:#eef2f8; --surface:#ffffff; --surface-2:#f2f5fa;
+  --border:#dde3ee; --border-strong:#c2ccdd;
+  --text:#131a26; --text-dim:#4b586e; --text-faint:#75839a;
+  --accent:#1f5fd0;  --accent-soft:rgba(31,95,208,.09);
+  --green:#0f8a5f;   --green-soft:rgba(15,138,95,.10);
+  --amber:#9a6a06;   --amber-soft:rgba(154,106,6,.10);
+  --red:#c3352b;     --red-soft:rgba(195,53,43,.09);
+  --purple:#6d3ecb;  --purple-soft:rgba(109,62,203,.09);
+  --teal:#07767e;    --teal-soft:rgba(7,118,126,.10);
+  --shadow:0 1px 2px rgba(18,28,45,.06), 0 12px 28px -18px rgba(18,28,45,.25);
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    color-scheme: light;
+    --bg:#f7f9fc; --bg-alt:#eef2f8; --surface:#ffffff; --surface-2:#f2f5fa;
+    --border:#dde3ee; --border-strong:#c2ccdd;
+    --text:#131a26; --text-dim:#4b586e; --text-faint:#75839a;
+    --accent:#1f5fd0;  --accent-soft:rgba(31,95,208,.09);
+    --green:#0f8a5f;   --green-soft:rgba(15,138,95,.10);
+    --amber:#9a6a06;   --amber-soft:rgba(154,106,6,.10);
+    --red:#c3352b;     --red-soft:rgba(195,53,43,.09);
+    --purple:#6d3ecb;  --purple-soft:rgba(109,62,203,.09);
+    --teal:#07767e;    --teal-soft:rgba(7,118,126,.10);
+    --shadow:0 1px 2px rgba(18,28,45,.06), 0 12px 28px -18px rgba(18,28,45,.25);
+  }
+}
+
+/* ============================================================
+   BASE
+   ============================================================ */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth; scroll-padding-top:78px}
+body{
+  margin:0; background:var(--bg); color:var(--text);
+  font-family:var(--font-sans); font-size:16.5px; line-height:1.68;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:var(--maxw); margin:0 auto; padding:0 22px}
+h1,h2,h3,h4{line-height:1.25; margin:0 0 .5em; letter-spacing:-.015em; font-weight:680}
+h1{font-size:clamp(2rem,4.4vw,2.9rem)}
+h2{font-size:clamp(1.45rem,2.6vw,1.9rem); margin-top:2.4em}
+h3{font-size:1.16rem; margin-top:1.8em}
+p{margin:0 0 1em}
+a{color:var(--accent); text-decoration:none}
+a:hover{text-decoration:underline}
+code{font-family:var(--font-mono); font-size:.875em; background:var(--surface-2);
+  border:1px solid var(--border); border-radius:5px; padding:.1em .38em}
+hr{border:0; border-top:1px solid var(--border); margin:3rem 0}
+ul,ol{padding-left:1.25em; margin:0 0 1em}
+li{margin:.3em 0}
+small{color:var(--text-faint)}
+
+/* ============================================================
+   TOP BAR
+   ============================================================ */
+header.bar{
+  position:sticky; top:0; z-index:50;
+  background:color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--border);
+}
+.bar-in{max-width:var(--maxw); margin:0 auto; padding:11px 22px;
+  display:flex; align-items:center; gap:14px}
+.brand{font-weight:700; font-size:.95rem; letter-spacing:-.01em; white-space:nowrap}
+.brand span{color:var(--accent)}
+.bar nav{margin-left:auto; display:flex; gap:6px; flex-wrap:wrap}
+.bar nav a{font-size:.82rem; color:var(--text-dim); padding:5px 9px; border-radius:6px}
+.bar nav a:hover{background:var(--surface-2); color:var(--text); text-decoration:none}
+button.ghost{
+  font:inherit; font-size:.8rem; cursor:pointer; color:var(--text-dim);
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:8px; padding:5px 11px;
+}
+button.ghost:hover{border-color:var(--border-strong); color:var(--text)}
+
+/* ============================================================
+   HERO
+   ============================================================ */
+.hero{padding:60px 0 12px; border-bottom:1px solid var(--border); background:
+  radial-gradient(900px 320px at 12% -10%, var(--accent-soft), transparent 70%),
+  radial-gradient(700px 300px at 88% -20%, var(--purple-soft), transparent 70%)}
+.kicker{font-family:var(--font-mono); font-size:.76rem; letter-spacing:.16em;
+  text-transform:uppercase; color:var(--accent); margin-bottom:14px}
+.lede{font-size:1.12rem; color:var(--text-dim); max-width:64ch}
+.stats{display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
+  gap:12px; margin:30px 0 8px}
+.stat{background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--radius); padding:14px 16px}
+.stat b{display:block; font-size:1.5rem; line-height:1.2; letter-spacing:-.02em}
+.stat span{font-size:.78rem; color:var(--text-faint); text-transform:uppercase; letter-spacing:.08em}
+
+/* ============================================================
+   COMPONENTS
+   ============================================================ */
+.card{background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--radius); padding:22px 24px; box-shadow:var(--shadow)}
+.grid2{display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:16px}
+
+.callout{border-left:3px solid var(--accent); background:var(--accent-soft);
+  border-radius:0 var(--radius-sm) var(--radius-sm) 0; padding:14px 18px; margin:1.5em 0}
+.callout.warn{border-color:var(--amber); background:var(--amber-soft)}
+.callout.good{border-color:var(--green); background:var(--green-soft)}
+.callout .t{font-weight:700; font-size:.8rem; letter-spacing:.09em;
+  text-transform:uppercase; margin-bottom:5px; display:block}
+.callout p:last-child{margin-bottom:0}
+
+pre{background:var(--bg-alt); border:1px solid var(--border); border-radius:var(--radius-sm);
+  padding:16px; overflow-x:auto; font-family:var(--font-mono); font-size:.83rem;
+  line-height:1.55; margin:1.4em 0}
+pre code{background:none; border:0; padding:0; font-size:inherit}
+
+.tablewrap{overflow-x:auto; margin:1.5em 0; border:1px solid var(--border);
+  border-radius:var(--radius)}
+table{border-collapse:collapse; width:100%; font-size:.9rem; min-width:600px}
+th,td{padding:10px 14px; text-align:left; border-bottom:1px solid var(--border);
+  vertical-align:top}
+th{background:var(--surface-2); font-size:.75rem; text-transform:uppercase;
+  letter-spacing:.08em; color:var(--text-dim); font-weight:700; white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td b{color:var(--text)}
+
+.pill{display:inline-block; font-family:var(--font-mono); font-size:.7rem;
+  padding:2px 8px; border-radius:999px; border:1px solid var(--border-strong);
+  color:var(--text-dim); white-space:nowrap}
+.pill.a{color:var(--accent); border-color:var(--accent); background:var(--accent-soft)}
+.pill.g{color:var(--green); border-color:var(--green); background:var(--green-soft)}
+.pill.p{color:var(--purple); border-color:var(--purple); background:var(--purple-soft)}
+.pill.t{color:var(--teal); border-color:var(--teal); background:var(--teal-soft)}
+
+/* ---- progress ---- */
+.progress-box{position:sticky; top:60px; z-index:20; background:var(--bg);
+  padding:12px 0 10px; border-bottom:1px solid var(--border); margin-bottom:8px}
+.pbar{height:7px; background:var(--surface-2); border-radius:999px; overflow:hidden;
+  border:1px solid var(--border)}
+.pbar i{display:block; height:100%; width:0;
+  background:linear-gradient(90deg,var(--accent),var(--green)); transition:width .3s ease}
+.pmeta{display:flex; justify-content:space-between; font-size:.78rem;
+  color:var(--text-faint); margin-top:6px; font-family:var(--font-mono)}
+
+/* ---- module cards ---- */
+.module{background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--radius); margin:16px 0; overflow:hidden; box-shadow:var(--shadow)}
+.module > summary{
+  list-style:none; cursor:pointer; padding:18px 22px; display:flex;
+  gap:14px; align-items:flex-start; background:var(--surface-2);
+  border-bottom:1px solid transparent;
+}
+.module[open] > summary{border-bottom-color:var(--border)}
+.module > summary::-webkit-details-marker{display:none}
+.module > summary::after{content:"▸"; margin-left:auto; color:var(--text-faint);
+  transition:transform .2s ease; font-size:.9rem; padding-top:3px}
+.module[open] > summary::after{transform:rotate(90deg)}
+.mnum{font-family:var(--font-mono); font-weight:700; font-size:.78rem;
+  color:var(--accent); background:var(--accent-soft); border:1px solid var(--accent);
+  border-radius:8px; padding:4px 8px; white-space:nowrap; margin-top:2px}
+.mtitle{font-weight:680; font-size:1.06rem; letter-spacing:-.01em}
+.msub{font-size:.85rem; color:var(--text-dim); margin-top:3px}
+.mbody{padding:6px 22px 22px}
+.mgrid{display:grid; grid-template-columns:1fr; gap:4px 26px}
+@media(min-width:820px){ .mgrid{grid-template-columns:1.35fr .95fr} }
+.field{margin:14px 0 0}
+.field > .lbl{font-size:.72rem; letter-spacing:.1em; text-transform:uppercase;
+  color:var(--text-faint); font-weight:700; margin-bottom:6px}
+
+ol.lessons{list-style:none; padding:0; margin:0}
+ol.lessons li{margin:0; border-bottom:1px dashed var(--border)}
+ol.lessons li:last-child{border-bottom:0}
+ol.lessons label{display:flex; gap:10px; align-items:baseline; padding:7px 2px;
+  cursor:pointer; font-size:.93rem}
+ol.lessons input{margin:0; accent-color:var(--green); width:15px; height:15px;
+  flex:0 0 auto; position:relative; top:3px; cursor:pointer}
+ol.lessons .num{font-family:var(--font-mono); font-size:.76rem; color:var(--text-faint);
+  flex:0 0 auto; width:2.6em}
+ol.lessons .ttl{flex:1}
+ol.lessons input:checked ~ .ttl{color:var(--text-faint); text-decoration:line-through}
+.tag{font-family:var(--font-mono); font-size:.66rem; padding:1px 6px; border-radius:999px;
+  border:1px solid var(--border-strong); color:var(--text-faint); flex:0 0 auto}
+.tag.ready{color:var(--green); border-color:var(--green); background:var(--green-soft)}
+a.tag.ready:hover{text-decoration:none; filter:brightness(1.15)}
+
+/* ---- timeline ---- */
+.timeline{list-style:none; padding:0; margin:1.5em 0; position:relative}
+.timeline:before{content:""; position:absolute; left:9px; top:8px; bottom:8px;
+  width:2px; background:var(--border)}
+.timeline li{position:relative; padding:0 0 18px 34px}
+.timeline li:before{content:""; position:absolute; left:3px; top:7px; width:14px; height:14px;
+  border-radius:50%; background:var(--surface); border:2px solid var(--accent)}
+.timeline li.final:before{border-color:var(--green); background:var(--green)}
+.timeline b{display:block; font-size:.95rem}
+.timeline span{font-size:.88rem; color:var(--text-dim)}
+
+/* ---- footer nav ---- */
+.pager{display:flex; gap:12px; margin:44px 0 60px; flex-wrap:wrap}
+.pager a, .pager .disabled{
+  flex:1 1 240px; border:1px solid var(--border); border-radius:var(--radius);
+  padding:14px 18px; background:var(--surface); text-decoration:none; color:var(--text);
+}
+.pager a:hover{border-color:var(--accent); text-decoration:none}
+.pager .disabled{opacity:.45; cursor:not-allowed}
+.pager em{display:block; font-style:normal; font-size:.72rem; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--text-faint); margin-bottom:3px}
+.pager .next{text-align:right}
+footer.foot{border-top:1px solid var(--border); padding:26px 0 60px;
+  color:var(--text-faint); font-size:.85rem}
+
+@media print{
+  header.bar,.progress-box,button.ghost,.pager{display:none}
+  body{background:#fff; color:#000; font-size:11pt}
+  .module{break-inside:avoid} .module > summary::after{display:none}
+  details{open:true}
+}
+</style>
+
+<header class="bar">
+  <div class="bar-in">
+    <div class="brand">Commit&nbsp;<span>→</span>&nbsp;Production</div>
+    <nav>
+      <a href="#how">How it works</a>
+      <a href="#project">Project</a>
+      <a href="#glance">At a glance</a>
+      <a href="#modules">Modules</a>
+      <a href="#milestones">Milestones</a>
+      <a href="modules/01-foundations/lesson-01-why-devops-exists.html">Lesson 1 →</a>
+    </nav>
+    <button class="ghost" id="theme">◐ Theme</button>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="wrap">
+    <div class="kicker">Course Roadmap · v1.0</div>
+    <h1>From Commit to Production</h1>
+    <p class="lede">
+      A semester-length, first-principles DevOps course for software engineers who do not want
+      to become DevOps engineers — they want to build, ship, run, and scale their own systems
+      without depending on anyone else. Everything that happens between <code>git push</code>
+      and a user seeing your response, explained from the ground up.
+    </p>
+    <div class="stats">
+      <div class="stat"><b>14</b><span>Modules</span></div>
+      <div class="stat"><b>95</b><span>Lessons</span></div>
+      <div class="stat"><b>~120 h</b><span>Study time</span></div>
+      <div class="stat"><b>16</b><span>Weeks (suggested)</span></div>
+      <div class="stat"><b>1</b><span>Production project</span></div>
+    </div>
+  </div>
+</section>
+
+<main class="wrap">
+
+  <div class="progress-box">
+    <div class="pbar"><i id="pfill"></i></div>
+    <div class="pmeta"><span id="ptext">0 / 95 lessons complete</span><span id="ppct">0%</span></div>
+  </div>
+
+  <!-- ================= HOW IT WORKS ================= -->
+  <h2 id="how">How this course works</h2>
+  <p>
+    This is not a tutorial series. A tutorial gives you commands; this course gives you
+    <em>models</em> — accurate mental pictures of how each piece of machinery actually behaves,
+    so that when reality diverges from the happy path you can reason your way out instead of
+    searching for a different tutorial.
+  </p>
+
+  <h3>The teaching contract</h3>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Principle</th><th>What it means in practice</th></tr></thead>
+      <tbody>
+        <tr><td><b>First principles</b></td><td>Every technology is introduced by the <em>problem</em> it was invented to solve, what people did before it, and why that stopped working. Tools are consequences, never starting points.</td></tr>
+        <tr><td><b>No undefined terms</b></td><td>Jargon is defined the first time it appears. If a lesson uses a term you have not been given, that is a bug — say so.</td></tr>
+        <tr><td><b>Depth over speed</b></td><td>We do not advance until the current lesson is understood. Every lesson ends with a quiz you answer <em>in your own words</em>.</td></tr>
+        <tr><td><b>Internals always</b></td><td>Docker is namespaces and cgroups. TLS is a specific sequence of messages. Nginx is an event loop. You will learn the mechanism, not the marketing.</td></tr>
+        <tr><td><b>Trade-offs, not verdicts</b></td><td>Every lesson states when <em>not</em> to use the thing. Anyone who tells you a technology has no downside is selling something.</td></tr>
+        <tr><td><b>One project throughout</b></td><td>Knowledge that never touched a running system is trivia. Each module upgrades the same real application.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>The shape of every lesson</h3>
+  <p>All 95 lessons follow the same 16-part structure, so you always know where you are:</p>
+  <pre><code>1  Problem Statement        7  Real Industry Example    13  Summary
+2  Historical Context       8  Diagrams                 14  Recommended Resources
+3  Previous Solution        9  Advantages               15  Exercise
+4  Why It Failed           10  Limitations              16  Quiz
+5  New Solution            11  Common Misconceptions
+6  Internal Mechanics      12  Practical Use Cases</code></pre>
+
+  <div class="callout">
+    <span class="t">Output format</span>
+    <p>
+      Every roadmap, lesson, study guide and cheat sheet exists twice: in our conversation, and as a
+      self-contained HTML file on disk under <code>D:\DevOps\course\</code>. The HTML files have no
+      CDN links, no external fonts and no network calls — they work offline, forever, and you can
+      print them. If a lesson is revised, its whole file is regenerated.
+    </p>
+  </div>
+
+  <h3>What you need before starting</h3>
+  <ul>
+    <li><b>Assumed:</b> you can build a backend and a frontend, you use Git daily, you understand functions/types/async/HTTP-at-the-API-level, and you can read a stack trace.</li>
+    <li><b>Not assumed:</b> anything about Linux administration, networking below the fetch() call, virtualization, containers, CI systems, or production operations.</li>
+    <li><b>Hardware:</b> any machine with 8&nbsp;GB+ RAM and virtualization enabled. Windows is fine (we use WSL2 where needed).</li>
+    <li><b>Spend money:</b> from Module 2 onward you need one small cloud server (~$5/month) and one domain name (~$10/year). This is the single non-negotiable cost — you cannot learn production on localhost alone.</li>
+  </ul>
+
+  <h3>How to study (the method matters)</h3>
+  <ol>
+    <li><b>Read the lesson once</b> without touching a keyboard. Build the model first.</li>
+    <li><b>Answer the quiz from memory</b>, in writing, before checking answers. Retrieval, not re-reading, is what encodes knowledge.</li>
+    <li><b>Do the exercise on the real project.</b> Break it deliberately at least once and read the error.</li>
+    <li><b>Write one paragraph in your own words</b> in <code>NOTES.md</code>: what problem this solves and what it costs. If you cannot, you have not understood it yet.</li>
+    <li><b>Revisit the connection diagram</b> at the end of each module and place the new concept on it.</li>
+  </ol>
+
+  <!-- ================= PROJECT ================= -->
+  <h2 id="project">The project: <span style="color:var(--accent)">DevBoard</span></h2>
+  <p>
+    One application, built and operated for the entire course: a collaborative task board
+    (think a minimal Trello) — chosen because it needs authentication, persistent relational
+    data, caching, sessions, real-time-ish updates, background work and file uploads. That
+    means it exercises every production concern we will study, without being so large that the
+    application code distracts from the operations.
+  </p>
+
+  <div class="grid2">
+    <div class="card">
+      <h3 style="margin-top:0">Stack (fixed for the whole course)</h3>
+      <ul style="margin-bottom:0">
+        <li><b>React</b> — SPA client, built to static assets</li>
+        <li><b>Express</b> — JSON API, Node.js</li>
+        <li><b>PostgreSQL</b> — source of truth, migrations</li>
+        <li><b>Redis</b> — sessions, cache, job queue</li>
+        <li><b>Docker + Compose</b> — packaging &amp; local orchestration</li>
+        <li><b>GitHub Actions</b> — CI and automated deployment</li>
+        <li><b>Nginx</b> — reverse proxy, TLS termination, static serving</li>
+        <li><b>Prometheus / Grafana / Loki</b> — metrics, dashboards, logs</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">How it evolves</h3>
+      <ol style="margin-bottom:0">
+        <li><span class="pill">M1</span> Repo, branching model, decision log</li>
+        <li><span class="pill">M2–3</span> A hardened Linux server you own</li>
+        <li><span class="pill">M4</span> Real domain, real HTTPS certificate</li>
+        <li><span class="pill">M5</span> Nginx reverse proxy in front of Express</li>
+        <li><span class="pill">M6</span> Reasoned hosting decision, cloud VM</li>
+        <li><span class="pill">M7</span> Production-grade container images</li>
+        <li><span class="pill">M8</span> <code>docker compose up</code> → whole stack</li>
+        <li><span class="pill">M9</span> CI gate on every pull request</li>
+        <li><span class="pill">M10</span> Push to main → zero-downtime deploy</li>
+        <li><span class="pill">M11</span> Backups, secrets, restore drill</li>
+        <li><span class="pill">M12</span> Dashboards, alerts, structured logs</li>
+        <li><span class="pill">M13–14</span> Scale-out design &amp; capstone review</li>
+      </ol>
+    </div>
+  </div>
+
+  <h3>Where we are going (the end-state architecture)</h3>
+  <pre><code>                    ┌───────────────────────────── Internet ─────────────────────────────┐
+   user ──DNS──▶ devboard.example.com ──TLS 1.3──▶ :443
+                    └────────────────────────────────┬───────────────────────────────────┘
+                                                     │
+                              ┌──────────────────────▼──────────────────────┐
+                              │  NGINX  (reverse proxy · TLS · gzip · cache)│
+                              └───────┬──────────────────────────┬──────────┘
+                          static /    │                          │  /api/*
+                    ┌───────────────▼─────┐        ┌─────────────▼─────────────┐
+                    │  React build (dist) │        │  express-api  (N replicas)│
+                    └─────────────────────┘        └───┬──────────────────┬────┘
+                                                       │                  │
+                                            ┌──────────▼──────┐   ┌───────▼───────┐
+                                            │   PostgreSQL    │   │     Redis     │
+                                            │  (+ WAL backup) │   │ sessions·cache│
+                                            └─────────────────┘   └───────────────┘
+                                                       ▲                  ▲
+   ┌──── GitHub ────┐   push    ┌──────────────┐  deploy               scrape
+   │ main branch    ├──────────▶│GitHub Actions├────────┘                  │
+   └────────────────┘           │ CI → GHCR    │            ┌──────────────┴────────────┐
+                                └──────────────┘            │ Prometheus · Grafana ·Loki│
+                                                            └───────────────────────────┘</code></pre>
+  <p><small>
+    You are not expected to understand this diagram yet. By Module 14 you will be able to draw it
+    from memory and defend every box in it — including the boxes you chose <em>not</em> to add.
+  </small></p>
+
+  <!-- ================= AT A GLANCE ================= -->
+  <h2 id="glance">The roadmap at a glance</h2>
+  <div class="tablewrap">
+    <table>
+      <thead>
+        <tr><th>#</th><th>Module</th><th>Central question</th><th>Lessons</th><th>Hours</th><th>Week</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>1</td><td><b>Foundations &amp; Why DevOps Exists</b></td><td>Why is shipping software hard, and who broke it?</td><td>5</td><td>6</td><td>1</td></tr>
+        <tr><td>2</td><td><b>Machines: Infrastructure &amp; the OS</b></td><td>What am I actually renting, and what does it do?</td><td>5</td><td>8</td><td>2</td></tr>
+        <tr><td>3</td><td><b>Linux Fundamentals</b></td><td>How do I operate and debug a server?</td><td>8</td><td>10</td><td>3</td></tr>
+        <tr><td>4</td><td><b>Networking from First Principles</b></td><td>How does a request physically reach my code?</td><td>12</td><td>14</td><td>4–5</td></tr>
+        <tr><td>5</td><td><b>Serving Traffic: Nginx &amp; Proxies</b></td><td>What should face the internet, and why not my app?</td><td>6</td><td>8</td><td>6</td></tr>
+        <tr><td>6</td><td><b>Virtualization &amp; Cloud</b></td><td>Who runs the metal, and what should I outsource?</td><td>6</td><td>7</td><td>7</td></tr>
+        <tr><td>7</td><td><b>Containers &amp; Docker</b></td><td>How do I make "works on my machine" meaningless?</td><td>9</td><td>12</td><td>8–9</td></tr>
+        <tr><td>8</td><td><b>Composing a System Locally</b></td><td>How do many services become one runnable system?</td><td>5</td><td>6</td><td>10</td></tr>
+        <tr><td>9</td><td><b>Continuous Integration</b></td><td>How do I know a change is safe before merging?</td><td>7</td><td>8</td><td>11</td></tr>
+        <tr><td>10</td><td><b>Continuous Delivery &amp; Deployment</b></td><td>How do I ship many times a day without fear?</td><td>8</td><td>10</td><td>12</td></tr>
+        <tr><td>11</td><td><b>Production Reality: Reliability &amp; Security</b></td><td>What happens when it breaks, or someone attacks it?</td><td>5</td><td>8</td><td>13</td></tr>
+        <tr><td>12</td><td><b>Monitoring, Logging &amp; Observability</b></td><td>How do I know what my system is doing right now?</td><td>7</td><td>9</td><td>14</td></tr>
+        <tr><td>13</td><td><b>Orchestration: Kubernetes, Conceptually</b></td><td>What problem does K8s solve — and do I have it?</td><td>5</td><td>6</td><td>15</td></tr>
+        <tr><td>14</td><td><b>Production Architecture Capstone</b></td><td>How do real systems scale, and what would I choose?</td><td>7</td><td>8</td><td>16</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p><small>
+    Hours are focused study + hands-on, excluding waiting for builds and the inevitable
+    rabbit holes. A comfortable part-time pace is one module per week at ~8&nbsp;h/week;
+    a serious full-time pace compresses the whole course to about 4 weeks.
+    <b>The week column is a suggestion, not a deadline</b> — Module 4 is where most engineers
+    slow down, and that is the correct place to slow down.
+  </small></p>
+
+  <!-- ================= MODULES ================= -->
+  <h2 id="modules">Modules, lessons &amp; milestones</h2>
+  <p><small>Tick lessons as you finish them — progress is saved in this browser only.</small></p>
+
+  <!-- ---------- MODULE 1 ---------- -->
+  <details class="module" open>
+    <summary>
+      <span class="mnum">M1</span>
+      <span>
+        <span class="mtitle">Foundations &amp; Why DevOps Exists</span>
+        <span class="msub">5 lessons · ~6 hours · Week 1 · <span class="pill g">start here</span></span>
+      </span>
+    </summary>
+    <div class="mbody"><div class="mgrid">
+      <div>
+        <div class="field"><div class="lbl">Lessons</div>
+          <ol class="lessons">
+            <li><label><input type="checkbox" data-id="1.1"><span class="num">1.1</span><span class="ttl">Why DevOps Exists</span></label><a class="tag ready" href="modules/01-foundations/lesson-01-why-devops-exists.html">open&nbsp;→</a></li>
+            <li><label><input type="checkbox" data-id="1.2"><span class="num">1.2</span><span class="ttl">The Software Development Lifecycle: from Waterfall to continuous flow</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="1.3"><span class="num">1.3</span><span class="ttl">Agile vs DevOps vs SRE vs Platform Engineering — who owns what</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="1.4"><span class="num">1.4</span><span class="ttl">Measuring delivery: the four key (DORA) metrics and how to compute yours</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="1.5"><span class="num">1.5</span><span class="ttl">The whole map: what really happens between <code>git push</code> and production</span></label><a class="tag ready" href="modules/01-foundations/lesson-05-the-whole-map.html">open&nbsp;→</a></li>
+          </ol>
+        </div>
+      </div>
+      <div>
+        <div class="field"><div class="lbl">Prerequisites</div>
+          <p style="margin:0">None beyond software engineering experience.</p></div>
+        <div class="field"><div class="lbl">Learning objectives</div>
+          <ul style="margin:0">
+            <li>Explain the structural conflict DevOps was invented to resolve.</li>
+            <li>Trace the history from Waterfall → Agile → DevOps and say what each fixed.</li>
+            <li>Define lead time, deployment frequency, change-failure rate and MTTR, and measure them on your own work.</li>
+            <li>Draw the end-to-end delivery path and name every stage.</li>
+          </ul></div>
+        <div class="field"><div class="lbl">Project increment</div>
+          <p style="margin:0">Create the <code>devboard</code> repository: monorepo layout, branching
+          strategy, <code>README</code>, decision log (<code>ADR-0001</code>), placeholder CI workflow.</p></div>
+        <div class="field"><div class="lbl">Milestone 1</div>
+          <p style="margin:0"><span class="pill a">◆</span> You can explain, in one diagram and without jargon,
+          everything that happens after you push — and why each stage exists.</p></div>
+      </div>
+    </div></div>
+  </details>
+
+  <!-- ---------- MODULE 2 ---------- -->
+  <details class="module">
+    <summary>
+      <span class="mnum">M2</span>
+      <span>
+        <span class="mtitle">Machines: Infrastructure &amp; Operating Systems</span>
+        <span class="msub">5 lessons · ~8 hours · Week 2</span>
+      </span>
+    </summary>
+    <div class="mbody"><div class="mgrid">
+      <div>
+        <div class="field"><div class="lbl">Lessons</div>
+          <ol class="lessons">
+            <li><label><input type="checkbox" data-id="2.1"><span class="num">2.1</span><span class="ttl">What a server actually is: CPU, RAM, disk, NIC — from bare metal to instance types</span></label><a class="tag ready" href="modules/02-machines/lesson-01-what-a-server-is.html">open&nbsp;→</a></li>
+            <li><label><input type="checkbox" data-id="2.2"><span class="num">2.2</span><span class="ttl">What an operating system does: kernel, user space, system calls, privilege rings</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="2.3"><span class="num">2.3</span><span class="ttl">Processes, threads, context switching and the scheduler</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="2.4"><span class="num">2.4</span><span class="ttl">Memory: virtual address spaces, paging, swap, and the OOM killer that ate your API</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="2.5"><span class="num">2.5</span><span class="ttl">Storage: block vs file vs object, filesystems, inodes, IOPS and durability</span><span class="tag">soon</span></label></li>
+          </ol>
+        </div>
+      </div>
+      <div>
+        <div class="field"><div class="lbl">Prerequisites</div><p style="margin:0">Module 1.</p></div>
+        <div class="field"><div class="lbl">Learning objectives</div>
+          <ul style="margin:0">
+            <li>Describe what happens between power-on and your process running.</li>
+            <li>Explain why a syscall is expensive and what it protects.</li>
+            <li>Predict how your app behaves under CPU starvation vs memory exhaustion vs disk saturation.</li>
+            <li>Read a cloud instance spec sheet and know what you are paying for.</li>
+          </ul></div>
+        <div class="field"><div class="lbl">Project increment</div>
+          <p style="margin:0">Provision your first Linux server (a $5 VPS) and inventory exactly what is running on it. No app yet.</p></div>
+        <div class="field"><div class="lbl">Milestone 2</div>
+          <p style="margin:0"><span class="pill a">◆</span> You own a live Linux machine and can account for every process, port and gigabyte on it.</p></div>
+      </div>
+    </div></div>
+  </details>
+
+  <!-- ---------- MODULE 3 ---------- -->
+  <details class="module">
+    <summary>
+      <span class="mnum">M3</span>
+      <span>
+        <span class="mtitle">Linux Fundamentals for Engineers</span>
+        <span class="msub">8 lessons · ~10 hours · Week 3</span>
+      </span>
+    </summary>
+    <div class="mbody"><div class="mgrid">
+      <div>
+        <div class="field"><div class="lbl">Lessons</div>
+          <ol class="lessons">
+            <li><label><input type="checkbox" data-id="3.1"><span class="num">3.1</span><span class="ttl">The filesystem hierarchy and "everything is a file" (including your socket)</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="3.2"><span class="num">3.2</span><span class="ttl">Users, groups, permission bits, ownership, <code>sudo</code> and least privilege</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="3.3"><span class="num">3.3</span><span class="ttl">The shell as a programming model: streams, pipes, redirection, exit codes, globbing</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="3.4"><span class="num">3.4</span><span class="ttl">The ops debugger's toolkit: <code>grep</code>, <code>sed</code>, <code>awk</code>, <code>jq</code>, <code>find</code>, <code>xargs</code></span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="3.5"><span class="num">3.5</span><span class="ttl">Packages, repositories and trust: <code>apt</code>, signing keys, and the software supply chain</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="3.6"><span class="num">3.6</span><span class="ttl">Services that survive reboots: <code>systemd</code> units, dependencies, restart policies, <code>journald</code></span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="3.7"><span class="num">3.7</span><span class="ttl">SSH properly: key cryptography, agents, <code>~/.ssh/config</code>, tunnels, hardening</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="3.8"><span class="num">3.8</span><span class="ttl">Diagnosing a sick box: <code>ps</code>, <code>top</code>, <code>ss</code>, <code>lsof</code>, <code>df</code>, <code>dmesg</code>, <code>/proc</code></span><span class="tag">soon</span></label></li>
+          </ol>
+        </div>
+      </div>
+      <div>
+        <div class="field"><div class="lbl">Prerequisites</div><p style="margin:0">Module 2 and a running server.</p></div>
+        <div class="field"><div class="lbl">Learning objectives</div>
+          <ul style="margin:0">
+            <li>Navigate and administer a Linux server without copying commands from the internet.</li>
+            <li>Run your app as an unprivileged, auto-restarting service.</li>
+            <li>Answer "why is the disk full / the CPU pinned / the port already in use" from first principles.</li>
+            <li>Secure remote access to a machine exposed to the public internet.</li>
+          </ul></div>
+        <div class="field"><div class="lbl">Project increment</div>
+          <p style="margin:0">Harden the server: dedicated <code>deploy</code> user, key-only SSH, firewall,
+          automatic security updates, DevBoard running under <code>systemd</code> (pre-Docker, on purpose).</p></div>
+        <div class="field"><div class="lbl">Milestone 3</div>
+          <p style="margin:0"><span class="pill a">◆</span> You can triage a broken Linux server under time pressure, and DevBoard survives a reboot unattended.</p></div>
+      </div>
+    </div></div>
+  </details>
+
+  <!-- ---------- MODULE 4 ---------- -->
+  <details class="module">
+    <summary>
+      <span class="mnum">M4</span>
+      <span>
+        <span class="mtitle">Networking from First Principles</span>
+        <span class="msub">12 lessons · ~14 hours · Weeks 4–5 · <span class="pill t">densest module</span></span>
+      </span>
+    </summary>
+    <div class="mbody"><div class="mgrid">
+      <div>
+        <div class="field"><div class="lbl">Lessons</div>
+          <ol class="lessons">
+            <li><label><input type="checkbox" data-id="4.1"><span class="num">4.1</span><span class="ttl">Why layering exists: OSI as a teaching model, TCP/IP as the real thing</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="4.2"><span class="num">4.2</span><span class="ttl">Addressing: MAC, ARP, IPv4/IPv6, subnets, CIDR, private ranges, NAT</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="4.3"><span class="num">4.3</span><span class="ttl">Routing: how a packet crosses the planet; default gateways, BGP in one page, <code>traceroute</code></span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="4.4"><span class="num">4.4</span><span class="ttl">TCP: the three-way handshake, sequence numbers, retransmission, flow &amp; congestion control</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="4.5"><span class="num">4.5</span><span class="ttl">Connection teardown, <code>TIME_WAIT</code>, keep-alive, and the socket exhaustion outage</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="4.6"><span class="num">4.6</span><span class="ttl">UDP and when unreliability is the feature</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="4.7"><span class="num">4.7</span><span class="ttl">Ports, sockets and listeners: what "listening on 3000" really means</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="4.8"><span class="num">4.8</span><span class="ttl">DNS: hierarchy, resolvers, record types, TTL, and why "propagation" is a myth</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="4.9"><span class="num">4.9</span><span class="ttl">HTTP/1.1 semantics: methods, status codes, headers, caching, content negotiation</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="4.10"><span class="num">4.10</span><span class="ttl">HTTP/2 and HTTP/3: head-of-line blocking, multiplexing, QUIC</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="4.11"><span class="num">4.11</span><span class="ttl">Cryptography primer: hashes, symmetric vs asymmetric keys, signatures, PKI</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="4.12"><span class="num">4.12</span><span class="ttl">TLS &amp; HTTPS in practice: handshake, certificate chains, SNI, HSTS, ACME/Let's Encrypt</span><span class="tag">soon</span></label></li>
+          </ol>
+        </div>
+      </div>
+      <div>
+        <div class="field"><div class="lbl">Prerequisites</div><p style="margin:0">Modules 2–3 (you will use <code>ss</code>, <code>dig</code>, <code>curl</code>, <code>tcpdump</code> on your server).</p></div>
+        <div class="field"><div class="lbl">Learning objectives</div>
+          <ul style="margin:0">
+            <li>Follow a request from browser keystroke to your handler, naming every hop and header.</li>
+            <li>Debug DNS, connection-refused, timeout and certificate errors deterministically.</li>
+            <li>Explain what TLS protects, what it does not, and how trust is established.</li>
+            <li>Reason about latency: RTT, handshakes, connection reuse.</li>
+          </ul></div>
+        <div class="field"><div class="lbl">Project increment</div>
+          <p style="margin:0">Buy a domain, configure DNS records, obtain and auto-renew a real
+          certificate, serve DevBoard over HTTPS. Capture your own handshake with <code>tcpdump</code>.</p></div>
+        <div class="field"><div class="lbl">Milestone 4</div>
+          <p style="margin:0"><span class="pill a">◆</span> A browser shows a padlock on <em>your</em> domain, and you can narrate every packet that produced it.</p></div>
+      </div>
+    </div></div>
+  </details>
+
+  <!-- ---------- MODULE 5 ---------- -->
+  <details class="module">
+    <summary>
+      <span class="mnum">M5</span>
+      <span>
+        <span class="mtitle">Serving Traffic: Web Servers, Reverse Proxies, Load Balancers</span>
+        <span class="msub">6 lessons · ~8 hours · Week 6</span>
+      </span>
+    </summary>
+    <div class="mbody"><div class="mgrid">
+      <div>
+        <div class="field"><div class="lbl">Lessons</div>
+          <ol class="lessons">
+            <li><label><input type="checkbox" data-id="5.1"><span class="num">5.1</span><span class="ttl">What a web server does: static vs dynamic, and why Node can serve files but shouldn't</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="5.2"><span class="num">5.2</span><span class="ttl">Forward proxy vs reverse proxy: the single most useful box in your architecture</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="5.3"><span class="num">5.3</span><span class="ttl">Nginx internals: master/worker processes, the event loop, why it beat Apache's model</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="5.4"><span class="num">5.4</span><span class="ttl">Nginx in practice: server blocks, <code>location</code> matching, upstreams, headers, gzip, caching</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="5.5"><span class="num">5.5</span><span class="ttl">Load balancing: L4 vs L7, algorithms, health checks, sticky sessions, and why sessions are the enemy</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="5.6"><span class="num">5.6</span><span class="ttl">Failure modes proxies introduce: timeouts, buffering, retry storms, 502 vs 504</span><span class="tag">soon</span></label></li>
+          </ol>
+        </div>
+      </div>
+      <div>
+        <div class="field"><div class="lbl">Prerequisites</div><p style="margin:0">Module 4 (HTTP, TLS, ports).</p></div>
+        <div class="field"><div class="lbl">Learning objectives</div>
+          <ul style="margin:0">
+            <li>Justify why application processes should never be exposed directly.</li>
+            <li>Write and reason about an Nginx configuration you did not copy.</li>
+            <li>Distinguish 502 / 504 / 499 and know which component produced them.</li>
+            <li>Explain what must be true of your app before it can sit behind a load balancer.</li>
+          </ul></div>
+        <div class="field"><div class="lbl">Project increment</div>
+          <p style="margin:0">Nginx terminates TLS, serves the React build with cache headers,
+          proxies <code>/api</code> to Express, adds security headers, gzip/brotli, and rate limits login.</p></div>
+        <div class="field"><div class="lbl">Milestone 5</div>
+          <p style="margin:0"><span class="pill a">◆</span> DevBoard is served by a correctly configured reverse proxy and scores well on an external TLS/header audit.</p></div>
+      </div>
+    </div></div>
+  </details>
+
+  <!-- ---------- MODULE 6 ---------- -->
+  <details class="module">
+    <summary>
+      <span class="mnum">M6</span>
+      <span>
+        <span class="mtitle">Virtualization &amp; Cloud Computing</span>
+        <span class="msub">6 lessons · ~7 hours · Week 7</span>
+      </span>
+    </summary>
+    <div class="mbody"><div class="mgrid">
+      <div>
+        <div class="field"><div class="lbl">Lessons</div>
+          <ol class="lessons">
+            <li><label><input type="checkbox" data-id="6.1"><span class="num">6.1</span><span class="ttl">Why virtualization exists: server sprawl, utilization economics, and isolation</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="6.2"><span class="num">6.2</span><span class="ttl">Hypervisors: type-1 vs type-2, trap-and-emulate, hardware assist (VT-x/AMD-V), paravirtualization</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="6.3"><span class="num">6.3</span><span class="ttl">VMs internally: vCPU scheduling, memory overcommit, images, snapshots, <code>cloud-init</code></span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="6.4"><span class="num">6.4</span><span class="ttl">What "the cloud" really is: regions, availability zones, the shared responsibility model</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="6.5"><span class="num">6.5</span><span class="ttl">IaaS vs PaaS vs SaaS vs FaaS: a decision framework, not a definition list</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="6.6"><span class="num">6.6</span><span class="ttl">Cloud building blocks &amp; cost engineering: compute, object storage, VPC, managed DB, IAM, egress</span><span class="tag">soon</span></label></li>
+          </ol>
+        </div>
+      </div>
+      <div>
+        <div class="field"><div class="lbl">Prerequisites</div><p style="margin:0">Modules 2 and 4.</p></div>
+        <div class="field"><div class="lbl">Learning objectives</div>
+          <ul style="margin:0">
+            <li>Explain how one physical machine safely runs many strangers' servers.</li>
+            <li>Choose between a VPS, a PaaS, managed services and serverless with reasons and numbers.</li>
+            <li>Identify what the provider guarantees and what remains entirely your problem.</li>
+            <li>Estimate the monthly bill for an architecture before building it.</li>
+          </ul></div>
+        <div class="field"><div class="lbl">Project increment</div>
+          <p style="margin:0">Write <code>ADR-0002: hosting model</code> comparing VPS + self-managed
+          Postgres vs PaaS + managed Postgres, with a real cost model; then execute your choice.</p></div>
+        <div class="field"><div class="lbl">Milestone 6</div>
+          <p style="margin:0"><span class="pill a">◆</span> You can defend your hosting decision on cost, risk and operational load — not on preference.</p></div>
+      </div>
+    </div></div>
+  </details>
+
+  <!-- ---------- MODULE 7 ---------- -->
+  <details class="module">
+    <summary>
+      <span class="mnum">M7</span>
+      <span>
+        <span class="mtitle">Containers &amp; Docker</span>
+        <span class="msub">9 lessons · ~12 hours · Weeks 8–9</span>
+      </span>
+    </summary>
+    <div class="mbody"><div class="mgrid">
+      <div>
+        <div class="field"><div class="lbl">Lessons</div>
+          <ol class="lessons">
+            <li><label><input type="checkbox" data-id="7.1"><span class="num">7.1</span><span class="ttl">"Works on my machine": dependency hell, environment drift, and the snowflake server</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="7.2"><span class="num">7.2</span><span class="ttl">What a container actually is: namespaces, cgroups, capabilities, union filesystems</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="7.3"><span class="num">7.3</span><span class="ttl">Containers vs VMs: the honest comparison, including the isolation you don't get</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="7.4"><span class="num">7.4</span><span class="ttl">Images, layers, digests and the build cache — why your builds are slow</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="7.5"><span class="num">7.5</span><span class="ttl">Writing a real Dockerfile: multi-stage builds, non-root users, <code>.dockerignore</code>, reproducibility</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="7.6"><span class="num">7.6</span><span class="ttl">Runtime &amp; lifecycle: PID 1, signal handling, graceful shutdown, healthchecks, restart policies</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="7.7"><span class="num">7.7</span><span class="ttl">Container networking: bridge, host, embedded DNS, published ports, container-to-container</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="7.8"><span class="num">7.8</span><span class="ttl">State: volumes, bind mounts, and why containers must be disposable</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="7.9"><span class="num">7.9</span><span class="ttl">Registries &amp; image supply chain: tags vs digests, GHCR, scanning, size discipline</span><span class="tag">soon</span></label></li>
+          </ol>
+        </div>
+      </div>
+      <div>
+        <div class="field"><div class="lbl">Prerequisites</div><p style="margin:0">Modules 2–4 (processes, filesystems, networking). This module is where they pay off.</p></div>
+        <div class="field"><div class="lbl">Learning objectives</div>
+          <ul style="margin:0">
+            <li>Explain containers as a Linux kernel feature, not a virtual machine.</li>
+            <li>Write small, fast, secure, cache-friendly images from scratch.</li>
+            <li>Debug a container that exits instantly, hangs on shutdown, or cannot reach a peer.</li>
+            <li>Decide what belongs in an image, in a volume, and in the environment.</li>
+          </ul></div>
+        <div class="field"><div class="lbl">Project increment</div>
+          <p style="margin:0">Production images for the React build and Express API: multi-stage,
+          non-root, &lt;150&nbsp;MB, healthchecked, signal-correct, published by digest.</p></div>
+        <div class="field"><div class="lbl">Milestone 7</div>
+          <p style="margin:0"><span class="pill a">◆</span> DevBoard runs byte-identically on your laptop and your server, from the same image.</p></div>
+      </div>
+    </div></div>
+  </details>
+
+  <!-- ---------- MODULE 8 ---------- -->
+  <details class="module">
+    <summary>
+      <span class="mnum">M8</span>
+      <span>
+        <span class="mtitle">Composing a System: Multi-Service Environments</span>
+        <span class="msub">5 lessons · ~6 hours · Week 10</span>
+      </span>
+    </summary>
+    <div class="mbody"><div class="mgrid">
+      <div>
+        <div class="field"><div class="lbl">Lessons</div>
+          <ol class="lessons">
+            <li><label><input type="checkbox" data-id="8.1"><span class="num">8.1</span><span class="ttl">Docker Compose: the declarative model, service graphs, dependency &amp; readiness ordering</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="8.2"><span class="num">8.2</span><span class="ttl">Configuration &amp; secrets: the Twelve-Factor App, env vars, overrides, <code>.env</code> hygiene</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="8.3"><span class="num">8.3</span><span class="ttl">Running stateful services: Postgres in a container, initialization, persistence, backups</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="8.4"><span class="num">8.4</span><span class="ttl">What Redis is for: caching strategies, invalidation, sessions, rate limits, queues</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="8.5"><span class="num">8.5</span><span class="ttl">Schema migrations as a deployment concern: ordering, locks, and irreversible changes</span><span class="tag">soon</span></label></li>
+          </ol>
+        </div>
+      </div>
+      <div>
+        <div class="field"><div class="lbl">Prerequisites</div><p style="margin:0">Module 7.</p></div>
+        <div class="field"><div class="lbl">Learning objectives</div>
+          <ul style="margin:0">
+            <li>Describe a whole system declaratively and start it with one command.</li>
+            <li>Separate build-time from run-time configuration, and code from secrets.</li>
+            <li>Decide when a database belongs in a container and when it absolutely does not.</li>
+            <li>Use a cache without introducing stale-data bugs.</li>
+          </ul></div>
+        <div class="field"><div class="lbl">Project increment</div>
+          <p style="margin:0"><code>docker compose up</code> brings up React + Express + Postgres +
+          Redis + Nginx with seeded data, hot reload in dev, and a separate production compose file.</p></div>
+        <div class="field"><div class="lbl">Milestone 8</div>
+          <p style="margin:0"><span class="pill a">◆</span> A new contributor clones the repo and is running the full stack in under 10 minutes.</p></div>
+      </div>
+    </div></div>
+  </details>
+
+  <!-- ---------- MODULE 9 ---------- -->
+  <details class="module">
+    <summary>
+      <span class="mnum">M9</span>
+      <span>
+        <span class="mtitle">Continuous Integration</span>
+        <span class="msub">7 lessons · ~8 hours · Week 11</span>
+      </span>
+    </summary>
+    <div class="mbody"><div class="mgrid">
+      <div>
+        <div class="field"><div class="lbl">Lessons</div>
+          <ol class="lessons">
+            <li><label><input type="checkbox" data-id="9.1"><span class="num">9.1</span><span class="ttl">Integration hell: what CI is actually for (it is not "running tests")</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="9.2"><span class="num">9.2</span><span class="ttl">Branching models: trunk-based development, short-lived branches, feature flags, merge queues</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="9.3"><span class="num">9.3</span><span class="ttl">Anatomy of a pipeline: stages, fail-fast ordering, caching, artifacts, matrices</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="9.4"><span class="num">9.4</span><span class="ttl">GitHub Actions internals: events, workflows, jobs, steps, runners, contexts, expressions</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="9.5"><span class="num">9.5</span><span class="ttl">A real pipeline: lint → typecheck → unit → integration → build → scan → push image</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="9.6"><span class="num">9.6</span><span class="ttl">Testing strategy for delivery: the pyramid, service containers, flakiness, quarantine</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="9.7"><span class="num">9.7</span><span class="ttl">CI security: OIDC instead of long-lived keys, pinned actions, least privilege, SBOMs</span><span class="tag">soon</span></label></li>
+          </ol>
+        </div>
+      </div>
+      <div>
+        <div class="field"><div class="lbl">Prerequisites</div><p style="margin:0">Modules 7–8 and a test suite you are not proud of (that's fine).</p></div>
+        <div class="field"><div class="lbl">Learning objectives</div>
+          <ul style="margin:0">
+            <li>Explain why long-lived branches and CI are mathematically opposed.</li>
+            <li>Build a pipeline that fails in under 5 minutes when it should fail.</li>
+            <li>Produce one immutable artifact per commit and never rebuild it.</li>
+            <li>Give CI exactly the permissions it needs and no more.</li>
+          </ul></div>
+        <div class="field"><div class="lbl">Project increment</div>
+          <p style="margin:0">Every pull request runs the full gate; every merge to <code>main</code>
+          publishes a digest-pinned image to GHCR with provenance metadata.</p></div>
+        <div class="field"><div class="lbl">Milestone 9</div>
+          <p style="margin:0"><span class="pill a">◆</span> Nothing reaches <code>main</code> without machine-checked proof that it builds, passes and is scanned.</p></div>
+      </div>
+    </div></div>
+  </details>
+
+  <!-- ---------- MODULE 10 ---------- -->
+  <details class="module">
+    <summary>
+      <span class="mnum">M10</span>
+      <span>
+        <span class="mtitle">Continuous Delivery &amp; Deployment</span>
+        <span class="msub">8 lessons · ~10 hours · Week 12 · <span class="pill p">the payoff module</span></span>
+      </span>
+    </summary>
+    <div class="mbody"><div class="mgrid">
+      <div>
+        <div class="field"><div class="lbl">Lessons</div>
+          <ol class="lessons">
+            <li><label><input type="checkbox" data-id="10.1"><span class="num">10.1</span><span class="ttl">CI vs continuous delivery vs continuous deployment — and the deployment pipeline concept</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="10.2"><span class="num">10.2</span><span class="ttl">Environments &amp; promotion: dev, preview, staging, prod; config per environment</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="10.3"><span class="num">10.3</span><span class="ttl">Deployment strategies: recreate, rolling, blue/green, canary, and feature flags as deploy-decoupling</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="10.4"><span class="num">10.4</span><span class="ttl">Zero downtime mechanics: readiness, connection draining, graceful shutdown, in-flight requests</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="10.5"><span class="num">10.5</span><span class="ttl">Database changes without downtime: expand/contract, backward-compatible schemas, backfills</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="10.6"><span class="num">10.6</span><span class="ttl">Rollback, roll-forward and the migration trap; release vs deploy</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="10.7"><span class="num">10.7</span><span class="ttl">Deploying with GitHub Actions: push vs pull models, environments, approvals, deploy keys</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="10.8"><span class="num">10.8</span><span class="ttl">Infrastructure as Code in one lesson: why hand-made servers rot; Terraform &amp; Ansible in context</span><span class="tag">soon</span></label></li>
+          </ol>
+        </div>
+      </div>
+      <div>
+        <div class="field"><div class="lbl">Prerequisites</div><p style="margin:0">Modules 5, 8, 9.</p></div>
+        <div class="field"><div class="lbl">Learning objectives</div>
+          <ul style="margin:0">
+            <li>Design a deployment that never serves an error during a release.</li>
+            <li>Choose a deployment strategy from traffic, risk and infrastructure constraints.</li>
+            <li>Ship a schema change across three deploys instead of one big-bang.</li>
+            <li>Recover from a bad deploy in minutes, on purpose, having practised it.</li>
+          </ul></div>
+        <div class="field"><div class="lbl">Project increment</div>
+          <p style="margin:0">Merging to <code>main</code> automatically deploys DevBoard to production
+          with zero downtime, runs migrations safely, verifies health, and rolls back on failure.</p></div>
+        <div class="field"><div class="lbl">Milestone 10</div>
+          <p style="margin:0"><span class="pill a">◆</span> You deploy on a Friday afternoon without anxiety, several times, and can prove no request failed.</p></div>
+      </div>
+    </div></div>
+  </details>
+
+  <!-- ---------- MODULE 11 ---------- -->
+  <details class="module">
+    <summary>
+      <span class="mnum">M11</span>
+      <span>
+        <span class="mtitle">Production Reality: Reliability &amp; Security</span>
+        <span class="msub">5 lessons · ~8 hours · Week 13</span>
+      </span>
+    </summary>
+    <div class="mbody"><div class="mgrid">
+      <div>
+        <div class="field"><div class="lbl">Lessons</div>
+          <ol class="lessons">
+            <li><label><input type="checkbox" data-id="11.1"><span class="num">11.1</span><span class="ttl">Backups &amp; restores: RPO/RTO, physical vs logical, PITR, and the drill that makes it real</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="11.2"><span class="num">11.2</span><span class="ttl">Secrets beyond <code>.env</code>: rotation, scoping, encrypted-at-rest, secret managers</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="11.3"><span class="num">11.3</span><span class="ttl">Attack surface: firewalls, SSH hardening, rate limiting, DDoS basics, the OWASP short list</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="11.4"><span class="num">11.4</span><span class="ttl">Capacity &amp; degradation: resource limits, connection pools, backpressure, circuit breakers, load shedding</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="11.5"><span class="num">11.5</span><span class="ttl">Operating like an adult: SLIs, SLOs, error budgets, incident command, blameless postmortems, runbooks</span><span class="tag">soon</span></label></li>
+          </ol>
+        </div>
+      </div>
+      <div>
+        <div class="field"><div class="lbl">Prerequisites</div><p style="margin:0">Module 10 (you need something worth protecting).</p></div>
+        <div class="field"><div class="lbl">Learning objectives</div>
+          <ul style="margin:0">
+            <li>State your own RPO/RTO and prove you meet them.</li>
+            <li>Keep credentials out of Git, images, logs and CI output.</li>
+            <li>Make your service fail partially instead of totally under overload.</li>
+            <li>Run an incident and write a postmortem that produces change, not blame.</li>
+          </ul></div>
+        <div class="field"><div class="lbl">Project increment</div>
+          <p style="margin:0">Automated encrypted nightly Postgres backups to object storage,
+          a scripted restore into a throwaway environment, and a written incident runbook.</p></div>
+        <div class="field"><div class="lbl">Milestone 11</div>
+          <p style="margin:0"><span class="pill a">◆</span> You delete your production server on purpose and are fully back within 30 minutes.</p></div>
+      </div>
+    </div></div>
+  </details>
+
+  <!-- ---------- MODULE 12 ---------- -->
+  <details class="module">
+    <summary>
+      <span class="mnum">M12</span>
+      <span>
+        <span class="mtitle">Monitoring, Logging &amp; Observability</span>
+        <span class="msub">7 lessons · ~9 hours · Week 14</span>
+      </span>
+    </summary>
+    <div class="mbody"><div class="mgrid">
+      <div>
+        <div class="field"><div class="lbl">Lessons</div>
+          <ol class="lessons">
+            <li><label><input type="checkbox" data-id="12.1"><span class="num">12.1</span><span class="ttl">Monitoring vs observability: known unknowns, unknown unknowns, and cardinality</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="12.2"><span class="num">12.2</span><span class="ttl">Logs done right: structured JSON, levels, correlation IDs, sampling, retention, cost</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="12.3"><span class="num">12.3</span><span class="ttl">Metrics: counters, gauges, histograms; pull vs push; the Prometheus data model and PromQL</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="12.4"><span class="num">12.4</span><span class="ttl">Instrumenting your own app: the four golden signals, RED and USE methods</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="12.5"><span class="num">12.5</span><span class="ttl">Dashboards people actually use — and percentiles, because averages lie</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="12.6"><span class="num">12.6</span><span class="ttl">Distributed tracing &amp; OpenTelemetry: spans, context propagation, sampling</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="12.7"><span class="num">12.7</span><span class="ttl">Alerting that respects humans: symptom-based alerts, thresholds, burn rates, on-call fatigue</span><span class="tag">soon</span></label></li>
+          </ol>
+        </div>
+      </div>
+      <div>
+        <div class="field"><div class="lbl">Prerequisites</div><p style="margin:0">Modules 8, 10, 11.</p></div>
+        <div class="field"><div class="lbl">Learning objectives</div>
+          <ul style="margin:0">
+            <li>Instrument an Express app so that failures are diagnosable without reproducing them.</li>
+            <li>Read a p99 latency graph and explain what it does and does not tell you.</li>
+            <li>Write an alert that would have caught your last outage — and no others.</li>
+            <li>Choose between self-hosted and SaaS observability with a cost model.</li>
+          </ul></div>
+        <div class="field"><div class="lbl">Project increment</div>
+          <p style="margin:0">Prometheus + Grafana + Loki beside DevBoard: golden-signal dashboard,
+          structured request logs with correlation IDs, one high-quality alert wired to a real channel.</p></div>
+        <div class="field"><div class="lbl">Milestone 12</div>
+          <p style="margin:0"><span class="pill a">◆</span> You learn that DevBoard is degraded from your own alerting, before any user tells you.</p></div>
+      </div>
+    </div></div>
+  </details>
+
+  <!-- ---------- MODULE 13 ---------- -->
+  <details class="module">
+    <summary>
+      <span class="mnum">M13</span>
+      <span>
+        <span class="mtitle">Orchestration: Kubernetes, Conceptually</span>
+        <span class="msub">5 lessons · ~6 hours · Week 15 · <span class="pill">no cluster required</span></span>
+      </span>
+    </summary>
+    <div class="mbody"><div class="mgrid">
+      <div>
+        <div class="field"><div class="lbl">Lessons</div>
+          <ol class="lessons">
+            <li><label><input type="checkbox" data-id="13.1"><span class="num">13.1</span><span class="ttl">The problem orchestration solves: scheduling, self-healing, and hundreds of containers</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="13.2"><span class="num">13.2</span><span class="ttl">The control loop: declarative desired state, controllers, reconciliation — the one big idea</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="13.3"><span class="num">13.3</span><span class="ttl">The object model: pods, deployments, services, ingress, configmaps, secrets, volumes</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="13.4"><span class="num">13.4</span><span class="ttl">Mapping DevBoard's Compose file onto Kubernetes objects, line by line</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="13.5"><span class="num">13.5</span><span class="ttl">When <em>not</em> to use Kubernetes: complexity budgets, alternatives, honest thresholds</span><span class="tag">soon</span></label></li>
+          </ol>
+        </div>
+      </div>
+      <div>
+        <div class="field"><div class="lbl">Prerequisites</div><p style="margin:0">Modules 7–10.</p></div>
+        <div class="field"><div class="lbl">Learning objectives</div>
+          <ul style="margin:0">
+            <li>Explain Kubernetes as a reconciliation engine, not a container runner.</li>
+            <li>Translate any Compose service into the equivalent K8s objects.</li>
+            <li>State the specific conditions that would justify adopting it for your project.</li>
+            <li>Participate credibly in a Kubernetes design discussion.</li>
+          </ul></div>
+        <div class="field"><div class="lbl">Project increment</div>
+          <p style="margin:0">A written migration plan (<code>ADR-0003</code>) for DevBoard → Kubernetes,
+          including the decision <em>not</em> to migrate yet, with the trigger conditions that would change it.</p></div>
+        <div class="field"><div class="lbl">Milestone 13</div>
+          <p style="margin:0"><span class="pill a">◆</span> You can say "we don't need Kubernetes yet" and give three concrete reasons plus the threshold that would flip your answer.</p></div>
+      </div>
+    </div></div>
+  </details>
+
+  <!-- ---------- MODULE 14 ---------- -->
+  <details class="module">
+    <summary>
+      <span class="mnum">M14</span>
+      <span>
+        <span class="mtitle">Production Architecture — Capstone</span>
+        <span class="msub">7 lessons · ~8 hours · Week 16</span>
+      </span>
+    </summary>
+    <div class="mbody"><div class="mgrid">
+      <div>
+        <div class="field"><div class="lbl">Lessons</div>
+          <ol class="lessons">
+            <li><label><input type="checkbox" data-id="14.1"><span class="num">14.1</span><span class="ttl">How to read and draw a production architecture (C4-lite, and what every arrow costs)</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="14.2"><span class="num">14.2</span><span class="ttl">Scaling: vertical, horizontal, and the stateless rule that makes it possible</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="14.3"><span class="num">14.3</span><span class="ttl">Caching layers &amp; CDNs: where to cache, what to invalidate, and cache stampedes</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="14.4"><span class="num">14.4</span><span class="ttl">Asynchronous work: queues, workers, idempotency, retries, dead-letter queues</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="14.5"><span class="num">14.5</span><span class="ttl">Database scaling: connection pooling, read replicas, indexing reality, when to shard (later than you think)</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="14.6"><span class="num">14.6</span><span class="ttl">Failure domains &amp; realistic high availability for small teams; multi-AZ vs multi-region</span><span class="tag">soon</span></label></li>
+            <li><label><input type="checkbox" data-id="14.7"><span class="num">14.7</span><span class="ttl">Final synthesis: the complete path from commit to production, defended end to end</span><span class="tag">soon</span></label></li>
+          </ol>
+        </div>
+      </div>
+      <div>
+        <div class="field"><div class="lbl">Prerequisites</div><p style="margin:0">All previous modules.</p></div>
+        <div class="field"><div class="lbl">Learning objectives</div>
+          <ul style="margin:0">
+            <li>Design an architecture for a stated load, budget and reliability target.</li>
+            <li>Identify the bottleneck in a system before it is reached.</li>
+            <li>Justify every component you added — and every one you refused.</li>
+            <li>Hand your system to another engineer using only your documentation.</li>
+          </ul></div>
+        <div class="field"><div class="lbl">Capstone deliverable</div>
+          <p style="margin:0"><b>DevBoard v1.0:</b> live on your domain over HTTPS, containerized,
+          CI-gated, auto-deployed with zero downtime and rollback, backed up with a tested restore,
+          monitored with dashboards and alerts, documented with architecture diagram, ADR log and runbook.</p></div>
+        <div class="field"><div class="lbl">Milestone 14 · final</div>
+          <p style="margin:0"><span class="pill g">★</span> You can build, ship, operate and defend a production system alone — and explain every layer beneath it.</p></div>
+      </div>
+    </div></div>
+  </details>
+
+  <!-- ================= MILESTONES ================= -->
+  <h2 id="milestones">Milestone timeline</h2>
+  <p>Milestones are demonstrable capabilities, not finished readings. If you cannot demonstrate one, the module is not done — regardless of how many lessons are ticked.</p>
+  <ul class="timeline">
+    <li><b>M1 · The map</b><span>Explain the whole delivery path in one diagram, with the reason each stage exists.</span></li>
+    <li><b>M2 · A machine of your own</b><span>A live Linux server whose every process, port and gigabyte you can account for.</span></li>
+    <li><b>M3 · Operator</b><span>Triage a broken server under pressure; DevBoard restarts itself after a reboot.</span></li>
+    <li><b>M4 · The padlock</b><span>Your domain, your certificate, and a byte-level account of the handshake.</span></li>
+    <li><b>M5 · The front door</b><span>A reverse proxy you configured and understand, passing an external security audit.</span></li>
+    <li><b>M6 · Informed buyer</b><span>A hosting decision defended with cost, risk and operational-load numbers.</span></li>
+    <li><b>M7 · Reproducible</b><span>Identical behaviour on laptop and server, from one image.</span></li>
+    <li><b>M8 · One command</b><span>A newcomer runs the entire stack in under 10 minutes.</span></li>
+    <li><b>M9 · The gate</b><span>Nothing merges without machine-checked proof.</span></li>
+    <li><b>M10 · Fearless deploys</b><span>Multiple zero-downtime production deploys per day, with rollback.</span></li>
+    <li><b>M11 · Survivable</b><span>Destroy production deliberately; be back in 30 minutes.</span></li>
+    <li><b>M12 · Eyes open</b><span>Your alerts tell you about degradation before your users do.</span></li>
+    <li><b>M13 · Architect's judgement</b><span>Say "not Kubernetes, yet" with reasons and thresholds.</span></li>
+    <li class="final"><b>M14 · Independent engineer</b><span>Build, deploy, operate, document and defend a production system by yourself.</span></li>
+  </ul>
+
+  <div class="callout good">
+    <span class="t">The point of all this</span>
+    <p>
+      At the end you are not a DevOps engineer, and that was never the goal. You are a software
+      engineer who cannot be blocked: you can take an idea to a URL that real people use, keep it
+      up, know when it is unhealthy, fix it, and explain every layer between your code and the
+      user's screen. That independence is the deliverable.
+    </p>
+  </div>
+
+  <!-- ================= WHAT'S NOT COVERED ================= -->
+  <h2>Deliberately out of scope</h2>
+  <p>A course that covers everything teaches nothing. These are excluded on purpose, and each lesson will tell you when you are near the boundary:</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Excluded</th><th>Why</th><th>Where you'd go next</th></tr></thead>
+      <tbody>
+        <tr><td>Deep Kubernetes operations (CRDs, operators, service mesh, cluster upgrades)</td><td>A specialty for people who run platforms; conceptual understanding is enough to make decisions and hold conversations</td><td>CKA/CKAD path, "Kubernetes Up &amp; Running"</td></tr>
+        <tr><td>Multi-cloud, hybrid networking, enterprise IAM at scale</td><td>Organizational problems, not engineering ones, for a team of your size</td><td>Cloud provider architecture certifications</td></tr>
+        <tr><td>Full Terraform/Ansible mastery</td><td>One lesson gives you the model and when to reach for it; mastery is a separate course</td><td>"Terraform Up &amp; Running"</td></tr>
+        <tr><td>Advanced SRE (capacity modelling, chaos engineering programmes, complex SLO math)</td><td>Requires scale you do not have yet; you get the working subset in M11</td><td>Google SRE Workbook</td></tr>
+        <tr><td>Data engineering, ML ops, event-streaming platforms</td><td>Different problem domains entirely</td><td>Dedicated tracks</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <hr>
+
+  <!-- ================= PAGER ================= -->
+  <nav class="pager" aria-label="Lesson navigation">
+    <span class="disabled"><em>Previous</em>— you are at the start —</span>
+    <a class="next" href="modules/01-foundations/lesson-01-why-devops-exists.html">
+      <em>Next lesson</em>1.1 · Why DevOps Exists →</a>
+  </nav>
+</main>
+
+<footer class="foot"><div class="wrap">
+  <b>From Commit to Production</b> — roadmap v1.0 · generated for offline use ·
+  no external assets, no network required.<br>
+  <small>Regenerated in full whenever the roadmap changes. Lesson files live in
+  <code>course/modules/&lt;module&gt;/</code>.</small>
+</div></footer>
+
+<script>
+(function(){
+  /* ---------- theme ---------- */
+  var KEY_T = 'ftp.theme', root = document.documentElement;
+  var saved = null;
+  try { saved = localStorage.getItem(KEY_T); } catch(e){}
+  if (saved) root.setAttribute('data-theme', saved);
+  document.getElementById('theme').addEventListener('click', function(){
+    var cur = root.getAttribute('data-theme');
+    if (!cur) {
+      cur = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    }
+    var next = cur === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem(KEY_T, next); } catch(e){}
+  });
+
+  /* ---------- progress ---------- */
+  var KEY_P = 'ftp.progress';
+  var boxes = Array.prototype.slice.call(document.querySelectorAll('ol.lessons input[type=checkbox]'));
+  var state = {};
+  try { state = JSON.parse(localStorage.getItem(KEY_P) || '{}'); } catch(e){ state = {}; }
+
+  var fill = document.getElementById('pfill'),
+      text = document.getElementById('ptext'),
+      pct  = document.getElementById('ppct');
+
+  function render(){
+    var done = boxes.filter(function(b){ return b.checked; }).length;
+    var p = boxes.length ? Math.round(done / boxes.length * 100) : 0;
+    fill.style.width = p + '%';
+    text.textContent = done + ' / ' + boxes.length + ' lessons complete';
+    pct.textContent = p + '%';
+  }
+  boxes.forEach(function(b){
+    var id = b.getAttribute('data-id');
+    if (state[id]) b.checked = true;
+    b.addEventListener('change', function(){
+      state[id] = b.checked;
+      try { localStorage.setItem(KEY_P, JSON.stringify(state)); } catch(e){}
+      render();
+    });
+  });
+  render();
+
+  /* keep <summary> clicks from toggling when a checkbox/link is hit */
+  document.querySelectorAll('ol.lessons').forEach(function(ol){
+    ol.addEventListener('click', function(e){ e.stopPropagation(); });
+  });
+})();
+</script>

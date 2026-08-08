@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 1.2 · The Software Development Lifecycle — From Commit to Production</title>
+<style>
+:root{
+  color-scheme: dark light;
+  --font-sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", Consolas, "SFMono-Regular", Menlo, monospace;
+  --bg:#0a0e17; --surface:#131b2b; --surface-2:#19233a; --border:#243049; --border-strong:#37456a;
+  --text:#e8eefb; --text-dim:#a7b4cd; --text-faint:#78869f;
+  --accent:#6ea8ff; --accent-soft:rgba(110,168,255,.14);
+  --amber:#f2b754; --amber-soft:rgba(242,183,84,.13);
+  --radius:14px; --radius-sm:8px; --maxw:820px;
+}
+:root[data-theme="light"]{
+  color-scheme: light;
+  --bg:#f7f9fc; --surface:#ffffff; --surface-2:#f2f5fa; --border:#dde3ee; --border-strong:#c2ccdd;
+  --text:#131a26; --text-dim:#4b586e; --text-faint:#75839a;
+  --accent:#1f5fd0; --accent-soft:rgba(31,95,208,.09);
+  --amber:#9a6a06; --amber-soft:rgba(154,106,6,.10);
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    color-scheme: light;
+    --bg:#f7f9fc; --surface:#ffffff; --surface-2:#f2f5fa; --border:#dde3ee; --border-strong:#c2ccdd;
+    --text:#131a26; --text-dim:#4b586e; --text-faint:#75839a;
+    --accent:#1f5fd0; --accent-soft:rgba(31,95,208,.09);
+    --amber:#9a6a06; --amber-soft:rgba(154,106,6,.10);
+  }
+}
+*{box-sizing:border-box}
+body{margin:0; background:var(--bg); color:var(--text); font-family:var(--font-sans);
+  font-size:16.5px; line-height:1.7; -webkit-font-smoothing:antialiased}
+header.bar{position:sticky; top:0; z-index:60; background:color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter:blur(10px); border-bottom:1px solid var(--border)}
+.bar-in{max-width:var(--maxw); margin:0 auto; padding:10px 22px; display:flex; align-items:center; gap:14px}
+.brand{font-weight:700; font-size:.92rem; white-space:nowrap}
+.brand a{color:var(--text); text-decoration:none}
+.brand span{color:var(--accent)}
+.crumb{font-size:.82rem; color:var(--text-faint); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.right{margin-left:auto}
+button.ghost{font:inherit; font-size:.8rem; cursor:pointer; color:var(--text-dim);
+  background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:5px 11px}
+button.ghost:hover{border-color:var(--border-strong); color:var(--text)}
+.wrap{max-width:var(--maxw); margin:0 auto; padding:0 22px}
+.kicker{font-family:var(--font-mono); font-size:.74rem; letter-spacing:.16em; text-transform:uppercase;
+  color:var(--accent); margin:64px 0 12px}
+h1{font-size:clamp(1.8rem,4vw,2.5rem); line-height:1.2; letter-spacing:-.015em; margin:0 0 .4em}
+.subtitle{font-size:1.08rem; color:var(--text-dim); max-width:60ch}
+.card{background:var(--surface); border:1px solid var(--border); border-left:3px solid var(--amber);
+  border-radius:0 var(--radius) var(--radius) 0; padding:20px 24px; margin:34px 0}
+.card .t{font-weight:700; font-size:.76rem; letter-spacing:.1em; text-transform:uppercase;
+  color:var(--amber); display:block; margin-bottom:8px}
+.card p{margin:0 0 .8em} .card p:last-child{margin:0}
+a.back{display:inline-block; margin:20px 0 80px; color:var(--accent); text-decoration:none; font-size:.95rem}
+a.back:hover{text-decoration:underline}
+ul{color:var(--text-dim)} code{font-family:var(--font-mono); font-size:.87em; background:var(--surface-2);
+  border:1px solid var(--border); border-radius:5px; padding:.1em .38em}
+</style>
+</head>
+<body>
+<header class="bar">
+  <div class="bar-in">
+    <div class="brand"><a href="../../index.html">Commit&nbsp;<span>→</span>&nbsp;Production</a></div>
+    <div class="crumb">/ Module&nbsp;1 · Foundations / Lesson&nbsp;1.2</div>
+    <div class="right"><button class="ghost" id="theme">◐ Theme</button></div>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="kicker">Module 1 · Lesson 1.2</div>
+  <h1>The Software Development Lifecycle: from Waterfall to continuous flow</h1>
+  <p class="subtitle">How software went from being built in sequential phases to flowing continuously — and why "phases" quietly became the bottleneck.</p>
+
+  <div class="card">
+    <span class="t">Placeholder · not yet written</span>
+    <p>This lesson has not been generated yet. It is scheduled after Lesson&nbsp;1.5, which is being
+    written first. This file exists so the course structure and links stay intact.</p>
+    <p>When written, it will cover: the phased (Waterfall) lifecycle and where it came from · the
+    handoffs between phases and why each became a queue · how Agile and then continuous flow dissolve
+    the phase boundaries · and how the SDLC maps onto the delivery pipeline you meet in Lesson&nbsp;1.5.</p>
+  </div>
+
+  <a class="back" href="../../index.html">← Back to the course roadmap</a>
+</div>
+
+<script>
+(function(){
+  var root = document.documentElement, KEY='ftp.theme', saved=null;
+  try { saved = localStorage.getItem(KEY); } catch(e){}
+  if (saved) root.setAttribute('data-theme', saved);
+  document.getElementById('theme').addEventListener('click', function(){
+    var cur = root.getAttribute('data-theme');
+    if (!cur) cur = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    var next = cur === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem(KEY, next); } catch(e){}
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 1.1 · Why DevOps Exists — From Commit to Production</title>
+<style>
+/* ============================================================
+   DESIGN TOKENS  (same system as the roadmap)
+   ============================================================ */
+:root{
+  color-scheme: dark light;
+  --font-sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", Consolas, "SFMono-Regular", Menlo, monospace;
+
+  --bg:#0a0e17; --bg-alt:#0e1421; --surface:#131b2b; --surface-2:#19233a;
+  --border:#243049; --border-strong:#37456a;
+  --text:#e8eefb; --text-dim:#a7b4cd; --text-faint:#78869f;
+
+  --accent:#6ea8ff;  --accent-soft:rgba(110,168,255,.14);
+  --green:#4fd39c;   --green-soft:rgba(79,211,156,.13);
+  --amber:#f2b754;   --amber-soft:rgba(242,183,84,.13);
+  --red:#ff7f76;     --red-soft:rgba(255,127,118,.13);
+  --purple:#b28cff;  --purple-soft:rgba(178,140,255,.13);
+  --teal:#4fd0d9;    --teal-soft:rgba(79,208,217,.13);
+
+  --radius:14px; --radius-sm:8px;
+  --shadow:0 1px 2px rgba(0,0,0,.45), 0 14px 34px -18px rgba(0,0,0,.75);
+  --maxw:1220px; --readw:840px;
+}
+:root[data-theme="light"]{
+  color-scheme: light;
+  --bg:#f7f9fc; --bg-alt:#eef2f8; --surface:#ffffff; --surface-2:#f2f5fa;
+  --border:#dde3ee; --border-strong:#c2ccdd;
+  --text:#131a26; --text-dim:#4b586e; --text-faint:#75839a;
+  --accent:#1f5fd0; --accent-soft:rgba(31,95,208,.09);
+  --green:#0f8a5f;  --green-soft:rgba(15,138,95,.10);
+  --amber:#9a6a06;  --amber-soft:rgba(154,106,6,.10);
+  --red:#c3352b;    --red-soft:rgba(195,53,43,.09);
+  --purple:#6d3ecb; --purple-soft:rgba(109,62,203,.09);
+  --teal:#07767e;   --teal-soft:rgba(7,118,126,.10);
+  --shadow:0 1px 2px rgba(18,28,45,.06), 0 12px 28px -18px rgba(18,28,45,.25);
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    color-scheme: light;
+    --bg:#f7f9fc; --bg-alt:#eef2f8; --surface:#ffffff; --surface-2:#f2f5fa;
+    --border:#dde3ee; --border-strong:#c2ccdd;
+    --text:#131a26; --text-dim:#4b586e; --text-faint:#75839a;
+    --accent:#1f5fd0; --accent-soft:rgba(31,95,208,.09);
+    --green:#0f8a5f;  --green-soft:rgba(15,138,95,.10);
+    --amber:#9a6a06;  --amber-soft:rgba(154,106,6,.10);
+    --red:#c3352b;    --red-soft:rgba(195,53,43,.09);
+    --purple:#6d3ecb; --purple-soft:rgba(109,62,203,.09);
+    --teal:#07767e;   --teal-soft:rgba(7,118,126,.10);
+    --shadow:0 1px 2px rgba(18,28,45,.06), 0 12px 28px -18px rgba(18,28,45,.25);
+  }
+}
+
+/* ============================================================ BASE */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth; scroll-padding-top:80px}
+body{margin:0; background:var(--bg); color:var(--text);
+  font-family:var(--font-sans); font-size:16.5px; line-height:1.72; -webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{line-height:1.28; margin:0 0 .5em; letter-spacing:-.015em; font-weight:680}
+h1{font-size:clamp(1.9rem,4vw,2.7rem)}
+h2{font-size:clamp(1.35rem,2.4vw,1.72rem); margin-top:2.6em; padding-top:.2em}
+h3{font-size:1.1rem; margin-top:2em; color:var(--text)}
+h4{font-size:.98rem; margin-top:1.5em; color:var(--text-dim)}
+p{margin:0 0 1.05em}
+a{color:var(--accent); text-decoration:none}
+a:hover{text-decoration:underline}
+strong{font-weight:660}
+em.term{font-style:normal; font-weight:680; color:var(--text)}
+code{font-family:var(--font-mono); font-size:.87em; background:var(--surface-2);
+  border:1px solid var(--border); border-radius:5px; padding:.1em .38em}
+ul,ol{padding-left:1.3em; margin:0 0 1.05em}
+li{margin:.35em 0}
+blockquote{margin:1.5em 0; padding:2px 0 2px 18px; border-left:3px solid var(--border-strong);
+  color:var(--text-dim); font-style:italic}
+blockquote footer{font-style:normal; font-size:.85rem; color:var(--text-faint); margin-top:.4em}
+hr{border:0; border-top:1px solid var(--border); margin:2.6rem 0}
+small{color:var(--text-faint)}
+sup a{font-size:.7em; padding:0 1px}
+
+/* ============================================================ BAR */
+header.bar{position:sticky; top:0; z-index:60;
+  background:color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter:blur(10px); border-bottom:1px solid var(--border)}
+.bar-in{padding:10px 22px; display:flex; align-items:center; gap:14px}
+.brand{font-weight:700; font-size:.92rem; white-space:nowrap}
+.brand a{color:var(--text)}
+.brand span{color:var(--accent)}
+.crumb{font-size:.82rem; color:var(--text-faint); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.bar .right{margin-left:auto; display:flex; gap:8px; align-items:center}
+button.ghost{font:inherit; font-size:.8rem; cursor:pointer; color:var(--text-dim);
+  background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:5px 11px}
+button.ghost:hover{border-color:var(--border-strong); color:var(--text)}
+#readbar{position:fixed; top:0; left:0; height:2px; background:var(--accent); z-index:70; width:0}
+
+/* ============================================================ LAYOUT */
+.shell{padding:0 22px;
+  display:grid; grid-template-columns:1fr; gap:36px}
+@media(min-width:1040px){
+  .shell{grid-template-columns:250px minmax(0,1fr)}
+  aside.toc{display:block}
+}
+aside.toc{display:none}
+aside.toc .inner{position:sticky; top:74px; max-height:calc(100vh - 96px); overflow:auto;
+  padding:22px 0 40px; font-size:.86rem}
+aside.toc .lbl{font-size:.7rem; letter-spacing:.12em; text-transform:uppercase;
+  color:var(--text-faint); font-weight:700; margin:0 0 10px}
+aside.toc ol{list-style:none; padding:0; margin:0; counter-reset:t}
+aside.toc li{margin:0; counter-increment:t}
+aside.toc a{display:flex; gap:8px; padding:5px 10px 5px 8px; border-radius:6px;
+  color:var(--text-dim); border-left:2px solid transparent; line-height:1.4}
+aside.toc a:before{content:counter(t); font-family:var(--font-mono); font-size:.72rem;
+  color:var(--text-faint); flex:0 0 1.4em; text-align:right}
+aside.toc a:hover{background:var(--surface-2); color:var(--text); text-decoration:none}
+aside.toc a.on{color:var(--accent); border-left-color:var(--accent); background:var(--accent-soft)}
+article{min-width:0; padding-bottom:20px}
+
+/* ============================================================ HERO */
+.lead{padding:46px 0 26px; border-bottom:1px solid var(--border); margin-bottom:8px}
+.kicker{font-family:var(--font-mono); font-size:.74rem; letter-spacing:.16em;
+  text-transform:uppercase; color:var(--accent); margin-bottom:12px}
+.subtitle{font-size:1.1rem; color:var(--text-dim); max-width:var(--readw); margin-top:.6em}
+.meta{display:flex; flex-wrap:wrap; gap:8px; margin-top:20px}
+
+/* ============================================================ COMPONENTS */
+.pill{display:inline-block; font-family:var(--font-mono); font-size:.7rem; padding:3px 9px;
+  border-radius:999px; border:1px solid var(--border-strong); color:var(--text-dim); white-space:nowrap}
+.pill.a{color:var(--accent); border-color:var(--accent); background:var(--accent-soft)}
+.pill.g{color:var(--green); border-color:var(--green); background:var(--green-soft)}
+.pill.r{color:var(--red); border-color:var(--red); background:var(--red-soft)}
+.pill.p{color:var(--purple); border-color:var(--purple); background:var(--purple-soft)}
+
+.callout{border-left:3px solid var(--accent); background:var(--accent-soft);
+  border-radius:0 var(--radius-sm) var(--radius-sm) 0; padding:15px 19px; margin:1.7em 0}
+.callout.warn{border-color:var(--amber); background:var(--amber-soft)}
+.callout.bad{border-color:var(--red); background:var(--red-soft)}
+.callout.good{border-color:var(--green); background:var(--green-soft)}
+.callout.def{border-color:var(--purple); background:var(--purple-soft)}
+.callout .t{font-weight:700; font-size:.76rem; letter-spacing:.1em; text-transform:uppercase;
+  margin-bottom:6px; display:block; color:var(--text)}
+.callout > :last-child{margin-bottom:0}
+
+dl.terms{margin:1.4em 0; padding:0}
+dl.terms dt{font-weight:680; color:var(--text); margin-top:1em; font-size:.98rem}
+dl.terms dt:first-child{margin-top:0}
+dl.terms dd{margin:.25em 0 0; color:var(--text-dim); padding-left:0}
+
+pre{background:var(--bg-alt); border:1px solid var(--border); border-radius:var(--radius-sm);
+  padding:16px 18px; overflow-x:auto; font-family:var(--font-mono); font-size:.8rem;
+  line-height:1.5; margin:1.6em 0}
+pre code{background:none; border:0; padding:0; font-size:inherit}
+figure{margin:1.8em 0}
+figure figcaption{font-size:.82rem; color:var(--text-faint); margin-top:-.6em; padding-left:2px}
+
+.tablewrap{overflow-x:auto; margin:1.6em 0; border:1px solid var(--border); border-radius:var(--radius)}
+table{border-collapse:collapse; width:100%; font-size:.9rem; min-width:560px}
+th,td{padding:10px 14px; text-align:left; border-bottom:1px solid var(--border); vertical-align:top}
+th{background:var(--surface-2); font-size:.73rem; text-transform:uppercase; letter-spacing:.08em;
+  color:var(--text-dim); font-weight:700}
+tr:last-child td{border-bottom:0}
+td.y{color:var(--green); font-weight:600} td.n{color:var(--red); font-weight:600}
+
+.card{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+  padding:20px 22px; box-shadow:var(--shadow); margin:1.6em 0}
+.card > :first-child{margin-top:0}
+.grid2{display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; margin:1.6em 0}
+.grid2 .card{margin:0}
+
+/* misconceptions */
+.myth{border:1px solid var(--border); border-radius:var(--radius); margin:14px 0; overflow:hidden}
+.myth .m{background:var(--red-soft); border-bottom:1px solid var(--border); padding:11px 16px;
+  font-weight:660; display:flex; gap:10px}
+.myth .m:before{content:"✕"; color:var(--red); font-weight:700}
+.myth .r{padding:13px 16px}
+.myth .r:before{content:"Reality "; font-family:var(--font-mono); font-size:.68rem;
+  letter-spacing:.12em; text-transform:uppercase; color:var(--green); display:block; margin-bottom:4px}
+.myth .r > :last-child{margin-bottom:0}
+
+/* resources */
+.res{margin:1.4em 0}
+.res h4{margin:1.4em 0 .4em; color:var(--accent); font-size:.78rem;
+  letter-spacing:.1em; text-transform:uppercase}
+.res ul{list-style:none; padding:0; margin:0}
+.res li{border-bottom:1px dashed var(--border); padding:8px 0; margin:0}
+.res li:last-child{border-bottom:0}
+.res .why{display:block; font-size:.85rem; color:var(--text-dim)}
+.res .rank{font-family:var(--font-mono); font-size:.66rem; padding:1px 6px; border-radius:999px;
+  border:1px solid var(--green); color:var(--green); background:var(--green-soft); margin-left:6px}
+
+/* exercises */
+.ex{border:1px solid var(--border); border-left:3px solid var(--teal);
+  border-radius:0 var(--radius) var(--radius) 0; padding:16px 20px; margin:16px 0; background:var(--surface)}
+.ex .h{font-weight:680; margin-bottom:6px}
+.ex .h span{font-family:var(--font-mono); font-size:.72rem; color:var(--teal); margin-right:8px}
+.ex .out{font-size:.86rem; color:var(--text-faint); margin-top:8px; border-top:1px dashed var(--border); padding-top:8px}
+.ex > :last-child{margin-bottom:0}
+
+/* quiz */
+.quiz{counter-reset:q}
+.q{border:1px solid var(--border); border-radius:var(--radius); margin:12px 0;
+  background:var(--surface); overflow:hidden}
+.q > summary{cursor:pointer; list-style:none; padding:14px 18px; display:flex; gap:12px;
+  font-weight:600; align-items:flex-start}
+.q > summary::-webkit-details-marker{display:none}
+.q > summary:before{counter-increment:q; content:"Q" counter(q); font-family:var(--font-mono);
+  font-size:.72rem; color:var(--accent); background:var(--accent-soft);
+  border:1px solid var(--accent); border-radius:6px; padding:2px 7px; flex:0 0 auto; margin-top:2px}
+.q > summary::after{content:"show answer"; margin-left:auto; font-size:.7rem; font-weight:600;
+  letter-spacing:.08em; text-transform:uppercase; color:var(--text-faint); flex:0 0 auto; padding-top:4px}
+.q[open] > summary::after{content:"hide"}
+.q .ans{padding:2px 18px 16px; border-top:1px solid var(--border); margin-top:0;
+  background:var(--bg-alt); color:var(--text-dim)}
+.q .ans > :first-child{margin-top:1em}
+.q .ans > :last-child{margin-bottom:0}
+.q .ans strong{color:var(--text)}
+
+/* summary list */
+ul.takeaways{list-style:none; padding:0}
+ul.takeaways li{padding:9px 0 9px 30px; position:relative; border-bottom:1px dashed var(--border)}
+ul.takeaways li:last-child{border-bottom:0}
+ul.takeaways li:before{content:"▸"; position:absolute; left:6px; top:9px; color:var(--accent)}
+
+/* pager / footer */
+.pager{display:flex; gap:12px; margin:44px 0 30px; flex-wrap:wrap; max-width:none}
+.pager a, .pager .disabled{flex:1 1 250px; border:1px solid var(--border); border-radius:var(--radius);
+  padding:14px 18px; background:var(--surface); text-decoration:none; color:var(--text)}
+.pager a:hover{border-color:var(--accent); text-decoration:none}
+.pager .disabled{opacity:.45}
+.pager em{display:block; font-style:normal; font-size:.7rem; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--text-faint); margin-bottom:3px}
+.pager .next{text-align:right}
+footer.foot{border-top:1px solid var(--border); margin-top:20px; padding:24px 0 56px;
+  color:var(--text-faint); font-size:.85rem}
+
+@media print{
+  header.bar,aside.toc,#readbar,button.ghost,.pager{display:none}
+  body{background:#fff; color:#000; font-size:10.5pt}
+  .shell{display:block; max-width:none; padding:0}
+  .q{break-inside:avoid} .q .ans{display:block !important}
+  article > *{max-width:none}
+}
+</style>
+</head>
+<body>
+
+<div id="readbar"></div>
+<header class="bar">
+  <div class="bar-in">
+    <div class="brand"><a href="../../index.html">Commit&nbsp;<span>→</span>&nbsp;Production</a></div>
+    <div class="crumb">/ Module&nbsp;1 · Foundations / Lesson&nbsp;1.1</div>
+    <div class="right">
+      <button class="ghost" id="expand">⇕ Expand all</button>
+      <button class="ghost" id="theme">◐ Theme</button>
+    </div>
+  </div>
+</header>
+
+<div class="shell">
+
+  <aside class="toc">
+    <div class="inner">
+      <p class="lbl">Lesson contents</p>
+      <ol id="tocList">
+        <li><a href="#s1">Problem Statement</a></li>
+        <li><a href="#s2">Historical Context</a></li>
+        <li><a href="#s3">Previous Solution</a></li>
+        <li><a href="#s4">Why It Failed</a></li>
+        <li><a href="#s5">New Solution</a></li>
+        <li><a href="#s6">Internal Mechanics</a></li>
+        <li><a href="#s7">Real Industry Examples</a></li>
+        <li><a href="#s8">Diagrams</a></li>
+        <li><a href="#s9">Advantages</a></li>
+        <li><a href="#s10">Limitations</a></li>
+        <li><a href="#s11">Common Misconceptions</a></li>
+        <li><a href="#s12">Practical Use Cases</a></li>
+        <li><a href="#s13">Summary</a></li>
+        <li><a href="#s14">Recommended Resources</a></li>
+        <li><a href="#s15">Exercise</a></li>
+        <li><a href="#s16">Quiz</a></li>
+      </ol>
+    </div>
+  </aside>
+
+  <article>
+    <div class="lead">
+      <div class="kicker">Module 1 · Lesson 1.1</div>
+      <h1>Why DevOps Exists</h1>
+      <p class="subtitle">
+        Before any tool, any pipeline, any container: the structural problem that made all of it
+        necessary. This lesson is about a conflict between two legitimate goals — the desire to
+        change software and the desire for software to keep working — and what happened when the
+        industry tried to solve it with organizational walls instead of engineering.
+      </p>
+      <div class="meta">
+        <span class="pill a">~75 min read</span>
+        <span class="pill">Prerequisites: none</span>
+        <span class="pill">Conceptual · no keyboard required</span>
+        <span class="pill g">Foundation for every later lesson</span>
+      </div>
+    </div>
+
+    <div class="callout def">
+      <span class="t">Learning objectives</span>
+      <p>By the end of this lesson you will be able to:</p>
+      <ol style="margin-bottom:0">
+        <li>State the structural conflict DevOps exists to resolve, without using the word "DevOps".</li>
+        <li>Explain why bigger, rarer releases are <em>more</em> dangerous than smaller, frequent ones.</li>
+        <li>Define lead time, batch size, deployment frequency, change-failure rate and MTTR.</li>
+        <li>Explain why speed and stability turned out to be correlated rather than opposed.</li>
+        <li>Recognise the ways organisations adopt DevOps tooling and get none of the benefit.</li>
+      </ol>
+    </div>
+
+    <!-- ============================== 1 ============================== -->
+    <h2 id="s1">1 · Problem Statement</h2>
+
+    <p>
+      Software has two obligations that pull in opposite directions.
+    </p>
+    <p>
+      The first is <strong>change</strong>. A product that does not change is dying: requirements
+      move, competitors ship, security holes are found, users ask for things. The value of your
+      codebase is realised only when a change reaches a user.
+    </p>
+    <p>
+      The second is <strong>stability</strong>. A running system holds someone's money, data,
+      attention or safety. Every change is a risk to that. The safest system is one nobody touches.
+    </p>
+    <p>
+      For roughly three decades the industry resolved this tension the way large organisations
+      resolve most tensions: by assigning each goal to a different group of people. Developers were
+      paid to change things. Operations were paid to keep things from breaking. Between them stood
+      a boundary — a handoff, an approval process, a ticket queue.
+    </p>
+
+    <div class="callout bad">
+      <span class="t">The core problem</span>
+      <p>
+        The problem DevOps addresses is <strong>not</strong> a missing tool. It is a
+        <strong>structural</strong> one: when the responsibility for change and the responsibility
+        for stability are held by different people with different incentives, the boundary between
+        them becomes the slowest, least reliable, and least understood part of the entire system —
+        and it is exactly the part every single change must cross.
+      </p>
+    </div>
+
+    <p>Concretely, the boundary produces four measurable pathologies:</p>
+    <ol>
+      <li><strong>Long lead times.</strong> The interval between "the code is written" and "a user benefits" is dominated by waiting, not working — often 90&nbsp;% waiting or more.</li>
+      <li><strong>Large, dangerous releases.</strong> Because crossing the boundary is expensive, changes are batched up. Big batches fail in ways nobody can diagnose.</li>
+      <li><strong>Slow recovery.</strong> The people who can understand the failure (developers) cannot see or touch production; the people who can touch production (operations) cannot understand the code.</li>
+      <li><strong>Organisational learning failure.</strong> Failures are followed by blame, blame suppresses information, and a system that cannot see its own failures cannot become more reliable.</li>
+    </ol>
+
+    <p>
+      This lesson explains where that boundary came from, why the obvious fix (more process, more
+      approval) made things worse, and what replaced it. Everything else in this course —
+      Linux, networking, containers, pipelines, monitoring — is a technique in service of the
+      idea developed here. If this lesson lands, the rest of the course has a spine.
+    </p>
+
+    <!-- ============================== 2 ============================== -->
+    <h2 id="s2">2 · Historical Context</h2>
+
+    <p>
+      To see why the wall existed, you have to see the world it was a reasonable answer to. Three
+      forces shaped it: <strong>what software was</strong>, <strong>how it was delivered</strong>,
+      and <strong>how much a mistake cost</strong>.
+    </p>
+
+    <h3>1950s–1960s · No wall, because no separation</h3>
+    <p>
+      Software came with the machine. The people who wrote the program were often the people who
+      loaded it, and "operations" meant a human physically mounting tapes and reading console
+      lights. There was no dev/ops conflict because there was no dev/ops boundary. Notice this:
+      the original state of the industry was unified ownership. The wall is not natural; it is an
+      artefact of scale.
+    </p>
+
+    <h3>1970s · Software becomes a project, and delivery becomes an event</h3>
+    <p>
+      In 1970 Winston Royce published a paper describing a staged development model — and
+      explicitly warned that the naive single-pass version was risky. The warning was ignored; the
+      diagram was not. The result, later nicknamed <em class="term">Waterfall</em>, treated software
+      like civil engineering: requirements, then design, then implementation, then testing, then
+      deployment, each phase completed before the next began.
+    </p>
+    <p>
+      This was not stupidity. It matched the physics of the era. Delivery meant <em>manufacturing</em>:
+      punching cards, writing tapes, later pressing floppies and CDs. Shipping a fix meant a
+      physical supply chain. When the marginal cost of a release is enormous, batching changes into
+      rare large releases is the economically correct behaviour.
+    </p>
+
+    <h3>1980s–1990s · The wall is built, and formalised</h3>
+    <p>
+      Two things happened at once. Software became a mass-market <em>product</em> with release
+      cycles of one to three years, which created professional release engineering. And enterprise
+      datacentres grew large enough that running machines became a full career with its own tools,
+      its own budget, and its own management chain — <em class="term">Operations</em>, or "Ops".
+    </p>
+    <p>
+      In 1989 the UK government began publishing <em class="term">ITIL</em> (the IT Infrastructure
+      Library), which codified operations as a discipline of <strong>change control</strong>. Its
+      instincts were entirely defensible: production incidents cost real money, most incidents are
+      caused by changes, therefore control changes. From this came the
+      <em class="term">CAB</em> (Change Advisory Board) — a committee that reviews and approves
+      proposed production changes — the maintenance window, and the formal handoff document.
+    </p>
+    <p>
+      Note the underlying assumption, because it is the one that eventually broke:
+      <strong>stability is purchased by making change rare and gated.</strong>
+    </p>
+
+    <h3>Late 1990s–2000s · The web dissolves the assumption</h3>
+    <p>
+      The web changed software from a <em>product</em> you ship into a <em>service</em> you run.
+      That is the single most important economic shift in this entire history, and it has three
+      consequences that quietly destroy the Waterfall/CAB model:
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th></th><th>Shipped product (pre-web)</th><th>Service (post-web)</th></tr></thead>
+        <tbody>
+          <tr><td><b>Who runs it</b></td><td>The customer</td><td>You</td></tr>
+          <tr><td><b>Cost of a release</b></td><td>Manufacturing + distribution: huge</td><td>Copying files: ~zero</td></tr>
+          <tr><td><b>Cost of a bug</b></td><td>Recall; ship a patch disk</td><td>Fix and redeploy in minutes… <em>if you can</em></td></tr>
+          <tr><td><b>Feedback available</b></td><td>Support calls, months later</td><td>Live telemetry, seconds later</td></tr>
+          <tr><td><b>Competitive clock</b></td><td>Annual release cycle</td><td>Whoever learns fastest wins</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      When releases become nearly free and feedback becomes nearly instant, a process built to
+      make releases rare stops being prudent and becomes the main source of risk. But the
+      organisational structure — two departments, one wall — did not update. That gap, between
+      the new economics and the old structure, is precisely the space DevOps grew into.
+    </p>
+    <p>
+      Some organisations saw it early. Amazon spent 2001–2002 breaking its monolith into
+      service-owning teams, each responsible for its own service in production. Werner Vogels
+      described the philosophy in a widely-read 2006 interview as <strong>"you build it, you run
+      it"</strong> — the developer carries the pager. The insight was not about microservices; it
+      was that <em>feedback from operating your own software makes you build it better.</em>
+    </p>
+
+    <h3>2001 · Agile fixes the first handoff and ignores the second</h3>
+    <p>
+      The <em class="term">Agile Manifesto</em> (2001) attacked the wall between the
+      <strong>business and developers</strong>: short iterations, working software over documents,
+      responding to change over following a plan. It worked. But read its scope carefully — Agile's
+      definition of done stopped at "working software", which in practice meant "merged and demoed
+      at the sprint review". The distance from there to <em>running in production, serving users</em>
+      was untouched.
+    </p>
+    <p>
+      The result was a new and very common failure: teams that could produce a potentially
+      shippable increment every two weeks, feeding into a release process that shipped every six
+      months. The bottleneck simply moved to the right. A faster factory in front of the same
+      loading dock.
+    </p>
+
+    <h3>2007–2009 · The naming</h3>
+    <p>
+      Cloud computing arrived (Amazon EC2, 2006) and made infrastructure <em>programmable</em>: you
+      could now create a server with an API call. That is quietly decisive — once infrastructure is
+      addressable by code, operations work becomes software work, and the skills on both sides of
+      the wall converge. The wall becomes not just harmful but unnecessary.
+    </p>
+    <p>Then, in rapid succession:</p>
+    <ul>
+      <li><strong>2008, Agile Conference, Toronto</strong> — Patrick Debois and Andrew Clay Shafer discuss "Agile Infrastructure": applying agile practice to operations.</li>
+      <li><strong>June 2009, Velocity Conference</strong> — John Allspaw and Paul Hammond present <em>"10+ Deploys Per Day: Dev and Ops Cooperation at Flickr"</em>. This is the founding artefact of the movement. Their claim was scandalous at the time: Flickr deployed more than ten times a day <em>and</em> was more stable than its peers, and the enabling factors were mostly cultural — shared tooling, shared metrics, shared responsibility, and the explicit rejection of "it's not my job".</li>
+      <li><strong>October 2009, Ghent</strong> — Debois, unable to attend Velocity, organises a local event and needs a name for the hashtag. He picks <strong>#DevOps</strong>. "DevOpsDays" becomes a global series.</li>
+    </ul>
+    <p>
+      The name is an accident of Twitter's character limit. That is worth remembering whenever
+      someone treats it as a rigorous technical category.
+    </p>
+
+    <h3>2010s · From opinion to evidence</h3>
+    <p>
+      For years DevOps was advocacy: conference talks and war stories. Then it acquired data.
+      <em class="term">DORA</em> (DevOps Research and Assessment), led by Nicole Forsgren, Jez
+      Humble and Gene Kim, ran multi-year surveys of tens of thousands of professionals and
+      published statistical analysis — summarised in the 2018 book <em>Accelerate</em> and the
+      annual <em>State of DevOps</em> reports.
+    </p>
+    <div class="callout good">
+      <span class="t">The finding that ended the argument</span>
+      <p>
+        <strong>Speed and stability are positively correlated, not traded off.</strong>
+        Organisations that deploy most frequently also have the <em>lowest</em> change-failure
+        rates and the <em>fastest</em> recovery times. There is no "move fast and break things"
+        quadrant versus "slow and safe" quadrant — there are high performers who are good at both,
+        and low performers who are bad at both.
+      </p>
+      <p>
+        This matters because it reframes the whole debate. The old model assumed a dial between
+        speed and safety. The data says they share a common cause: the ability to make small,
+        well-tested, well-observed, easily-reversible changes.
+      </p>
+    </div>
+    <p>
+      Around the same period the ideas were consolidated in writing: <em>Continuous Delivery</em>
+      (Humble &amp; Farley, 2010), Google's <em>Site Reliability Engineering</em> (2016) — an
+      opinionated implementation of the same principles — <em>The Phoenix Project</em> (2013), and
+      <em>The DevOps Handbook</em> (2016).
+    </p>
+
+    <!-- ============================== 3 ============================== -->
+    <h2 id="s3">3 · The Previous Solution (in detail)</h2>
+
+    <p>
+      "Waterfall plus siloed operations" is easy to caricature. Let us be precise instead, because
+      you will meet every one of these steps in a real organisation, and because the pathologies
+      only become obvious once you see the actual sequence.
+    </p>
+
+    <p><strong>A representative 2005 enterprise release:</strong></p>
+    <pre><code>Week 1–12    Development on a long-lived branch. Integration deferred.
+Week 13–16   "Code freeze." Merge everything. Discover that six teams changed
+             the same interfaces. This period has a name: integration hell.
+Week 17–20   QA phase. A separate department tests a build on a
+             "QA environment" that resembles production only in spirit.
+             Defects go back to developers who wrote that code four months ago.
+Week 21      Release manager assembles a release package and a deployment
+             document: 40–120 manual steps, written in prose.
+Week 22      Change Advisory Board reviews the request. Approved for the
+             next maintenance window. Or deferred to the following month.
+Week 23      Saturday 02:00. Operations executes the document by hand.
+             Developers are not present — they lack production access.
+             The window is 4 hours: deploy, smoke test, or roll back.
+Week 23+     If something breaks on Monday under real load, the developer
+             who can diagnose it cannot see the logs, and the operator who
+             can see the logs cannot read the code. Tickets are exchanged.</code></pre>
+
+    <p>The mechanisms that were supposed to make this safe:</p>
+    <dl class="terms">
+      <dt>Change control (the CAB)</dt>
+      <dd>A committee of senior people reviews every production change. Safety through human review by people who did not write the change.</dd>
+      <dt>Maintenance windows</dt>
+      <dd>Changes happen only during announced low-traffic periods, so that failure hurts fewer users. Safety through scheduling.</dd>
+      <dt>Environment promotion by hand</dt>
+      <dd>Dev → QA → staging → production, each environment built and configured by a different team at a different time.</dd>
+      <dt>Segregation of duties</dt>
+      <dd>Developers may not touch production; operations may not change code. Originally an anti-fraud control from finance, applied to software.</dd>
+      <dt>The runbook</dt>
+      <dd>A prose document of manual steps, kept in a wiki, and — this is the important part — validated only by being executed on production.</dd>
+      <dt>Rollback plan</dt>
+      <dd>A written intention to undo the change. Usually untested. Frequently impossible, because databases had already been migrated.</dd>
+    </dl>
+
+    <p>
+      Take the model seriously for a moment. Every one of these controls is a reasonable response
+      to a genuine risk, and in a world of physical media and 40-step manual deployments, most of
+      them <em>were</em> the best available answer. The model did not fail because the people in it
+      were foolish. It failed because its central assumption stopped being true.
+    </p>
+
+    <!-- ============================== 4 ============================== -->
+    <h2 id="s4">4 · Why It Failed</h2>
+
+    <p>
+      Seven failures. The first is the deepest — the others largely follow from it.
+    </p>
+
+    <h3>4.1 The batch-size trap: rare releases are more dangerous, not less</h3>
+    <p>
+      <em class="term">Batch size</em> = the amount of change released at once. The old model
+      reduced release <em>frequency</em>, which necessarily increases batch size — the changes
+      still exist, they just queue up. And risk does not scale linearly with batch size; it scales
+      worse than linearly, for three independent reasons:
+    </p>
+    <ul>
+      <li><strong>Interaction count.</strong> <em>n</em> changes shipped together have up to <em>n(n−1)/2</em> possible interactions. Ten changes ⇒ 45 interaction pairs. A hundred changes ⇒ 4,950. Nobody reasons about that.</li>
+      <li><strong>Diagnosis cost.</strong> If a deploy of 200 commits breaks production, your suspect list has 200 entries and you are searching under pressure. If a deploy of 1 commit breaks production, you are done thinking.</li>
+      <li><strong>Rollback granularity.</strong> With a large batch, rolling back the bad change means rolling back 199 good ones — including, possibly, the security fix. So people avoid rolling back and try to fix forward during the incident, which is the highest-error-rate condition a human can work in.</li>
+    </ul>
+    <div class="callout warn">
+      <span class="t">The inversion</span>
+      <p>
+        The process was designed to reduce risk per unit time by reducing the number of releases.
+        Its actual effect was to increase risk per release so much that total risk went up — and
+        because each release was terrifying, teams released even less often. That feedback loop is
+        the engine of the whole dysfunction: <em>fear of deployment causes rare deployment causes
+        large deployment causes failure causes fear of deployment.</em>
+      </p>
+    </div>
+
+    <h3>4.2 Feedback delay makes defects expensive</h3>
+    <p>
+      A defect written in week 3 and discovered in week 18 costs vastly more than one discovered in
+      minute 5. Not because the code change is bigger, but because the <em>context</em> is gone: the
+      author has forgotten the reasoning, other code now depends on the flaw, and the change is
+      buried under 15 weeks of unrelated work. Barry Boehm documented this escalating cost curve in
+      the 1980s. Every practice in this course that seems fussy — a type checker, a pre-commit hook,
+      a test in CI, a canary deploy — is bought with one currency: <strong>reduced feedback delay</strong>.
+    </p>
+
+    <h3>4.3 Environment drift and the snowflake server</h3>
+    <p>
+      Environments were built by hand, at different times, by different people, and then modified
+      in place for years. A hotfix here, a manual config edit there, an undocumented library
+      version. The result is a <em class="term">snowflake server</em>: unique, unreproducible, and
+      undocumented. Consequences:
+    </p>
+    <ul>
+      <li>"Works on my machine" is not a joke, it is the expected outcome — the machines genuinely differ.</li>
+      <li>QA passing tells you little, because QA is not production.</li>
+      <li>If the server dies, nobody can rebuild it. Its configuration exists only inside itself.</li>
+      <li>Nobody dares upgrade anything, so security patching stalls, so the fleet ages into liability.</li>
+    </ul>
+
+    <h3>4.4 Misaligned incentives make obstruction rational</h3>
+    <p>This is the part that people get wrong by blaming individuals. Look at the measurement:</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th></th><th>Development</th><th>Operations</th></tr></thead>
+        <tbody>
+          <tr><td><b>Measured on</b></td><td>Features delivered, velocity, dates hit</td><td>Uptime, incident count, SLA compliance</td></tr>
+          <tr><td><b>Change is…</b></td><td>the output — the whole job</td><td>the primary cause of every incident</td></tr>
+          <tr><td><b>Rational strategy</b></td><td>Push change over the wall; hitting the date is what counts</td><td>Delay, gate, add process; every blocked change protects your number</td></tr>
+          <tr><td><b>Result</b></td><td colspan="2">Two groups behaving rationally by their own metrics, producing an outcome that is bad for the company and miserable for everyone in it.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      This is a systems problem, not a people problem — which is why "everyone should communicate
+      better" as a remedy accomplishes nothing. If you measure two groups on conflicting outcomes
+      and make each dependent on the other, you have engineered the conflict. Swapping the humans
+      changes nothing.
+    </p>
+
+    <h3>4.5 Knowledge asymmetry destroys recovery time</h3>
+    <p>
+      During an incident, the useful knowledge is split across the wall. Developers know what the
+      code intends to do and cannot see the system. Operations can see the system and do not know
+      what the code intends. So incident response becomes a serialised game of telephone —
+      "can you send me the logs?", "which logs?" — while the clock runs. This is why
+      <em class="term">MTTR</em> (mean time to recovery) is a <em>structural</em> metric: it measures
+      your organisation chart at least as much as your tooling.
+    </p>
+
+    <h3>4.6 Manual operations cannot scale</h3>
+    <p>
+      When one operator can maintain a fixed number of servers by hand, headcount must grow linearly
+      with infrastructure. Web-scale services broke that model outright — nobody hand-configures
+      ten thousand machines. The moment infrastructure exceeded human-per-machine capacity,
+      automation stopped being a nice-to-have and became the only option. And once you accept that
+      infrastructure must be described in code, the distinction between "the dev team, who write
+      code" and "the ops team, who don't" loses its meaning.
+    </p>
+
+    <h3>4.7 Blame prevents learning</h3>
+    <p>
+      In a siloed model, every incident is a boundary dispute: was this a bad change (dev's fault)
+      or a bad environment (ops' fault)? Because the answer determines who gets punished, both
+      sides optimise their account of events for defensibility rather than accuracy. The
+      organisation therefore never learns what actually happened — and an organisation that cannot
+      see its failure modes cannot remove them. Reliability is built out of accurate information
+      about failure, and blame is the most efficient known method of destroying that information.
+    </p>
+
+    <div class="callout bad">
+      <span class="t">Where this ends</span>
+      <p>
+        Combine all seven and you get the signature symptom: <strong>unplanned work crowds out
+        planned work</strong>. Engineers spend their days firefighting, so improvements are never
+        made, so failures continue, so more firefighting. Gene Kim called this the death spiral:
+        technical debt and operational fragility compound until the organisation cannot deliver
+        anything at all. Burnout is not a side effect here; it is a load-bearing part of the system.
+      </p>
+    </div>
+
+    <!-- ============================== 5 ============================== -->
+    <h2 id="s5">5 · The New Solution</h2>
+
+    <p>Let us define terms before we use them, since the words are heavily abused.</p>
+
+    <dl class="terms">
+      <dt>Development (Dev)</dt>
+      <dd>The work of changing what software does.</dd>
+      <dt>Operations (Ops)</dt>
+      <dd>The work of keeping software running correctly, safely, and at acceptable cost: provisioning, deployment, configuration, monitoring, incident response, capacity, backups, security posture.</dd>
+      <dt>DevOps</dt>
+      <dd>
+        A set of cultural norms and engineering practices whose purpose is to
+        <strong>shorten the feedback loop between making a change and knowing its effect in
+        production</strong>, by treating the whole path from idea to running software as one
+        automated system that is owned jointly by the people who build it and the people who run
+        it — ideally the same people. It is not a tool, a team, or a job title.
+      </dd>
+      <dt>Continuous Integration (CI)</dt>
+      <dd>Every developer merges into a shared mainline at least daily, and every merge is automatically built and tested. The point is to make integration a non-event by doing it constantly.</dd>
+      <dt>Continuous Delivery (CD)</dt>
+      <dd>Every change that passes automated verification is <em>demonstrably releasable</em> — the mainline is always in a deployable state, and deploying is a business decision, not an engineering project.</dd>
+      <dt>Continuous Deployment</dt>
+      <dd>The stricter variant: every change that passes verification is deployed to production automatically, with no human gate. (Module 10 covers when this is and is not appropriate.)</dd>
+      <dt>Infrastructure as Code (IaC)</dt>
+      <dd>Servers, networks and configuration are defined in version-controlled text and created by automated tooling, never by hand. Infrastructure becomes reviewable, reproducible and auditable.</dd>
+      <dt>Site Reliability Engineering (SRE)</dt>
+      <dd>Google's specific implementation of these principles: staff operations with software engineers, cap manual work ("toil") at a fixed share of their time, and manage reliability quantitatively via error budgets. SRE is one way to do DevOps, not an alternative to it.</dd>
+    </dl>
+
+    <h3>5.1 The reframing that makes it work</h3>
+    <p>
+      The old model assumed a trade-off between change and stability, and rationed change. The new
+      model rejects the trade-off and attacks the shared root cause. Both danger and slowness come
+      from the same source: <strong>large, poorly understood, hard-to-reverse changes with slow
+      feedback</strong>. Fix that, and you get both properties at once:
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Old assumption</th><th>Replacement</th><th>Consequence</th></tr></thead>
+        <tbody>
+          <tr><td>Change is dangerous, so make it rare</td><td>Change is dangerous <em>in bulk</em>, so make it small and constant</td><td>Every deploy is boring; failures are trivially attributable</td></tr>
+          <tr><td>Safety comes from human approval</td><td>Safety comes from automated verification plus fast reversal</td><td>Gates run in minutes, never sleep, never approve out of politeness</td></tr>
+          <tr><td>Prevent all failure</td><td>Failure is inevitable; optimise <em>detection and recovery</em></td><td>MTTR becomes a first-class engineering target</td></tr>
+          <tr><td>Specialists own their stage</td><td>The team owns the change end-to-end, in production</td><td>Feedback reaches the person who can act on it</td></tr>
+          <tr><td>Environments are hand-crafted</td><td>Environments are built from code, disposably</td><td>"Works on my machine" becomes meaningless</td></tr>
+          <tr><td>Deployment is an event</td><td>Deployment is a routine, automated, reversible operation</td><td>Nobody works Saturday at 02:00</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>5.2 The Three Ways</h3>
+    <p>Gene Kim's framing is the most useful organising structure; almost every practice you will learn slots into one of these.</p>
+
+    <div class="grid2">
+      <div class="card">
+        <span class="pill a">The First Way</span>
+        <h3 style="margin-top:.6em">Flow</h3>
+        <p>Optimise the whole left-to-right stream from idea to production, not any local stage. Concretely:</p>
+        <ul style="margin-bottom:0">
+          <li>Make work visible (boards, pipelines).</li>
+          <li>Reduce batch size — small commits, small deploys.</li>
+          <li>Limit work in progress.</li>
+          <li>Eliminate handoffs; automate what remains.</li>
+          <li>Never pass defects downstream.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <span class="pill g">The Second Way</span>
+        <h3 style="margin-top:.6em">Feedback</h3>
+        <p>Create fast, loud right-to-left signals so problems are found where they are cheap:</p>
+        <ul style="margin-bottom:0">
+          <li>Automated tests on every commit.</li>
+          <li>Telemetry: logs, metrics, traces from production.</li>
+          <li>Stop the line when the build breaks.</li>
+          <li>Push quality upstream ("shift left").</li>
+          <li>Developers see how their code behaves under real load.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <span class="pill p">The Third Way</span>
+        <h3 style="margin-top:.6em">Continual learning &amp; experimentation</h3>
+        <p>Make the system get better at getting better:</p>
+        <ul style="margin-bottom:0">
+          <li>Psychological safety — bad news travels fast without punishment.</li>
+          <li>Blameless postmortems that produce actions, not culprits.</li>
+          <li>Improvement work scheduled as real work, not "when there's time".</li>
+          <li>Deliberate failure injection (game days, chaos experiments).</li>
+          <li>Local discoveries turned into global knowledge.</li>
+        </ul>
+      </div>
+    </div>
+
+    <p>
+      A common complementary checklist is <em class="term">CALMS</em>:
+      <strong>C</strong>ulture (shared ownership), <strong>A</strong>utomation (the path to
+      production is code), <strong>L</strong>ean (small batches, remove waste),
+      <strong>M</strong>easurement (decide with data), <strong>S</strong>haring (no hoarded
+      knowledge or access). If you want a quick diagnostic of an organisation claiming to "do
+      DevOps", score it on CALMS — most score high on A and near zero on C and S, which is exactly
+      the failure mode described in §10 and §11.
+    </p>
+
+    <!-- ============================== 6 ============================== -->
+    <h2 id="s6">6 · Internal Mechanics</h2>
+
+    <p>
+      Philosophy is cheap. This section is the machine: what actually moves, and why each property
+      matters. Two lenses — first the queue theory that explains <em>why</em> small and fast wins,
+      then the pipeline that implements it.
+    </p>
+
+    <h3>6.1 Delivery as a queueing system</h3>
+    <p>Three definitions, then two laws.</p>
+    <dl class="terms">
+      <dt>Lead time</dt>
+      <dd>Elapsed time from a change being requested (or committed — state which you mean) to it running in production and serving users. Includes all waiting.</dd>
+      <dt>Work in progress (WIP)</dt>
+      <dd>The number of changes started but not finished.</dd>
+      <dt>Throughput</dt>
+      <dd>Completed changes per unit time.</dd>
+    </dl>
+    <p>
+      <strong>Little's Law:</strong> <code>lead time = WIP ÷ throughput</code>. If your team
+      completes 5 changes a week and has 20 changes in flight, average lead time is 4 weeks — and
+      no amount of individual effort changes that. You get faster by finishing things, not by
+      starting them. This is why "just work harder" fails and "stop starting, start finishing"
+      works.
+    </p>
+    <p>
+      <strong>Utilisation vs waiting time:</strong> in any queue with variable arrivals, average
+      wait scales roughly with <code>ρ ÷ (1 − ρ)</code> where ρ is utilisation. At 50&nbsp;% busy,
+      wait ≈ 1 unit of service time. At 90&nbsp;%, ≈ 9. At 95&nbsp;%, ≈ 19. As ρ → 1, wait → ∞.
+    </p>
+    <div class="callout">
+      <span class="t">Why this matters more than it looks</span>
+      <p>
+        A fully-utilised operations team is not efficient; it is a queue with unbounded wait times.
+        This is the mathematical reason a "please raise a ticket with infrastructure" model produces
+        multi-week lead times even when every individual is working flat out — and the reason
+        self-service automation (which removes the human from the queue entirely) beats hiring more
+        people to staff the queue.
+      </p>
+    </div>
+
+    <h3>6.2 The deployment pipeline</h3>
+    <p>
+      The mechanism that replaces the wall is a single automated path to production — the
+      <em class="term">deployment pipeline</em>. Its defining property is exclusivity:
+      <strong>it is the only way anything reaches production.</strong> No manual copies, no
+      SSH-in-and-edit, no exceptions. That constraint is what makes every other guarantee possible.
+    </p>
+
+    <figure>
+<pre><code>┌─ 1. COMMIT ────────────────────────────────────────── seconds ──┐
+│  git push  →  hooks: format, lint, type-check                   │
+│  Fast, local, cheap. Catches the trivial 40 %.                  │
+└─────────────────────────┬───────────────────────────────────────┘
+                          ▼
+┌─ 2. BUILD (exactly once) ────────────────────────────── ~1 min ──┐
+│  Compile / bundle → produce ONE immutable artifact               │
+│  Tagged with the commit SHA. Never rebuilt downstream.           │
+└─────────────────────────┬───────────────────────────────────────┘
+                          ▼
+┌─ 3. AUTOMATED VERIFICATION ─────────────────────── 2 – 10 min ──┐
+│  unit → integration (real Postgres/Redis) → contract → security  │
+│  scan → licence check.   Ordered cheapest-and-most-likely-first. │
+└─────────────────────────┬───────────────────────────────────────┘
+                          ▼
+┌─ 4. PUBLISH ───────────────────────────────────────── seconds ──┐
+│  Push artifact to a registry, addressed by content DIGEST.       │
+│  Immutable + verifiable: "this exact bytes" not "latest".        │
+└─────────────────────────┬───────────────────────────────────────┘
+                          ▼
+┌─ 5. DEPLOY (same artifact, new config) ────────────── 1 – 5 min ─┐
+│  staging → smoke tests → production                              │
+│  Strategy: rolling / blue-green / canary  (Module 10)            │
+│  Health-gated. Automatic rollback on failure.                    │
+└─────────────────────────┬───────────────────────────────────────┘
+                          ▼
+┌─ 6. OBSERVE ──────────────────────────────────────── continuous ─┐
+│  metrics · logs · traces · error rates · alerts · SLOs           │
+│  The only stage that tells you the truth about real users.       │
+└─────────────────────────┬───────────────────────────────────────┘
+                          ▼
+┌─ 7. LEARN ───────────────────────────────────────────────────────┐
+│  Blameless postmortems → pipeline/test/monitoring improvements   │
+│  Feeds back into stage 1. This is what makes it a loop.          │
+└──────────────────────────────────────────────────────────────────┘</code></pre>
+      <figcaption>The path every change takes. Each stage exists to move a specific class of failure earlier and make it cheaper.</figcaption>
+    </figure>
+
+    <h3>6.3 The invariants that make it trustworthy</h3>
+    <p>These are not conventions. Break any one and the pipeline stops being a guarantee.</p>
+    <dl class="terms">
+      <dt>Everything in version control</dt>
+      <dd>Application code, infrastructure definitions, pipeline configuration, database migrations, dashboards, alert rules. Git becomes the single source of truth, and the change history becomes an audit log for free.</dd>
+      <dt>Build once, deploy many</dt>
+      <dd>The artifact you tested <em>is</em> the artifact you ship — bit for bit. Rebuilding per environment reintroduces the possibility that production runs something nobody tested. This is why we build a container image once and promote it, rather than building on each server.</dd>
+      <dt>Immutable infrastructure</dt>
+      <dd>Never modify a running server; replace it with a new one built from the same definition. Deployment becomes creation, rollback becomes "keep the old one", and drift becomes impossible because nothing survives long enough to drift.</dd>
+      <dt>Declarative desired state + reconciliation</dt>
+      <dd>State what the system <em>should</em> look like; let a control loop continuously make reality match. This is the core idea of Terraform, of Kubernetes, and of Compose files — you will meet it repeatedly, so notice it here first.</dd>
+      <dt>Idempotence</dt>
+      <dd>Running the automation twice produces the same result as once. Without this, retrying a half-failed deploy is a gamble, and you cannot safely automate recovery.</dd>
+      <dt>Automated gates replace human gates</dt>
+      <dd>Tests, scans and canary analysis decide, not committees. DORA's data is blunt here: peer review plus automated verification correlates with better stability, while <em>external</em> change-approval boards correlate with slower delivery and <em>no</em> improvement in stability — they cost you speed and buy nothing.</dd>
+      <dt>Fast, reliable reversal</dt>
+      <dd>You must be able to undo a deploy in minutes, and you must have practised it. Note that this is a <em>design constraint on the application</em>, not just on tooling — most rollback failures are database migrations, which is why Module 10 spends a whole lesson on backward-compatible schema change.</dd>
+      <dt>Separate deploy from release</dt>
+      <dd>Getting code onto servers and exposing behaviour to users are different actions. Feature flags let you deploy continuously and release deliberately — which removes the last legitimate argument for batching deploys.</dd>
+    </dl>
+
+    <h3>6.4 Why the loop's latency is the real metric</h3>
+    <p>
+      Every practice you will learn attacks one specific feedback loop. Ordered by latency:
+    </p>
+    <figure>
+<pre><code>  editor type-check / linter  ...........  ~1 s      author still typing
+  unit tests (local)          ...........  ~10 s     author still in context
+  CI pipeline on push         ...........  ~5 min    author still at desk
+  preview / staging deploy    ...........  ~10 min   before anyone else sees it
+  canary in production        ...........  ~15 min   1 % of users, auto-rollback
+  full production + alerting  ...........  ~1 min *  * detection, once deployed
+  user complaint              ...........  hours     ← the failure mode
+  quarterly review            ...........  months    ← the old normal</code></pre>
+      <figcaption>Each rung down costs more to build and saves more when it fires. Anything caught by the bottom two rungs represents a missing rung above.</figcaption>
+    </figure>
+    <p>
+      Read that ladder as a design brief. When you later wonder "is this pipeline stage worth
+      it?", the question is: <em>which loop does it shorten, and what does a failure cost if it
+      escapes to the next rung?</em>
+    </p>
+
+    <h3>6.5 The four key metrics (DORA)</h3>
+    <p>
+      You cannot improve what you do not measure, and these four are the industry standard because
+      they are outcome measures — they resist gaming far better than "story points" or "number of
+      deploys automated". Two measure throughput, two measure stability.
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Metric</th><th>Measures</th><th>Definition</th><th>Low performer</th><th>Elite performer</th></tr></thead>
+        <tbody>
+          <tr><td><b>Deployment frequency</b></td><td>Throughput</td><td>How often you deploy to production</td><td>Once a month – once every 6 months</td><td>On demand, many times a day</td></tr>
+          <tr><td><b>Lead time for changes</b></td><td>Throughput</td><td>Commit → running in production</td><td>1–6 months</td><td>Less than one day (often &lt;1 h)</td></tr>
+          <tr><td><b>Change failure rate</b></td><td>Stability</td><td>% of deploys causing degradation needing remediation</td><td>~40–60 %</td><td>~5 %</td></tr>
+          <tr><td><b>Failed-deployment recovery</b></td><td>Stability</td><td>Time to restore service after a failed change</td><td>Weeks – months</td><td>Less than one hour</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p><small>
+      Benchmark bands come from the DORA <em>State of DevOps</em> reports and shift slightly year to
+      year; the ratios matter, not the exact numbers. Later reports add a fifth measure of
+      reliability, and — importantly — treat these as a system: improving one by damaging another
+      is not improvement.
+    </small></p>
+
+    <h3>6.6 How the mechanics reinforce each other</h3>
+    <p>
+      Note that the invariants are not independent good ideas; they form a mutually-supporting
+      structure, which is why partial adoption disappoints:
+    </p>
+    <pre><code>  small batches ──────▶ fast, cheap tests ──────▶ frequent deploys
+        ▲                       │                        │
+        │                       ▼                        ▼
+  confidence to ◀──── precise attribution ◀──── low blast radius
+   commit small          (1 commit, 1 suspect)      per deploy
+        ▲                                                │
+        └──────────── fast rollback proven ◀─────────────┘
+
+  Remove ONE arrow and the loop degrades:
+   · no automated tests   → frequent deploys become reckless
+   · no fast rollback     → deploys stay scary → batches grow again
+   · large batches        → attribution dies → MTTR explodes
+   · no monitoring        → you never learn a deploy failed at all</code></pre>
+
+    <!-- ============================== 7 ============================== -->
+    <h2 id="s7">7 · Real Industry Examples</h2>
+
+    <h3>Flickr, 2009 — the founding case</h3>
+    <p>
+      Allspaw and Hammond's Velocity talk reported 10+ deploys per day at a photo service with
+      millions of users, while their industry peers deployed quarterly. Their stated enablers were
+      mostly organisational, and worth listing because they read like a summary of this lesson:
+      automated infrastructure; one shared version-control repository for dev and ops; a one-step
+      build-and-deploy command; a shared metrics dashboard both groups watched; developers on call
+      alongside operations; and blameless incident review. Their most-quoted line is a description
+      of the old world's failure mode: <em>"it's not my job"</em> is the sound of a system with a
+      wall in it.
+    </p>
+
+    <h3>Amazon — the industrialised version</h3>
+    <p>
+      After the 2001–2002 service decomposition and the "you build it, you run it" mandate, Amazon
+      built internal deployment tooling (Apollo) and reported, at a 2011 conference, a mean of one
+      deployment every <strong>11.6 seconds</strong> across the company, with over 1,000 deployments
+      in a single hour at peak. The number is not the point. The point is what it implies: a change
+      must be able to reach production with no human in the path, which forces automated testing,
+      health-gated rollout, automatic rollback and per-service ownership. The scale did not cause
+      the practices; the practices made the scale survivable.
+    </p>
+
+    <h3>Etsy — the transformation case</h3>
+    <p>
+      Etsy in 2009 ran painful twice-weekly releases with a dev/ops wall. By 2011–2012 it deployed
+      dozens of times a day. The interesting details of how: continuous integration on a single
+      mainline; a deployment tool any engineer could run (including on day one — new hires deploy
+      a change to production on their first day, deliberately); pervasive metrics via StatsD
+      ("measure anything, measure everything"); feature flags to decouple deploy from release; and
+      a strong, publicly-documented blameless postmortem practice. Etsy matters because it was an
+      existing organisation with existing dysfunction, not a greenfield — which is the situation
+      most engineers are actually in.
+    </p>
+
+    <h3>Netflix — optimising for failure rather than preventing it</h3>
+    <p>
+      After a 2008 database corruption caused a multi-day outage, Netflix concluded that its
+      vertically-scaled datacentre model could not be made reliable enough and moved to horizontally
+      scaled cloud infrastructure. Its distinctive contribution is <em class="term">chaos
+      engineering</em>: deliberately terminating production instances (Chaos Monkey, later the
+      Simian Army) so that resilience is continuously proven rather than assumed. This is the Third
+      Way as an engineering practice — if failure is inevitable, rehearse it on a schedule of your
+      choosing rather than the universe's.
+    </p>
+
+    <h3>Knight Capital, 1 August 2012 — the cost of the old model</h3>
+    <p>
+      The canonical counter-example, and worth knowing in detail because every failure is one you
+      will be tempted to allow:
+    </p>
+    <ul>
+      <li>New trading code was deployed <strong>manually</strong> to 8 servers. One was missed.</li>
+      <li>A configuration flag had been <strong>repurposed</strong>; on the un-updated server it activated dead code from 2003.</li>
+      <li>There was <strong>no automated verification</strong> that the deployment had succeeded everywhere.</li>
+      <li>When alerts fired, the response <strong>rolled back the new code on the 7 correct servers</strong> — which made the malfunctioning server's behaviour worse.</li>
+      <li>There was <strong>no kill switch</strong>.</li>
+    </ul>
+    <p>
+      Result: roughly <strong>$440 million lost in about 45 minutes</strong>, and the end of the
+      firm. Every single contributing factor is addressed by a practice in this course: automated
+      deployment (M10), deployment verification and health gates (M10), immutable artifacts and
+      dead-code removal (M7, M9), and rehearsed rollback (M10, M11). This is what "manual
+      deployment is a risk" means concretely.
+    </p>
+
+    <h3>CrowdStrike, 19 July 2024 — the lesson is not historical</h3>
+    <p>
+      A faulty content-configuration update was pushed to Windows hosts and caused kernel-level
+      crashes on roughly <strong>8.5 million machines</strong>, grounding flights and stopping
+      hospitals. The technical trigger was an out-of-bounds read; the reason it became global in
+      minutes was delivery process — the update went everywhere at once, without a staged or
+      canary rollout that would have caught it on the first small cohort. Included here to make a
+      point: batch size and progressive delivery are not legacy-enterprise concerns solved long
+      ago. A sophisticated modern engineering organisation lost billions of dollars of other
+      people's value to exactly the failure mode described in §4.1.
+    </p>
+
+    <!-- ============================== 8 ============================== -->
+    <h2 id="s8">8 · Diagrams</h2>
+
+    <h3>8.1 The wall of confusion</h3>
+    <figure>
+<pre><code>        DEVELOPMENT                 ║                  OPERATIONS
+   "ship features, hit dates"       ║          "keep it up, no surprises"
+                                    ║
+  ┌──────────────────────┐          ║          ┌──────────────────────┐
+  │ 12 weeks of coding   │          ║          │ tickets, windows,    │
+  │ on long branches     │   ─────▶ ║ ─────▶   │ manual runbooks      │
+  │ 200+ commits         │  "here's ║ "this    │ 02:00 Saturday       │
+  │ tested on a laptop   │   the     ║  isn't   │ no code knowledge    │
+  └──────────────────────┘   build"  ║  ready"  └──────────────────────┘
+             │                      ║                      │
+             ▼                      ║                      ▼
+    measured on OUTPUT              ║          measured on STABILITY
+    → wants change                  ║          → fears change
+                                    ║
+                        ══════ THE WALL ══════
+                    every change must cross it
+                    it is the slowest, least automated,
+                    least understood part of the system
+
+  Outcome: lead time in months · change-failure rate 40–60 % ·
+           recovery in days · nobody owns the outcome · everyone is tired</code></pre>
+      <figcaption>The structure that DevOps exists to dismantle. Notice that no individual in this picture is behaving badly.</figcaption>
+    </figure>
+
+    <h3>8.2 The loop that replaces it</h3>
+    <figure>
+<pre><code>                    ONE TEAM · ONE PIPELINE · SHARED OWNERSHIP
+
+          plan ──▶ code ──▶ build ──▶ test ──▶ package
+            ▲                                     │
+            │                                     ▼
+        learn ◀── observe ◀── operate ◀── release ◀┘
+            │                    ▲
+            └────────────────────┘
+              telemetry, postmortems, error budgets
+
+     ┌───────────────────────────────────────────────────────────┐
+     │ Properties, not stages:                                   │
+     │  · the loop is CONTINUOUS  — no phases, no freeze          │
+     │  · it is AUTOMATED        — the pipeline is the only road  │
+     │  · it is SMALL-BATCH      — one change at a time           │
+     │  · it is OBSERVED         — production tells you the truth │
+     │  · it is OWNED            — same people build and run      │
+     └───────────────────────────────────────────────────────────┘
+
+  Outcome: lead time in hours · change-failure rate ~5 % ·
+           recovery in minutes · the team owns the outcome</code></pre>
+      <figcaption>The often-drawn infinity loop, with the part that actually matters spelled out: the properties, not the arrow shapes.</figcaption>
+    </figure>
+
+    <h3>8.3 Batch size vs risk</h3>
+    <figure>
+<pre><code>  risk of a
+  given deploy
+      │                                              ╭─ ✗ 200 commits
+      │                                         ╭────╯   (unbounded diagnosis,
+      │                                    ╭────╯         rollback loses good work)
+      │                              ╭─────╯
+      │                       ╭──────╯
+      │              ╭────────╯
+      │     ╭────────╯
+      │ ╭───╯ ✓ 1 commit  (one suspect, trivial rollback)
+      └─────────────────────────────────────────────────────▶ batch size
+
+  Superlinear because:  interactions ~ n²/2 · diagnosis cost ~ n ·
+                        rollback collateral ~ n · human confidence ~ 1/n
+
+  ⇒ Deploying 20× more often with 1/20th the content is not 20× the risk.
+    It is LESS total risk, and dramatically less risk per incident.</code></pre>
+    </figure>
+
+    <h3>8.4 Where each course module attacks the problem</h3>
+    <figure>
+<pre><code>  git push ──┬──▶ CI: build+test  ──┬──▶ registry ──┬──▶ deploy ──┬──▶ observe
+             │      (M9)            │    (M7)       │   (M10)     │    (M12)
+             │                      │               │             │
+   branching │           immutable  │    digest-    │  zero-      │  golden
+   model M9  │           images M7  │    pinned M9  │  downtime   │  signals
+             │                      │               │  M10        │
+             └──────────────── runs on ──────────────┴─────────────┘
+                                    │
+                    Linux (M2,M3) · Networking (M4) · Nginx (M5)
+                    Cloud/VMs (M6) · Compose (M8) · Reliability (M11)
+                    Orchestration concepts (M13) · Architecture (M14)
+
+  Everything below the line is the substrate. Everything above it is the loop.
+  This lesson is the reason the loop is shaped that way.</code></pre>
+    </figure>
+
+    <!-- ============================== 9 ============================== -->
+    <h2 id="s9">9 · Advantages</h2>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Benefit</th><th>Mechanism that produces it</th></tr></thead>
+        <tbody>
+          <tr><td><b>Shorter lead time</b> (months → hours)</td><td>Handoffs and queues removed; automated gates run in minutes at any hour</td></tr>
+          <tr><td><b>Lower change-failure rate</b></td><td>Small batches, identical environments, automated verification before merge</td></tr>
+          <tr><td><b>Faster recovery</b> (days → minutes)</td><td>Small blast radius, precise attribution, rehearsed rollback, real telemetry</td></tr>
+          <tr><td><b>Less unplanned work</b></td><td>Fewer failures, and improvement work is scheduled instead of deferred forever</td></tr>
+          <tr><td><b>Cheaper defects</b></td><td>Each defect is caught one or more rungs up the feedback ladder (§6.4)</td></tr>
+          <tr><td><b>Better security posture</b></td><td>Patching is routine not heroic; scanning is automated; every change is reviewed and audit-logged in Git; least-privilege credentials belong to the pipeline, not to humans</td></tr>
+          <tr><td><b>Genuine auditability</b></td><td>Version control + pipeline logs answer "who changed what, when, reviewed by whom, and what tests passed" — better evidence than a signed CAB minute</td></tr>
+          <tr><td><b>Faster learning about users</b></td><td>Ideas reach production in a day, so product decisions are informed by behaviour instead of opinion</td></tr>
+          <tr><td><b>Lower burnout, better retention</b></td><td>No 02:00 windows, less firefighting, autonomy over your own service — a repeated DORA finding, not a soft claim</td></tr>
+          <tr><td><b>Bus-factor resilience</b></td><td>If the whole path is code in a repository, knowledge is not in one operator's head</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      <strong>For you specifically</strong> — a software engineer who does not want an ops
+      department — the advantage is independence. Nobody can block your work, and you cannot be
+      surprised by a layer you do not understand.
+    </p>
+
+    <!-- ============================== 10 ============================== -->
+    <h2 id="s10">10 · Limitations</h2>
+    <p>
+      A lesson that only lists benefits is marketing. Here is what this costs and where it does not
+      apply.
+    </p>
+    <dl class="terms">
+      <dt>The automation is a product, and products need maintenance</dt>
+      <dd>A pipeline, IaC definitions and a monitoring stack are software you now own: they break, drift, need upgrades and accrue their own technical debt. Budget for it. Small teams routinely under-estimate this and end up with a half-broken pipeline nobody trusts, which is worse than no pipeline.</dd>
+      <dt>Upfront investment before any payoff</dt>
+      <dd>Weeks of work on tests, packaging and pipelines produce zero user-visible features. If you cannot get that time, you cannot get the outcome — the practices are not individually optional.</dd>
+      <dt>Culture cannot be purchased</dt>
+      <dd>Tools are the easy 20 %. Shared ownership, blamelessness and giving teams authority over their own production systems are organisational changes. Buying tooling without them yields cost and no benefit — the single most common outcome in industry.</dd>
+      <dt>It presumes testability and modularity</dt>
+      <dd>Continuous deployment of a tightly-coupled system with no automated tests is just faster breakage. Sometimes the honest prerequisite is months of test-harness and seam-building work in the application itself.</dd>
+      <dt>Cognitive load lands on developers</dt>
+      <dd>"You build it, you run it" means you now also carry Linux, networking, TLS, containers, pipelines and on-call. That is a real and often unacknowledged cost — the reason <em>platform engineering</em> exists is to give application teams a paved road so they do not each pay it. As a solo engineer, you pay it personally; this course is you paying it deliberately.</dd>
+      <dt>Regulated and safety-critical domains constrain it</dt>
+      <dd>Avionics (DO-178C), medical devices, automotive safety and similar require documented verification with genuinely different release economics. CI, IaC, automated testing and reproducible builds all still apply — and are welcomed by auditors — but "deploy to production on every merge, unattended" often does not.</dd>
+      <dt>Some software is still shipped, not run</dt>
+      <dd>On-premise products, desktop apps, firmware, mobile releases behind app-store review: you do not control the runtime, so the deployment half is externally rate-limited. The integration and packaging half remains fully applicable.</dd>
+      <dt>Conway's law is undefeated</dt>
+      <dd>Structure produces architecture and process. If the organisation mandates a separate operations department with a ticket interface, no tool will give you flow across that boundary. Recognise when the constraint is the org chart, because then the technical work is not the work.</dd>
+      <dt>Continuous deployment is not always the right target</dt>
+      <dd>A change with legal, contractual, marketing or migration coupling needs a human decision. That is why <em>delivery</em> (always releasable) is the general goal and <em>deployment</em> (automatically released) is a choice per system.</dd>
+      <dt>Metrics can be gamed</dt>
+      <dd>Told to raise deployment frequency, a team will split one change across five deploys. The four metrics only work when read together, as a system, by people who want the truth.</dd>
+    </dl>
+
+    <!-- ============================== 11 ============================== -->
+    <h2 id="s11">11 · Common Misconceptions</h2>
+
+    <div class="myth">
+      <div class="m">"DevOps is a job title, and a DevOps team does the deployments."</div>
+      <div class="r"><p>The most consequential error in the field. If you create a group that sits between developers and production and receives deployment requests, you have rebuilt the wall and given it a modern name. Interpret job adverts accordingly: most "DevOps Engineer" roles are infrastructure/platform engineering roles. The legitimate version of a central team builds <em>self-service capability</em> — a platform other teams use without asking — rather than performing deployments on request.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"We adopted Jenkins/GitHub Actions/Kubernetes, so we do DevOps."</div>
+      <div class="r"><p>Tools are necessary and not sufficient. A CI server that everyone ignores because the build is red, or a Kubernetes cluster still deployed to by one gatekeeper on Fridays, produces none of the outcomes. Test the outcomes, not the toolchain: what are your four metrics?</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"DevOps means there is no more operations work."</div>
+      <div class="r"><p>Operational work does not vanish; it changes form (from manual execution to code) and ownership (from a separate department to the team that built the thing). Someone still handles capacity, backups, certificate renewal and 03:00 pages. The claim is that this work is better done by people who can also change the code — and better automated than performed.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"DevOps means less process, less documentation, less testing — move fast and break things."</div>
+      <div class="r"><p>Precisely inverted. High performers have <em>more</em> rigour, but it is <em>executed by machines</em>: mandatory review, mandatory tests, mandatory scans, mandatory health gates, mandatory rollback capability. What is removed is the <em>human queue</em>, not the discipline. "Move fast and break things" is a different (and largely retired) slogan; the data says elite performers break things less.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"DevOps replaces Agile."</div>
+      <div class="r"><p>They address adjacent handoffs. Agile shortened business ↔ development. DevOps extends the same thinking through to running-in-production and back. Agile's "done" was "working software"; DevOps' "done" is "in production, observed, and delivering value". You can practise either without the other, and both are better together.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"You need microservices, Kubernetes and multi-cloud to do this properly."</div>
+      <div class="r"><p>No. A monolith on a single virtual machine with automated tests, a scripted deploy, health checks and monitoring can hit elite-level metrics — and frequently outperforms a microservice estate nobody can debug. DORA explicitly found that <em>loosely coupled architecture</em> predicts performance, not any particular technology. Module 13 exists to help you say "not yet" with reasons.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"This is only for big tech companies."</div>
+      <div class="r"><p>Backwards. Small teams benefit most, because they have no operations department to hide behind; automation <em>is</em> their operations team. The practices scale down better than they scale up — a solo engineer with CI, one-command deploy and alerting is more operationally capable than a 200-person enterprise with a CAB.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"Developers get root access on production."</div>
+      <div class="r"><p>Usually the opposite happens. Because the pipeline is the only path to production, it holds the privileges; humans typically get read-only observability plus an audited break-glass procedure. Access becomes narrower and better logged than in the old model, where an operator with a shell could do anything untracked.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"Automating everything is always right."</div>
+      <div class="r"><p>Automation has a cost and a payback period. Automating a genuinely one-off task is waste; automating a rare but catastrophic task (a restore) is essential because it must work under stress. The judgement is <em>frequency × risk × cost of doing it wrong</em>, not "automate all the things".</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"You can adopt this in an afternoon."</div>
+      <div class="r"><p>The tooling for a small project is genuinely a few days' work — this course does exactly that over 16 weeks precisely because <em>understanding</em> takes longer than <em>configuring</em>. In an existing organisation, a real transformation is measured in quarters, and its hardest parts are not technical.</p></div>
+    </div>
+
+    <!-- ============================== 12 ============================== -->
+    <h2 id="s12">12 · Practical Use Cases</h2>
+
+    <h3>You: a solo engineer shipping your own product</h3>
+    <p>
+      The highest-leverage subset, in order: (1) automated tests on every push; (2) a single command
+      or push that deploys; (3) uptime + error alerting to your phone; (4) automated, restore-tested
+      backups; (5) a written runbook for the three things most likely to break. That is perhaps a
+      week of work and it converts your side project from "hope" into "operable". Note what is
+      <em>not</em> on the list: Kubernetes, service meshes, multi-region.
+    </p>
+
+    <h3>A 3–8 person startup</h3>
+    <p>
+      Add: trunk-based development with short-lived branches, a per-PR preview environment (so
+      product people validate before merge), feature flags to decouple deploy from release, and
+      per-week reading of the four metrics. The failure mode at this size is a bespoke pipeline only
+      the founding engineer understands — treat the pipeline as shared code with reviews.
+    </p>
+
+    <h3>An established team escaping quarterly releases</h3>
+    <p>
+      Order matters, because each step makes the next possible: instrument first (you cannot improve
+      unmeasured delivery) → get the build automated and green → add tests around the riskiest paths
+      → shrink batch size → automate the deploy → then, only then, increase frequency. Attempting
+      frequency first, without tests or rollback, produces exactly the disaster that convinces
+      management the old process was right.
+    </p>
+
+    <h3>An agency handing projects to clients</h3>
+    <p>
+      The deliverable becomes the repository: containerised services, a Compose file, IaC, a
+      pipeline and a runbook. "Works on the client's machine" stops being your problem, and the
+      handover is reviewable.
+    </p>
+
+    <h3>Where the value is genuinely low</h3>
+    <p>
+      A static personal blog: you still want an automated build and an atomic publish, but tracking
+      change-failure rate is theatre. A one-off data migration script: automate the safety checks,
+      not the pipeline. Firmware for a device with an annual certified release: take the CI, skip
+      the continuous deployment. <strong>Match the ceremony to the stakes</strong> — that judgement
+      is itself part of the skill.
+    </p>
+
+    <!-- ============================== 13 ============================== -->
+    <h2 id="s13">13 · Summary</h2>
+    <ul class="takeaways">
+      <li>Software must both <strong>change</strong> and <strong>stay up</strong>. The industry assigned those goals to different departments, which turned the boundary between them into the bottleneck every change must cross.</li>
+      <li>Waterfall and change-control were rational when releases were physical manufacturing events. The web made releases nearly free and feedback nearly instant; the process did not update.</li>
+      <li>The old model bought safety by making change <strong>rare</strong>, which made each change <strong>large</strong> — and risk grows worse than linearly with batch size. Fear of deploying caused the very failures that justified the fear.</li>
+      <li>The wall also produced long lead times, environment drift, slow recovery through knowledge asymmetry, and blame cultures that destroy the information reliability is built from.</li>
+      <li>DevOps is <strong>not</strong> a tool, team or title. It is the practice of shortening the feedback loop between a change and knowledge of its effect in production, by making the whole path one automated system owned by the people who build and run the software.</li>
+      <li>The <strong>Three Ways</strong>: optimise flow left-to-right; amplify feedback right-to-left; institutionalise learning and experimentation.</li>
+      <li>The mechanism is a <strong>deployment pipeline</strong> that is the only path to production, with invariants: everything in version control, build once and promote, immutable infrastructure, declarative state, idempotence, automated gates, fast rehearsed rollback, deploy separated from release.</li>
+      <li>Queue mathematics explains the results: lead time = WIP ÷ throughput, and waiting time explodes as utilisation approaches 100 %. Fully-busy gatekeepers are infinite queues.</li>
+      <li>Measure four outcomes: <strong>deployment frequency, lead time, change-failure rate, recovery time</strong>. Read them together or they get gamed.</li>
+      <li>The decisive empirical finding: <strong>speed and stability are correlated</strong>. Both come from small, verified, observed, reversible changes — so there is no dial to trade one for the other.</li>
+      <li>The costs are real: the automation is a product to maintain, culture cannot be bought, cognitive load moves onto developers, and regulated or shipped-software domains constrain the deployment half.</li>
+      <li>For you, the point is <strong>independence</strong>: taking an idea to a URL real people use, keeping it up, knowing when it is unhealthy, and understanding every layer underneath.</li>
+    </ul>
+
+    <!-- ============================== 14 ============================== -->
+    <h2 id="s14">14 · Recommended Resources</h2>
+    <p><small>Curated, not exhaustive. The <span class="rank">start here</span> items are the ones to read if you only read one thing per category.</small></p>
+
+    <div class="res">
+      <h4>Official / authoritative documentation</h4>
+      <ul>
+        <li><b>DORA — <code>dora.dev</code></b> <span class="rank">start here</span>
+          <span class="why">The research programme behind the four key metrics. The "Capabilities" catalogue explains each practice and the evidence for it. Read the latest <em>State of DevOps</em> report's executive summary.</span></li>
+        <li><b>Google SRE Book — <code>sre.google/books</code></b>
+          <span class="why">Free online. Chapters 1–3 are the best written account of operations as an engineering discipline. Read them now; return to the rest after Module 11.</span></li>
+        <li><b>The Twelve-Factor App — <code>12factor.net</code></b>
+          <span class="why">Twelve short rules for applications that are easy to deploy and operate. Dated in places, still the shared vocabulary. Revisit before Module 8.</span></li>
+        <li><b>Atlassian DevOps guide / AWS &amp; Microsoft DevOps overviews</b>
+          <span class="why">Good vendor-neutral-enough glossaries when you need a second phrasing of a definition.</span></li>
+      </ul>
+
+      <h4>Talks &amp; video</h4>
+      <ul>
+        <li><b>Allspaw &amp; Hammond — "10+ Deploys Per Day: Dev and Ops Cooperation at Flickr" (Velocity 2009)</b> <span class="rank">start here</span>
+          <span class="why">~35 min. The founding talk of the movement. Search the title; the video and slides are freely available. Watching it after this lesson is the best possible reinforcement.</span></li>
+        <li><b>Dave Farley — <em>Continuous Delivery</em> YouTube channel</b>
+          <span class="why">Co-author of the <em>Continuous Delivery</em> book. Rigorous, opinionated, first-principles. Start with his videos on continuous delivery vs continuous deployment and on trunk-based development.</span></li>
+        <li><b>John Allspaw — "Blameless PostMortems and a Just Culture" (Etsy engineering blog) + his talks on resilience</b>
+          <span class="why">The clearest explanation of why blame is a technical problem, not an HR one.</span></li>
+        <li><b>Nicole Forsgren — talks on the DORA research</b>
+          <span class="why">How the metrics were derived and what the statistics do and do not support. Inoculates you against cargo-culting the numbers.</span></li>
+      </ul>
+
+      <h4>Books</h4>
+      <ul>
+        <li><b><em>The Phoenix Project</em> — Kim, Behr, Spafford (2013)</b> <span class="rank">start here</span>
+          <span class="why">A novel, and the fastest way to feel the dysfunction in your gut rather than your head. Read it as fiction, in a weekend.</span></li>
+        <li><b><em>Accelerate</em> — Forsgren, Humble, Kim (2018)</b>
+          <span class="why">The evidence. Short. Part I is the essential part: what predicts delivery performance and how they know.</span></li>
+        <li><b><em>The DevOps Handbook</em> (2nd ed.) — Kim, Humble, Debois, Willis, Forsgren</b>
+          <span class="why">The practical companion, organised around the Three Ways. Use as a reference throughout the course, not a cover-to-cover read.</span></li>
+        <li><b><em>Continuous Delivery</em> — Humble &amp; Farley (2010)</b>
+          <span class="why">The deployment-pipeline concept in full rigour. Tooling chapters have aged; the reasoning has not. Essential before Module 10.</span></li>
+        <li><b><em>Site Reliability Engineering</em> — Beyer et al. (2016)</b>
+          <span class="why">How Google operationalises this. Read selectively; Google's scale is not yours, but the reasoning transfers.</span></li>
+      </ul>
+
+      <h4>Articles &amp; primary sources</h4>
+      <ul>
+        <li><b>Werner Vogels — "A Conversation with Werner Vogels" (ACM Queue, 2006)</b>
+          <span class="why">The primary source for "you build it, you run it", in Vogels' own words.</span></li>
+        <li><b>Martin Fowler — "Continuous Integration" and "Patterns for Managing Source Code Branches"</b>
+          <span class="why">The definitive articulation of what CI means and why long-lived branches fight it. Read before Module 9.</span></li>
+        <li><b>SEC order and trade-press analyses of the Knight Capital incident (2013)</b>
+          <span class="why">The primary documentation of the $440M deployment failure. A short, sobering read.</span></li>
+        <li><b>CrowdStrike's own external technical root-cause analysis (2024)</b>
+          <span class="why">A modern, well-written postmortem of a global outage — and a case study in why staged rollout is not optional.</span></li>
+        <li><b>Patrick Debois' early writing on Agile Infrastructure / the DevOpsDays history pages</b>
+          <span class="why">The origin story from the person who named it.</span></li>
+      </ul>
+
+      <h4>Interactive labs &amp; practice</h4>
+      <ul>
+        <li><b>Killercoda (<code>killercoda.com</code>)</b>
+          <span class="why">Free browser-based Linux, Docker and Kubernetes sandboxes. Successor to Katacoda. Useful from Module 3 onward.</span></li>
+        <li><b>roadmap.sh/devops</b>
+          <span class="why">A community topic map. Use it to check coverage and to see how the industry labels things — not as a curriculum; it lacks the "why".</span></li>
+        <li><b>Your own $5 VPS</b> <span class="rank">start here</span>
+          <span class="why">The only lab that teaches production. Provision it in Module 2 and keep it for the whole course.</span></li>
+      </ul>
+
+      <h4>GitHub repositories</h4>
+      <ul>
+        <li><b><code>bregman-arie/devops-exercises</code></b>
+          <span class="why">Thousands of questions and exercises by topic. Excellent for self-testing after each module.</span></li>
+        <li><b><code>dora-team/fourkeys</code></b>
+          <span class="why">Reference implementation for computing the four key metrics from your own repository and deployment events. Relevant to this lesson's exercise.</span></li>
+        <li><b><code>kelseyhightower/nocode</code></b>
+          <span class="why">A joke with a real point: the most reliable software is the software you did not write. Keep it in mind every time you add a component.</span></li>
+      </ul>
+    </div>
+
+    <!-- ============================== 15 ============================== -->
+    <h2 id="s15">15 · Exercise</h2>
+    <p>
+      This lesson is conceptual, so the exercises are analytical and archaeological — you are
+      establishing the <strong>baseline</strong> you will measure improvement against for the next
+      15 weeks. Do at least 1, 2 and 4. Budget 60–90 minutes total.
+    </p>
+
+    <div class="ex">
+      <div class="h"><span>E1</span>Map your own value stream</div>
+      <p>
+        Take the most recent change you shipped to something real (any project, any job). Reconstruct
+        the timeline with actual timestamps: idea/request → work started → code complete → reviewed →
+        merged → deployed → verified working. For each interval, mark whether it was
+        <strong>working</strong> or <strong>waiting</strong>.
+      </p>
+      <div class="out">Deliverable: total lead time, and the percentage that was waiting. Then answer: which single wait was longest, and what would have to be true for it to disappear?</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E2</span>Compute your four key metrics</div>
+      <p>
+        For the last 90 days on your most active project, estimate: deployment frequency; median
+        commit-to-production lead time; change-failure rate (deploys that needed a fix, rollback or
+        hotfix ÷ total deploys); and median time to restore. Place yourself in the bands from §6.5.
+      </p>
+      <div class="out">Deliverable: four numbers and a performance band. Write them in <code>NOTES.md</code> with today's date — you will recompute them in Module 14, and the comparison is the point.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E3</span>Audit your deployment</div>
+      <p>
+        Write down every step required to get your current project from a commit into production, in
+        order, including the ones you do "just quickly by hand". Tag each step
+        <code>MANUAL</code> / <code>AUTOMATED</code> / <code>VERIFIED</code> (verified = something
+        automatically checks it worked).
+      </p>
+      <div class="out">Deliverable: a count of manual steps and unverified steps. Then, for each manual step, name the Knight-Capital-style failure it could cause.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E4</span>Bootstrap the course project</div>
+      <p>Create the repository we will grow for the whole course. Nothing runs yet — this is scaffolding and, more importantly, a record of your reasoning.</p>
+<pre><code>devboard/
+├── README.md                 # what it is, how to run it (will grow each module)
+├── NOTES.md                  # your one-paragraph-per-lesson understanding log
+├── docs/
+│   ├── adr/
+│   │   └── 0001-use-a-deployment-pipeline.md
+│   └── architecture.md       # empty for now; one diagram per module from here on
+├── apps/
+│   ├── web/                  # React (placeholder)
+│   └── api/                  # Express (placeholder)
+└── .github/
+    └── workflows/
+        └── ci.yml            # a comment-only placeholder; filled in Module 9</code></pre>
+      <p>
+        Write <strong>ADR-0001</strong> (an <em class="term">Architecture Decision Record</em>: a
+        short dated document stating context, decision, and consequences) titled
+        <em>"All production changes go through an automated pipeline."</em> Include: the context
+        (what you do today), the decision, the consequences you accept (upfront work, a pipeline to
+        maintain), and the alternatives rejected (manual deploys, and why).
+      </p>
+      <div class="out">Deliverable: a pushed repository, plus ADR-0001. Also decide and record your branching model — you will justify it in Module 9.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E5</span>Failure archaeology</div>
+      <p>
+        Pick the worst production problem you have personally experienced. Write a blameless
+        timeline: what happened, when it was detected, how, by whom, how long to restore. Then
+        identify (a) which feedback loop from §6.4 was too slow, and (b) which pipeline invariant
+        from §6.3 was missing.
+      </p>
+      <div class="out">Deliverable: half a page. This is the postmortem format you will use for real in Module 11 — practise it on history first, where nothing is at stake.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E6</span>Optional: argue the other side</div>
+      <p>
+        In one paragraph, make the strongest honest case for the CAB-and-maintenance-window model
+        in a specific context (pick one: a hospital records system, a bank's core ledger, or
+        avionics firmware). What would you keep from this lesson, and what would you genuinely give
+        up?
+      </p>
+      <div class="out">Deliverable: one paragraph. If you cannot argue the opposing case well, you have memorised a position rather than understood a trade-off.</div>
+    </div>
+
+    <!-- ============================== 16 ============================== -->
+    <h2 id="s16">16 · Quiz</h2>
+    <div class="callout warn">
+      <span class="t">How to use this</span>
+      <p>
+        Write your answer <strong>before</strong> revealing the model answer — retrieval is what
+        builds the memory; recognition feels like learning but is not. Aim for two or three
+        sentences each. We do not proceed to Lesson 1.2 until you can answer Q1, Q3, Q4, Q7 and
+        Q10 in your own words.
+      </p>
+    </div>
+
+    <div class="quiz">
+
+      <details class="q"><summary>Explain, without using the word "DevOps", the structural problem that DevOps was invented to solve.</summary>
+        <div class="ans"><p>Software must simultaneously change constantly and keep working. Those two goals were assigned to separate groups measured on opposing outcomes (features shipped vs uptime), with a handoff between them. Because every change had to cross that boundary, the boundary became the slowest, least automated and least understood part of the delivery system — producing long lead times, large risky releases, slow recovery, and a blame dynamic that prevented the organisation from learning from its failures. It is a structural/incentive problem, not a missing tool.</p></div>
+      </details>
+
+      <details class="q"><summary>Waterfall and change-advisory boards were rational responses to real conditions. What were those conditions, and which one changed?</summary>
+        <div class="ans"><p>Delivery was physical manufacturing (tapes, floppies, CDs), so a release had a very high marginal cost — batching changes into rare large releases was economically correct. Feedback was slow (support calls, months later), and production incidents were expensive, most caused by change, so gating change was reasonable. <strong>What changed was that software became a service you run rather than a product you ship:</strong> the cost of releasing collapsed to nearly zero and feedback became nearly instantaneous. The controls survived their justification.</p></div>
+      </details>
+
+      <details class="q"><summary>Why is deploying 200 commits once a quarter more dangerous than deploying 1 commit twenty times a day?</summary>
+        <div class="ans"><p>Risk grows worse than linearly with batch size. (a) Interactions between changes grow roughly as n²/2 — 200 changes have thousands of possible interactions nobody analysed. (b) Diagnosis cost grows with n: a failure gives you 200 suspects under time pressure instead of 1. (c) Rollback collateral grows with n: undoing the bad change also undoes 199 good ones, so teams avoid rolling back and instead fix forward during an incident — the highest-error-rate condition possible. Additionally, the fear generated by big scary releases causes even less frequent releasing, which makes batches larger still: a self-reinforcing loop.</p></div>
+      </details>
+
+      <details class="q"><summary>State DORA's central empirical finding about speed and stability, and explain why it is not paradoxical.</summary>
+        <div class="ans"><p>They are <strong>positively correlated</strong>: organisations that deploy most frequently also have the lowest change-failure rates and fastest recovery. It is not paradoxical because both danger and slowness share a single root cause — large, poorly understood, hard-to-reverse changes with slow feedback. Fixing that cause improves both simultaneously. There is no dial between speed and safety; there are organisations that are good at both and organisations that are bad at both.</p></div>
+      </details>
+
+      <details class="q"><summary>What does "build once, deploy many" mean, and what specifically goes wrong if you violate it?</summary>
+        <div class="ans"><p>You produce exactly one immutable artifact per commit and promote that same artifact through every environment. If you rebuild per environment, the bytes in production were never the bytes you tested: a dependency may have resolved to a different version, a base image may have moved, the build host may differ. Your test results then describe a different program than the one serving users — which invalidates the entire chain of verification the pipeline exists to provide.</p></div>
+      </details>
+
+      <details class="q"><summary>Your team completes 4 changes per week and has 24 changes in progress. What is the average lead time, and what are your two options for reducing it?</summary>
+        <div class="ans"><p>Little's Law: lead time = WIP ÷ throughput = 24 ÷ 4 = <strong>6 weeks</strong>. Two levers: <strong>reduce WIP</strong> (stop starting, start finishing — the fastest and cheapest option, available immediately) or <strong>increase throughput</strong> (automation, removing handoffs, smaller changes — slower to achieve but raises the ceiling). Note that working longer hours is not on the list; it does not appear in the equation.</p></div>
+      </details>
+
+      <details class="q"><summary>A company hires a "DevOps team" that receives deployment requests from developers via tickets. What have they built, and what will their metrics look like?</summary>
+        <div class="ans"><p>They have rebuilt the wall and renamed it. There is still a boundary every change must cross, still separate incentives, still a queue staffed by humans. Lead time will remain long (and, per queueing theory, will explode as that team approaches full utilisation), knowledge asymmetry persists so recovery stays slow, and ownership of outcomes is still nobody's. The legitimate version of a central team builds <em>self-service capability</em> — a platform others use without asking — rather than performing deployments on request.</p></div>
+      </details>
+
+      <details class="q"><summary>Name three things Knight Capital's 2012 failure would have needed to avoid losing $440M, mapping each to a practice.</summary>
+        <div class="ans"><p>Any three of: <strong>automated deployment</strong> (a human missed one of eight servers); <strong>automated deployment verification / health gating</strong> (nothing checked that all hosts were running the new code); <strong>removal of dead code and no repurposing of live flags</strong> (a flag reactivated 2003 code — an immutable-artifact and hygiene issue); <strong>a rehearsed rollback plan</strong> (the response rolled back the 7 <em>correct</em> servers, worsening the failure — a plan that had never been practised); <strong>a kill switch / ability to stop the system</strong>. The general lesson: with manual deployment, partial deployment is not an edge case, it is the expected failure.</p></div>
+      </details>
+
+      <details class="q"><summary>Give two contexts where continuous deployment is genuinely inappropriate, and say what you would still adopt in each.</summary>
+        <div class="ans"><p>Examples: <strong>safety-critical/regulated software</strong> (avionics, medical devices) where documented verification and certification gate releases — still adopt CI, automated testing, IaC, reproducible builds, and traceability, all of which auditors like. <strong>Shipped/on-premise software, firmware, or app-store-gated mobile</strong>, where you do not control the runtime and release cadence is externally limited — still adopt continuous integration and automated packaging. Also acceptable: changes with legal, contractual or marketing coupling, which need a human release decision — handled by separating deploy from release with feature flags. The general rule: <em>continuous delivery</em> (always releasable) is the goal almost everywhere; <em>continuous deployment</em> (automatically released) is a per-system choice.</p></div>
+      </details>
+
+      <details class="q"><summary>Why is a blameless postmortem an engineering practice rather than a matter of politeness?</summary>
+        <div class="ans"><p>Reliability improvements are built from accurate information about how the system actually failed, and that information lives with the people involved. If naming a cause results in punishment, participants rationally optimise their accounts for defensibility rather than accuracy, and the organisation loses the data it needs. Blamelessness is therefore an information-integrity mechanism: you trade the satisfaction of assigning fault for the ability to remove the failure mode. It also assumes people acted sensibly given what they knew, which redirects attention to the system that made the error easy — which is the part you can actually fix.</p></div>
+      </details>
+
+      <details class="q"><summary>Bonus — the misconception check: your friend says "we're not big enough for DevOps, we'll do it when we scale." What is wrong with this?</summary>
+        <div class="ans"><p>It inverts the economics. Small teams have no operations department, so automation <em>is</em> their operations capability — a solo engineer with CI, one-command deploy, alerting and tested backups is more operationally capable than a large organisation with a CAB. It is also far cheaper to establish these practices while the system is small: retrofitting tests, reproducible environments and a pipeline onto an ageing system with drifted snowflake servers is the expensive version. "When we scale" usually means "when it is much harder and we have production users to break".</p></div>
+      </details>
+
+    </div>
+
+    <div class="callout good">
+      <span class="t">Before Lesson 1.2</span>
+      <p>
+        Answer Q1, Q3, Q4, Q7 and Q10 in your own words, and complete exercises E1, E2 and E4.
+        Bring me your four metrics — they set the baseline for the whole course, and Lesson 1.2
+        (the software development lifecycle, and how continuous flow replaces phases) builds
+        directly on the value-stream map from E1.
+      </p>
+    </div>
+
+    <hr>
+
+    <nav class="pager" aria-label="Lesson navigation">
+      <a href="../../index.html"><em>Previous</em>← Course roadmap</a>
+      <span class="disabled next"><em>Next lesson</em>1.2 · The Software Development Lifecycle <small>(not yet generated)</small></span>
+    </nav>
+
+    <footer class="foot">
+      <b>From Commit to Production</b> · Module 1 · Lesson 1.1 — <em>Why DevOps Exists</em><br>
+      <small>Self-contained offline document · no external assets · regenerated in full when revised.
+      Roadmap: <a href="../../index.html">course/index.html</a></small>
+    </footer>
+  </article>
+</div>
+
+<script>
+(function(){
+  var root = document.documentElement;
+
+  /* ---------- theme ---------- */
+  var KEY='ftp.theme', saved=null;
+  try { saved = localStorage.getItem(KEY); } catch(e){}
+  if (saved) root.setAttribute('data-theme', saved);
+  document.getElementById('theme').addEventListener('click', function(){
+    var cur = root.getAttribute('data-theme');
+    if (!cur) cur = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    var next = cur === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem(KEY, next); } catch(e){}
+  });
+
+  /* ---------- expand/collapse all quiz answers ---------- */
+  var btn = document.getElementById('expand');
+  btn.addEventListener('click', function(){
+    var all = document.querySelectorAll('details.q');
+    var anyClosed = Array.prototype.some.call(all, function(d){ return !d.open; });
+    Array.prototype.forEach.call(all, function(d){ d.open = anyClosed; });
+    btn.textContent = anyClosed ? '⇕ Collapse all' : '⇕ Expand all';
+  });
+
+  /* ---------- reading progress bar ---------- */
+  var barEl = document.getElementById('readbar');
+  function onScroll(){
+    var h = document.documentElement;
+    var max = h.scrollHeight - h.clientHeight;
+    barEl.style.width = (max > 0 ? (h.scrollTop / max * 100) : 0) + '%';
+  }
+  addEventListener('scroll', onScroll, {passive:true});
+  onScroll();
+
+  /* ---------- TOC scroll-spy ---------- */
+  var links = Array.prototype.slice.call(document.querySelectorAll('#tocList a'));
+  var targets = links.map(function(a){ return document.querySelector(a.getAttribute('href')); })
+                     .filter(Boolean);
+  if ('IntersectionObserver' in window && targets.length){
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if (!e.isIntersecting) return;
+        links.forEach(function(a){
+          a.classList.toggle('on', a.getAttribute('href') === '#' + e.target.id);
+        });
+      });
+    }, { rootMargin:'-80px 0px -70% 0px', threshold:0 });
+    targets.forEach(function(t){ io.observe(t); });
+  }
+})();
+</script>
+</body>
+</html>

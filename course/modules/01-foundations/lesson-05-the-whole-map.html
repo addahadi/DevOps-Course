@@ -1,0 +1,1295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 1.5 · What Really Happens Between git push and Production — From Commit to Production</title>
+<style>
+/* ============================================================
+   DESIGN TOKENS  (same system as the roadmap)
+   ============================================================ */
+:root{
+  color-scheme: dark light;
+  --font-sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", Consolas, "SFMono-Regular", Menlo, monospace;
+
+  --bg:#0a0e17; --bg-alt:#0e1421; --surface:#131b2b; --surface-2:#19233a;
+  --border:#243049; --border-strong:#37456a;
+  --text:#e8eefb; --text-dim:#a7b4cd; --text-faint:#78869f;
+
+  --accent:#6ea8ff;  --accent-soft:rgba(110,168,255,.14);
+  --green:#4fd39c;   --green-soft:rgba(79,211,156,.13);
+  --amber:#f2b754;   --amber-soft:rgba(242,183,84,.13);
+  --red:#ff7f76;     --red-soft:rgba(255,127,118,.13);
+  --purple:#b28cff;  --purple-soft:rgba(178,140,255,.13);
+  --teal:#4fd0d9;    --teal-soft:rgba(79,208,217,.13);
+
+  --radius:14px; --radius-sm:8px;
+  --shadow:0 1px 2px rgba(0,0,0,.45), 0 14px 34px -18px rgba(0,0,0,.75);
+  --maxw:1220px; --readw:840px;
+}
+:root[data-theme="light"]{
+  color-scheme: light;
+  --bg:#f7f9fc; --bg-alt:#eef2f8; --surface:#ffffff; --surface-2:#f2f5fa;
+  --border:#dde3ee; --border-strong:#c2ccdd;
+  --text:#131a26; --text-dim:#4b586e; --text-faint:#75839a;
+  --accent:#1f5fd0; --accent-soft:rgba(31,95,208,.09);
+  --green:#0f8a5f;  --green-soft:rgba(15,138,95,.10);
+  --amber:#9a6a06;  --amber-soft:rgba(154,106,6,.10);
+  --red:#c3352b;    --red-soft:rgba(195,53,43,.09);
+  --purple:#6d3ecb; --purple-soft:rgba(109,62,203,.09);
+  --teal:#07767e;   --teal-soft:rgba(7,118,126,.10);
+  --shadow:0 1px 2px rgba(18,28,45,.06), 0 12px 28px -18px rgba(18,28,45,.25);
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    color-scheme: light;
+    --bg:#f7f9fc; --bg-alt:#eef2f8; --surface:#ffffff; --surface-2:#f2f5fa;
+    --border:#dde3ee; --border-strong:#c2ccdd;
+    --text:#131a26; --text-dim:#4b586e; --text-faint:#75839a;
+    --accent:#1f5fd0; --accent-soft:rgba(31,95,208,.09);
+    --green:#0f8a5f;  --green-soft:rgba(15,138,95,.10);
+    --amber:#9a6a06;  --amber-soft:rgba(154,106,6,.10);
+    --red:#c3352b;    --red-soft:rgba(195,53,43,.09);
+    --purple:#6d3ecb; --purple-soft:rgba(109,62,203,.09);
+    --teal:#07767e;   --teal-soft:rgba(7,118,126,.10);
+    --shadow:0 1px 2px rgba(18,28,45,.06), 0 12px 28px -18px rgba(18,28,45,.25);
+  }
+}
+
+/* ============================================================ BASE */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth; scroll-padding-top:80px}
+body{margin:0; background:var(--bg); color:var(--text);
+  font-family:var(--font-sans); font-size:16.5px; line-height:1.72; -webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{line-height:1.28; margin:0 0 .5em; letter-spacing:-.015em; font-weight:680}
+h1{font-size:clamp(1.9rem,4vw,2.7rem)}
+h2{font-size:clamp(1.35rem,2.4vw,1.72rem); margin-top:2.6em; padding-top:.2em}
+h3{font-size:1.1rem; margin-top:2em; color:var(--text)}
+h4{font-size:.98rem; margin-top:1.5em; color:var(--text-dim)}
+p{margin:0 0 1.05em}
+a{color:var(--accent); text-decoration:none}
+a:hover{text-decoration:underline}
+strong{font-weight:660}
+em.term{font-style:normal; font-weight:680; color:var(--text)}
+code{font-family:var(--font-mono); font-size:.87em; background:var(--surface-2);
+  border:1px solid var(--border); border-radius:5px; padding:.1em .38em}
+ul,ol{padding-left:1.3em; margin:0 0 1.05em}
+li{margin:.35em 0}
+blockquote{margin:1.5em 0; padding:2px 0 2px 18px; border-left:3px solid var(--border-strong);
+  color:var(--text-dim); font-style:italic}
+blockquote footer{font-style:normal; font-size:.85rem; color:var(--text-faint); margin-top:.4em}
+hr{border:0; border-top:1px solid var(--border); margin:2.6rem 0}
+small{color:var(--text-faint)}
+sup a{font-size:.7em; padding:0 1px}
+
+/* ============================================================ BAR */
+header.bar{position:sticky; top:0; z-index:60;
+  background:color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter:blur(10px); border-bottom:1px solid var(--border)}
+.bar-in{padding:10px 22px; display:flex; align-items:center; gap:14px}
+.brand{font-weight:700; font-size:.92rem; white-space:nowrap}
+.brand a{color:var(--text)}
+.brand span{color:var(--accent)}
+.crumb{font-size:.82rem; color:var(--text-faint); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.bar .right{margin-left:auto; display:flex; gap:8px; align-items:center}
+button.ghost{font:inherit; font-size:.8rem; cursor:pointer; color:var(--text-dim);
+  background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:5px 11px}
+button.ghost:hover{border-color:var(--border-strong); color:var(--text)}
+#readbar{position:fixed; top:0; left:0; height:2px; background:var(--accent); z-index:70; width:0}
+
+/* ============================================================ LAYOUT */
+.shell{padding:0 40px;
+  display:grid; grid-template-columns:1fr; gap:36px}
+
+aside.toc{display:none}
+aside.toc .inner{position:sticky; top:74px; max-height:calc(100vh - 96px); overflow:auto;
+  padding:22px 0 40px; font-size:.86rem}
+aside.toc .lbl{font-size:.7rem; letter-spacing:.12em; text-transform:uppercase;
+  color:var(--text-faint); font-weight:700; margin:0 0 10px}
+aside.toc ol{list-style:none; padding:0; margin:0; counter-reset:t}
+aside.toc li{margin:0; counter-increment:t}
+aside.toc a{display:flex; gap:8px; padding:5px 10px 5px 8px; border-radius:6px;
+  color:var(--text-dim); border-left:2px solid transparent; line-height:1.4}
+aside.toc a:before{content:counter(t); font-family:var(--font-mono); font-size:.72rem;
+  color:var(--text-faint); flex:0 0 1.4em; text-align:right}
+aside.toc a:hover{background:var(--surface-2); color:var(--text); text-decoration:none}
+aside.toc a.on{color:var(--accent); border-left-color:var(--accent); background:var(--accent-soft)}
+article{min-width:0; padding-bottom:20px}
+
+/* ============================================================ HERO */
+.lead{padding:46px 0 26px; border-bottom:1px solid var(--border); margin-bottom:8px}
+.kicker{font-family:var(--font-mono); font-size:.74rem; letter-spacing:.16em;
+  text-transform:uppercase; color:var(--accent); margin-bottom:12px}
+.subtitle{font-size:1.1rem; color:var(--text-dim); max-width:var(--readw); margin-top:.6em}
+.meta{display:flex; flex-wrap:wrap; gap:8px; margin-top:20px}
+
+/* ============================================================ COMPONENTS */
+.pill{display:inline-block; font-family:var(--font-mono); font-size:.7rem; padding:3px 9px;
+  border-radius:999px; border:1px solid var(--border-strong); color:var(--text-dim); white-space:nowrap}
+.pill.a{color:var(--accent); border-color:var(--accent); background:var(--accent-soft)}
+.pill.g{color:var(--green); border-color:var(--green); background:var(--green-soft)}
+.pill.r{color:var(--red); border-color:var(--red); background:var(--red-soft)}
+.pill.p{color:var(--purple); border-color:var(--purple); background:var(--purple-soft)}
+
+.callout{border-left:3px solid var(--accent); background:var(--accent-soft);
+  border-radius:0 var(--radius-sm) var(--radius-sm) 0; padding:15px 19px; margin:1.7em 0}
+.callout.warn{border-color:var(--amber); background:var(--amber-soft)}
+.callout.bad{border-color:var(--red); background:var(--red-soft)}
+.callout.good{border-color:var(--green); background:var(--green-soft)}
+.callout.def{border-color:var(--purple); background:var(--purple-soft)}
+.callout .t{font-weight:700; font-size:.76rem; letter-spacing:.1em; text-transform:uppercase;
+  margin-bottom:6px; display:block; color:var(--text)}
+.callout > :last-child{margin-bottom:0}
+
+dl.terms{margin:1.4em 0; padding:0}
+dl.terms dt{font-weight:680; color:var(--text); margin-top:1em; font-size:.98rem}
+dl.terms dt:first-child{margin-top:0}
+dl.terms dd{margin:.25em 0 0; color:var(--text-dim); padding-left:0}
+
+pre{background:var(--bg-alt); border:1px solid var(--border); border-radius:var(--radius-sm);
+  padding:16px 18px; overflow-x:auto; font-family:var(--font-mono); font-size:.8rem;
+  line-height:1.5; margin:1.6em 0}
+pre code{background:none; border:0; padding:0; font-size:inherit}
+figure{margin:1.8em 0}
+figure figcaption{font-size:.82rem; color:var(--text-faint); margin-top:-.6em; padding-left:2px}
+
+.tablewrap{overflow-x:auto; margin:1.6em 0; border:1px solid var(--border); border-radius:var(--radius)}
+table{border-collapse:collapse; width:100%; font-size:.9rem; min-width:560px}
+th,td{padding:10px 14px; text-align:left; border-bottom:1px solid var(--border); vertical-align:top}
+th{background:var(--surface-2); font-size:.73rem; text-transform:uppercase; letter-spacing:.08em;
+  color:var(--text-dim); font-weight:700}
+tr:last-child td{border-bottom:0}
+td.y{color:var(--green); font-weight:600} td.n{color:var(--red); font-weight:600}
+
+.card{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+  padding:20px 22px; box-shadow:var(--shadow); margin:1.6em 0}
+.card > :first-child{margin-top:0}
+.grid2{display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; margin:1.6em 0}
+.grid2 .card{margin:0}
+
+/* misconceptions */
+.myth{border:1px solid var(--border); border-radius:var(--radius); margin:14px 0; overflow:hidden}
+.myth .m{background:var(--red-soft); border-bottom:1px solid var(--border); padding:11px 16px;
+  font-weight:660; display:flex; gap:10px}
+.myth .m:before{content:"✕"; color:var(--red); font-weight:700}
+.myth .r{padding:13px 16px}
+.myth .r:before{content:"Reality "; font-family:var(--font-mono); font-size:.68rem;
+  letter-spacing:.12em; text-transform:uppercase; color:var(--green); display:block; margin-bottom:4px}
+.myth .r > :last-child{margin-bottom:0}
+
+/* resources */
+.res{margin:1.4em 0}
+.res h4{margin:1.4em 0 .4em; color:var(--accent); font-size:.78rem;
+  letter-spacing:.1em; text-transform:uppercase}
+.res ul{list-style:none; padding:0; margin:0}
+.res li{border-bottom:1px dashed var(--border); padding:8px 0; margin:0}
+.res li:last-child{border-bottom:0}
+.res .why{display:block; font-size:.85rem; color:var(--text-dim)}
+.res .rank{font-family:var(--font-mono); font-size:.66rem; padding:1px 6px; border-radius:999px;
+  border:1px solid var(--green); color:var(--green); background:var(--green-soft); margin-left:6px}
+
+/* exercises */
+.ex{border:1px solid var(--border); border-left:3px solid var(--teal);
+  border-radius:0 var(--radius) var(--radius) 0; padding:16px 20px; margin:16px 0; background:var(--surface)}
+.ex .h{font-weight:680; margin-bottom:6px}
+.ex .h span{font-family:var(--font-mono); font-size:.72rem; color:var(--teal); margin-right:8px}
+.ex .out{font-size:.86rem; color:var(--text-faint); margin-top:8px; border-top:1px dashed var(--border); padding-top:8px}
+.ex > :last-child{margin-bottom:0}
+
+/* quiz */
+.quiz{counter-reset:q}
+.q{border:1px solid var(--border); border-radius:var(--radius); margin:12px 0;
+  background:var(--surface); overflow:hidden}
+.q > summary{cursor:pointer; list-style:none; padding:14px 18px; display:flex; gap:12px;
+  font-weight:600; align-items:flex-start}
+.q > summary::-webkit-details-marker{display:none}
+.q > summary:before{counter-increment:q; content:"Q" counter(q); font-family:var(--font-mono);
+  font-size:.72rem; color:var(--accent); background:var(--accent-soft);
+  border:1px solid var(--accent); border-radius:6px; padding:2px 7px; flex:0 0 auto; margin-top:2px}
+.q > summary::after{content:"show answer"; margin-left:auto; font-size:.7rem; font-weight:600;
+  letter-spacing:.08em; text-transform:uppercase; color:var(--text-faint); flex:0 0 auto; padding-top:4px}
+.q[open] > summary::after{content:"hide"}
+.q .ans{padding:2px 18px 16px; border-top:1px solid var(--border); margin-top:0;
+  background:var(--bg-alt); color:var(--text-dim)}
+.q .ans > :first-child{margin-top:1em}
+.q .ans > :last-child{margin-bottom:0}
+.q .ans strong{color:var(--text)}
+
+/* summary list */
+ul.takeaways{list-style:none; padding:0}
+ul.takeaways li{padding:9px 0 9px 30px; position:relative; border-bottom:1px dashed var(--border)}
+ul.takeaways li:last-child{border-bottom:0}
+ul.takeaways li:before{content:"▸"; position:absolute; left:6px; top:9px; color:var(--accent)}
+
+/* pager / footer */
+.pager{display:flex; gap:12px; margin:44px 0 30px; flex-wrap:wrap; max-width:none}
+.pager a, .pager .disabled{flex:1 1 250px; border:1px solid var(--border); border-radius:var(--radius);
+  padding:14px 18px; background:var(--surface); text-decoration:none; color:var(--text)}
+.pager a:hover{border-color:var(--accent); text-decoration:none}
+.pager .disabled{opacity:.45}
+.pager em{display:block; font-style:normal; font-size:.7rem; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--text-faint); margin-bottom:3px}
+.pager .next{text-align:right}
+footer.foot{border-top:1px solid var(--border); margin-top:20px; padding:24px 0 56px;
+  color:var(--text-faint); font-size:.85rem}
+
+@media print{
+  header.bar,aside.toc,#readbar,button.ghost,.pager{display:none}
+  body{background:#fff; color:#000; font-size:10.5pt}
+  .shell{display:block; max-width:none; padding:0}
+  .q{break-inside:avoid} .q .ans{display:block !important}
+  article > *{max-width:none}
+}
+</style>
+</head>
+<body>
+
+<div id="readbar"></div>
+<header class="bar">
+  <div class="bar-in">
+    <div class="brand"><a href="../../index.html">Commit&nbsp;<span>→</span>&nbsp;Production</a></div>
+    <div class="crumb">/ Module&nbsp;1 · Foundations / Lesson&nbsp;1.5</div>
+    <div class="right">
+      <button class="ghost" id="expand">⇕ Expand all</button>
+      <button class="ghost" id="theme">◐ Theme</button>
+    </div>
+  </div>
+</header>
+
+<div class="shell">
+
+  <aside class="toc">
+    <div class="inner">
+      <p class="lbl">Lesson contents</p>
+      <ol id="tocList">
+        <li><a href="#s1">Problem Statement</a></li>
+        <li><a href="#s2">Historical Context</a></li>
+        <li><a href="#s3">Previous Solution</a></li>
+        <li><a href="#s4">Why It Failed</a></li>
+        <li><a href="#s5">New Solution</a></li>
+        <li><a href="#s6">Internal Mechanics</a></li>
+        <li><a href="#s7">Real Industry Examples</a></li>
+        <li><a href="#s8">Diagrams</a></li>
+        <li><a href="#s9">Advantages</a></li>
+        <li><a href="#s10">Limitations</a></li>
+        <li><a href="#s11">Common Misconceptions</a></li>
+        <li><a href="#s12">Practical Use Cases</a></li>
+        <li><a href="#s13">Summary</a></li>
+        <li><a href="#s14">Recommended Resources</a></li>
+        <li><a href="#s15">Exercise</a></li>
+        <li><a href="#s16">Quiz</a></li>
+      </ol>
+    </div>
+  </aside>
+
+  <article>
+    <div class="lead">
+      <div class="kicker">Module 1 · Lesson 1.5</div>
+      <h1>What really happens between <code>git&nbsp;push</code> and production</h1>
+      <p class="subtitle">
+        The whole map. Between the moment you press Enter on <code>git push</code> and the moment a
+        stranger on another continent sees your change, a dozen distinct systems each do one job and
+        hand off to the next. Most engineers treat that entire chain as a single opaque step called
+        "deploy". This lesson makes it a map you can draw from memory — because you cannot debug,
+        plan, or learn what you cannot locate.
+      </p>
+      <div class="meta">
+        <span class="pill a">~70 min read</span>
+        <span class="pill">Prerequisites: Lesson 1.1</span>
+        <span class="pill">Conceptual · the map for the whole course</span>
+        <span class="pill g">Module 1 capstone · Milestone 1</span>
+      </div>
+    </div>
+
+    <div class="callout def">
+      <span class="t">Learning objectives</span>
+      <p>By the end of this lesson you will be able to:</p>
+      <ol style="margin-bottom:0">
+        <li>Draw the end-to-end path a change takes from your keyboard to a user, and name every stage on it.</li>
+        <li>Distinguish the <strong>delivery path</strong> (code becomes a running service) from the <strong>request path</strong> (a user's request reaches that service and gets a response).</li>
+        <li>Say precisely what <code>git push</code> does — and, more usefully, what it does <em>not</em> do.</li>
+        <li>Place any failure, and any topic in Modules 2–14, at a specific node on the map.</li>
+        <li>Explain, at map level, what an artifact, a registry, a reverse proxy, a load balancer and DNS each contribute.</li>
+      </ol>
+    </div>
+
+    <div class="callout">
+      <span class="t">Where this sits</span>
+      <p>
+        Lesson 1.1 gave you the <em>why</em>: small, frequent, reversible changes with fast feedback.
+        This lesson gives you the <em>where</em> — the actual route those changes travel. Lessons
+        1.2–1.4 (the lifecycle, the roles, the metrics) are placeholders for now and are not required
+        reading for this one; 1.5 is written next because it is the map every later module fills in.
+      </p>
+    </div>
+
+    <!-- ============================== 1 ============================== -->
+    <h2 id="s1">1 · Problem Statement</h2>
+
+    <p>
+      You already know how to build software. You finish a change, you commit it, you run
+      <code>git push</code>. Then you wait. A few minutes later — if nothing went wrong — a user
+      somewhere loads a page and sees your change. Between those two events lies a chain of systems
+      that most competent software engineers cannot name.
+    </p>
+    <p>
+      That gap is usually collapsed into one word: <strong>"deploy"</strong>. And treating it as one
+      opaque step is exactly what makes DevOps feel like a bewildering pile of unrelated tools —
+      Docker, GitHub Actions, nginx, DNS, TLS, load balancers, registries — with no skeleton to hang
+      them on. The opacity has three concrete costs:
+    </p>
+    <ol>
+      <li><strong>You cannot debug what you cannot locate.</strong> "The site is down" is not actionable until you can ask <em>where on the path</em> it is down — the build? the deploy? DNS? the proxy? the database? Without a map, every incident is a panicked flail.</li>
+      <li><strong>You cannot plan what you cannot see.</strong> "Do I need a load balancer yet? A staging environment? A registry?" are unanswerable if you do not know what those nodes do or where they sit.</li>
+      <li><strong>You cannot learn a pile.</strong> A curriculum is only navigable if you know how the pieces connect. The map is the table of contents for everything that follows.</li>
+    </ol>
+
+    <div class="callout bad">
+      <span class="t">The core problem</span>
+      <p>
+        The journey from <code>git push</code> to a served request is not one step — it is roughly a
+        dozen, each performed by a different system, each able to fail independently. The problem
+        this lesson solves is <strong>illegibility</strong>: without a shared mental map of the whole
+        path, you cannot reason about failure, scope, or learning. Every other lesson in this course
+        is a high-resolution zoom into one region of the map you are about to draw.
+      </p>
+    </div>
+
+    <p>
+      There is a second, subtler confusion buried in the word "deploy", and clearing it up is half of
+      this lesson. There are actually <strong>two different journeys</strong>, and they run in
+      different directions at different times:
+    </p>
+    <div class="grid2">
+      <div class="card">
+        <span class="pill a">Happens when you push</span>
+        <h3 style="margin-top:.6em">The delivery path</h3>
+        <p style="margin-bottom:0">
+          How your <em>source code</em> becomes a <em>running process</em> on a machine somewhere:
+          build, test, package, ship, start. It runs once per change. Left to right, keyboard to
+          server.
+        </p>
+      </div>
+      <div class="card">
+        <span class="pill g">Happens on every visit</span>
+        <h3 style="margin-top:.6em">The request path</h3>
+        <p style="margin-bottom:0">
+          How a <em>user's request</em> physically reaches that running process and comes back with a
+          response: DNS, the network, the load balancer, the proxy, your app, the database. It runs
+          millions of times, long after the deploy. Right to left, user to server and back.
+        </p>
+      </div>
+    </div>
+    <p>
+      Hold both at once. The two paths meet at exactly one place — <strong>the running service</strong> —
+      and almost every "it works on my machine but not in production" mystery lives in the gap
+      between them. This lesson walks the delivery path first, then the request path, then shows where
+      they join.
+    </p>
+
+    <!-- ============================== 2 ============================== -->
+    <h2 id="s2">2 · Historical Context</h2>
+
+    <p>
+      The map did not always have a dozen nodes. It grew one node at a time, and the pattern of that
+      growth tells you what each node is <em>for</em>. In every era, the human did some manual step;
+      in the next era, that step got a name and was handed to a machine. The map got
+      <em>longer</em>, but the human's job got <em>shorter</em>.
+    </p>
+
+    <h3>~1995 · Push and production were the same action</h3>
+    <p>
+      Early web deployment was literal file copying. You opened an FTP client, dragged your
+      <code>.html</code> and <code>.cgi</code> files onto a server, and that was the deploy. There
+      was no build, no test, no artifact, no separate "release" — the files you edited
+      <em>were</em> the files being served. "Push" and "production" were one gesture. This is worth
+      remembering: the entire elaborate pipeline you are about to learn is a stack of solutions to
+      problems that this one gesture created.
+    </p>
+
+    <h3>Early 2000s · The manual terminal deploy</h3>
+    <p>
+      As sites gained databases and server-side code, deployment became: <code>ssh</code> into the
+      box, <code>git pull</code> (or <code>scp</code> the files up), install dependencies, restart
+      the process. The path was still just "a human in a terminal", but now it had implicit stages —
+      fetch, build, restart — that nobody had separated yet. Most solo projects <em>still</em> deploy
+      this way, and §3 dissects it in detail because it is the whole map compressed into five
+      commands.
+    </p>
+
+    <h3>Mid 2000s · Deployment becomes a script</h3>
+    <p>
+      Tools like Capistrano (2006) encoded the terminal steps into a repeatable script: check out this
+      revision, run these commands, symlink the new release, restart, and keep the last few releases
+      so you can roll back. This is the first time the delivery path was written down as
+      <em>code</em> rather than performed from memory. The moment a step is written down, it can be
+      reviewed, reused, and — crucially — automated.
+    </p>
+
+    <h3>2005–2011 · A machine watches your pushes</h3>
+    <p>
+      <em class="term">Continuous integration servers</em> (Hudson/Jenkins, 2005 onward) added a new
+      node: a machine that <em>subscribes</em> to your pushes and runs the build and tests
+      automatically on every one. Now the path had a gate that no human had to remember to open.
+      Around the same time, cloud (Amazon EC2, 2006) turned "the server" from a physical box you
+      owned into an API call — which meant the deploy target itself became programmable.
+    </p>
+
+    <h3>2013–present · The path becomes a standard pipeline</h3>
+    <p>
+      Docker (2013) standardised the <em>artifact</em> — a container image — so the thing you build,
+      test, ship and run is one identical, portable object. Container registries standardised
+      <em>where artifacts live</em>. Managed CI/CD (GitHub Actions, GitLab CI) standardised the
+      <em>trigger and the stages</em>. Orchestrators (Kubernetes) standardised <em>running many
+      copies</em>. The result is the map this lesson draws: the same stages that a 1995 webmaster did
+      by hand, now each a named, automated node — which is precisely why the number of nodes went
+      <em>up</em> while the amount of human work went <em>down</em>.
+    </p>
+
+    <div class="callout">
+      <span class="t">The through-line</span>
+      <p>
+        Every node on the modern map is a manual step from an earlier era that got named and
+        automated. When a node looks like pointless ceremony, ask "what manual mistake does this
+        prevent?" — the answer is always in this history.
+      </p>
+    </div>
+
+    <!-- ============================== 3 ============================== -->
+    <h2 id="s3">3 · The Previous Solution (in detail)</h2>
+
+    <p>
+      Before drawing the full map, let us look hard at the compressed version, because you have almost
+      certainly used it and because every stage of the real map is an expansion of something hidden
+      inside it. Here is the canonical solo-developer deploy — still extremely common, and not
+      contemptible:
+    </p>
+
+<pre><code>&#35; on your laptop
+git push origin main                 # 1. upload commits to GitHub
+
+&#35; then, by hand:
+ssh deploy@203.0.113.10              # 2. connect to the one server
+cd /var/www/app                      # 3. go to where the code lives
+git pull                             # 4. fetch + merge the new commits
+npm ci                               # 5. install dependencies
+npm run build                        # 6. compile/bundle on the server
+pm2 restart app                      # 7. restart the process
+&#35; 8. tail the logs, reload the site in a browser, hope</code></pre>
+
+    <p>These eight commands secretly contain the entire map. Name what each one is really doing:</p>
+    <dl class="terms">
+      <dt>Step 1 — the only automated hop</dt>
+      <dd><code>git push</code> moves your commits to a hosted Git server. Notice it is the <em>only</em> step that happens because of the push; everything else is you, manually, afterward.</dd>
+      <dt>Steps 2–4 — transport &amp; source</dt>
+      <dd>You are the network and the trigger. You personally carry the change from the Git host onto the runtime, by hand, at a time you chose.</dd>
+      <dt>Steps 5–6 — build, on the production box</dt>
+      <dd>Dependencies are installed and the code is compiled <em>on the same machine that serves users</em>, using whatever versions of Node, system libraries and tools happen to be on that box today.</dd>
+      <dt>Step 7 — deploy and release, fused</dt>
+      <dd><code>restart</code> both puts the new code in place <em>and</em> immediately exposes it to all users, in one irreversible motion. There is no moment where the new version exists but is not yet live.</dd>
+      <dt>Step 8 — observability, done by eyeball</dt>
+      <dd>You are the monitoring system: you look at logs and reload the page. If you close the laptop, monitoring stops.</dd>
+    </dl>
+
+    <p>
+      This is a complete delivery path. It has a source, a transport, a build, a deploy, a release
+      and an observation step — every stage the fancy version has. The difference is that here they
+      are <strong>fused, manual, and invisible</strong>. The real map does not add stages that were
+      not there; it <em>separates the stages that were already there</em> so each can be made
+      reliable independently. Keep this compressed version in mind — the rest of the lesson is
+      largely the act of pulling it apart.
+    </p>
+
+    <!-- ============================== 4 ============================== -->
+    <h2 id="s4">4 · Why It Failed</h2>
+
+    <p>
+      The compressed path works right up until it doesn't, and its failure modes are worth tracing
+      one by one, because each failure is precisely the reason a corresponding node exists on the full
+      map.
+    </p>
+
+    <h3>4.1 "Build on the box" makes production non-reproducible</h3>
+    <p>
+      Because <code>npm ci</code> and <code>npm run build</code> run on the server, the running code
+      depends on the server's exact state: its Node version, its system libraries, its environment
+      variables, its disk contents. Two servers built at different times are subtly different — the
+      <em class="term">snowflake server</em> problem from Lesson 1.1. And if the build fails halfway
+      (a network blip during install), you are left with a server that is neither the old version nor
+      the new one. <strong>The full map fixes this by building exactly once, somewhere clean, into a
+      sealed artifact.</strong>
+    </p>
+
+    <h3>4.2 No artifact means "what is in production?" has no precise answer</h3>
+    <p>
+      Ask the compressed-path operator "what exactly is running right now?" and the honest answer is
+      "whatever <code>main</code> looked like the last time I happened to pull, plus whatever those
+      dependencies resolved to that day." There is no <em>name</em> for the running thing. You cannot
+      store it, copy it to a second server, or prove that staging and production are identical —
+      because there is no "it". <strong>The full map fixes this with an immutable, content-addressed
+      artifact (a container image) that has a precise identity.</strong>
+    </p>
+
+    <h3>4.3 No gate means broken code reaches users</h3>
+    <p>
+      Nothing runs between <code>git pull</code> and <code>restart</code>. There is no automated point
+      at which a failing test can say "stop, do not ship this." The first system to discover a bug is
+      your users. <strong>The full map fixes this by inserting a verification gate that the change
+      must pass before it can proceed.</strong>
+    </p>
+
+    <h3>4.4 Fused deploy-and-release means every change is a visible blip</h3>
+    <p>
+      <code>restart</code> drops in-flight connections and exposes the new code instantly, to
+      everyone, at once. There is no way to put the new version in place quietly, send it 1% of
+      traffic, watch, and then widen — because deploying and releasing are the same button. Downtime
+      on every deploy trains you to deploy rarely, which (per Lesson 1.1) makes batches larger and
+      failures worse. <strong>The full map fixes this by separating deploy from release and using a
+      rollout strategy.</strong>
+    </p>
+
+    <h3>4.5 Rollback is a rebuild, so it is slow and unproven</h3>
+    <p>
+      To undo, you <code>git checkout</code> the old SHA and rebuild — but that rebuild happens
+      <em>now</em>, with today's dependency resolution, so your "rollback" is actually a brand-new,
+      never-tested state. Under incident pressure, this is the worst possible time to be running an
+      untested build. <strong>The full map fixes this by keeping the previous artifact ready to
+      re-release instantly.</strong>
+    </p>
+
+    <h3>4.6 It is invisible and unrecorded</h3>
+    <p>
+      There is no record of who deployed what, when, or whether it succeeded. No health check gates
+      the release; no alert tells you it broke at 3 a.m. <strong>The full map fixes this with an
+      observability return-channel that closes the loop back to you.</strong>
+    </p>
+
+    <div class="callout warn">
+      <span class="t">The pattern</span>
+      <p>
+        Every failure above comes from <em>fusing</em> stages that should be separate. The full
+        pipeline is not bureaucracy bolted onto a simple process — it is the same process with its
+        seams made explicit, so that each seam can be given a guarantee. Read the rest of this lesson
+        as "here is the seam, and here is the guarantee it buys."
+      </p>
+    </div>
+
+    <!-- ============================== 5 ============================== -->
+    <h2 id="s5">5 · The New Solution</h2>
+
+    <p>
+      The solution is to make the whole path <strong>explicit</strong>: a named sequence of
+      transformations, each followed by a gate, ending in a running service that a request path can
+      reach. Here is the mental model in one sentence, and then the vocabulary you need to read the
+      map.
+    </p>
+
+    <blockquote>
+      A deployment pipeline is a series of <strong>transformations</strong> that turn a commit into a
+      running service, with a <strong>gate</strong> after each transformation that is allowed to stop
+      the line — and it is the <strong>only</strong> road to production.
+      <footer>The one-sentence definition of everything in Modules 7–12.</footer>
+    </blockquote>
+
+    <p>Define the nouns before we use them, because each names a place on the map:</p>
+    <dl class="terms">
+      <dt>Source / Git host</dt>
+      <dd>The hosted server that holds your repository's history (GitHub, GitLab). <code>git push</code> deposits commits here. It is the map's origin and its single source of truth.</dd>
+      <dt>CI runner</dt>
+      <dd>An <em>ephemeral</em> machine — created fresh, thrown away after — that the Git host summons on each push to run your build and tests. "Ephemeral" is the point: a clean room means the build cannot silently depend on yesterday's leftovers.</dd>
+      <dt>Artifact</dt>
+      <dd>The single, immutable output of the build — for this course, a <em class="term">container image</em>: your code plus its exact dependencies plus a minimal OS, sealed into one file that runs identically anywhere. It is built once and never rebuilt.</dd>
+      <dt>Registry</dt>
+      <dd>A storage service for artifacts, addressed by a content <em class="term">digest</em> (a hash of the exact bytes). "What is in production?" now has a precise answer: a digest.</dd>
+      <dt>Environment</dt>
+      <dd>A place an artifact can run — typically <em>staging</em> (a production-like rehearsal) and <em>production</em> (real users). Same artifact, different configuration.</dd>
+      <dt>Deploy vs release</dt>
+      <dd><strong>Deploy</strong> = place the artifact on the runtime and start it. <strong>Release</strong> = direct user traffic to it. Keeping them separate is what makes canaries, blue-green and feature flags possible.</dd>
+      <dt>The runtime</dt>
+      <dd>The machine(s) where the process actually runs: a virtual server (Modules 2, 6), its operating system (Modules 2, 3), and possibly an orchestrator that schedules copies of it (Module 13).</dd>
+      <dt>The edge</dt>
+      <dd>Everything a user's request meets before it reaches your process: DNS (Module 4), the network and TLS (Module 4), a load balancer and a reverse proxy such as nginx (Module 5).</dd>
+      <dt>Observability</dt>
+      <dd>The return channel: logs, metrics and traces emitted by the running service, plus the alerts and postmortems that carry what they reveal back to you (Module 12).</dd>
+    </dl>
+
+    <p>
+      With those in hand, the map is just: <strong>Source → CI runner → Artifact → Registry →
+      Deploy → Runtime</strong> (the delivery path), and then <strong>User → Edge → Runtime →
+      Data → back</strong> (the request path), joined at the running service, with an
+      <strong>observability</strong> arrow running from the service back to you. Section 6 walks every
+      arrow; Section 8 draws it whole.
+    </p>
+
+    <!-- ============================== 6 ============================== -->
+    <h2 id="s6">6 · Internal Mechanics</h2>
+
+    <p>
+      Now the tour. We follow <strong>one specific change</strong> — you rename a button in the
+      course project from "Log in" to "Sign in" — from your keyboard all the way to a user in another
+      country seeing it, naming every system it passes through and, in brackets, the module that zooms
+      into it. First the delivery path (§6.1–6.7), then the request path (§6.8), then the return loop
+      (§6.9).
+    </p>
+
+    <h3>6.1 Your machine, before the push</h3>
+    <p>
+      You edit <code>Login.jsx</code>, save, and run <code>git commit</code>. A well-configured repo
+      runs <em class="term">pre-commit hooks</em> here — formatter, linter, type-checker — the
+      fastest, cheapest feedback rung there is (Lesson 1.1, §6.4). This is still all on your laptop;
+      nothing has left your machine. Then:
+    </p>
+<pre><code>git push origin main</code></pre>
+    <p>
+      Here is the single most clarifying fact in this lesson. <strong>All <code>git push</code> does
+      is upload your new commits to a branch on the Git host.</strong> It transfers objects over the
+      network and updates a pointer (the <code>main</code> ref) on a server. That is the entire
+      operation. It does <em>not</em> build your code, run your tests, or deploy anything. Everything
+      that follows is <em>triggered by</em> the push but not <em>done by</em> it.
+    </p>
+    <div class="callout def">
+      <span class="t">Define: ref</span>
+      <p>
+        A <em class="term">ref</em> is a named pointer to a commit — <code>main</code> is a ref.
+        Pushing moves the commit objects to the host and advances the remote's <code>main</code> to
+        point at your latest commit. Think "update a pointer on a server", not "run my project".
+      </p>
+    </div>
+
+    <h3>6.2 The Git host notices, and fires a trigger</h3>
+    <p>
+      The commits now live on GitHub. Because your repository has a workflow configured, the host
+      emits an event — a <em class="term">webhook</em>: an automated "this just happened" message —
+      that says <em>"<code>main</code> was updated."</em> Your CI system is subscribed to that event,
+      so it wakes up. This subscription is the seam that replaced "a human remembering to deploy":
+      the machine is watching, so you don't have to.
+    </p>
+
+    <h3>6.3 Build — exactly once, in a clean room <span class="pill p">Module 9 · Module 7</span></h3>
+    <p>
+      CI spins up a fresh <em>ephemeral runner</em> and does, in order:
+    </p>
+    <ol>
+      <li><strong>Checkout</strong> the exact commit SHA you pushed — not "latest", that specific one.</li>
+      <li><strong>Install dependencies deterministically</strong> from the lockfile, so the versions are pinned and identical every time.</li>
+      <li><strong>Compile / bundle</strong> the app.</li>
+      <li><strong>Package</strong> the result into one <em>container image</em> — your built code + its exact dependencies + a minimal OS, sealed together — and tag it with the commit SHA.</li>
+    </ol>
+    <p>
+      This is <strong>build once</strong> (Lesson 1.1, §6.3). The image produced here is the
+      <em>only</em> thing that will ever run in production; it is never rebuilt downstream. Because it
+      was built in a clean, throwaway environment, it cannot secretly depend on some leftover state —
+      which is what kills §4.1's "build on the box".
+    </p>
+
+    <h3>6.4 Verify — the gate <span class="pill p">Module 9</span></h3>
+    <p>
+      Against that exact image, CI runs the checks: unit tests, then integration tests against a real
+      Postgres and Redis, then security and licence scans, ordered cheapest-and-most-likely-to-fail
+      first. This is the <strong>gate</strong>. If anything fails, the line stops here and the image
+      never advances — the broken "Sign in" button never reaches a user. Nothing downstream can run
+      until this passes.
+    </p>
+
+    <h3>6.5 Publish — put the artifact somewhere addressable <span class="pill p">Module 7</span></h3>
+    <p>
+      The verified image is pushed to a <em>container registry</em> and addressed by its content
+      <em>digest</em> — a hash like <code>sha256:9f2c…</code> that names those exact bytes and no
+      others. Now the question "what is running in production?" has a one-line, unambiguous answer,
+      and any machine anywhere can pull that identical image. This is what §4.2 was missing.
+    </p>
+
+    <h3>6.6 Deploy, then release <span class="pill p">Module 10</span></h3>
+    <p>
+      A deployment step tells the runtime: "pull image <code>sha256:9f2c…</code> and start it." Two
+      distinct actions live here, and the whole art of safe delivery is in keeping them apart:
+    </p>
+    <ul>
+      <li><strong>Deploy</strong> — the new container starts running alongside the old one, but no users are sent to it yet. It reports a <em class="term">health check</em> (an endpoint the platform polls to ask "are you alive and ready?").</li>
+      <li><strong>Release</strong> — only once it is healthy does traffic get shifted onto it, by a chosen <em>strategy</em>: all at once (rolling), instant swap with the old kept warm (blue-green), or a cautious 1%→100% ramp watching error rates (canary). If health checks fail, traffic never moves and the old version keeps serving — an automatic, instant, <em>proven</em> rollback, because the old artifact is still right there.</li>
+    </ul>
+
+    <h3>6.7 The runtime — where the process actually lives <span class="pill p">Modules 2 · 3 · 6 · 13</span></h3>
+    <p>
+      The container is now a running process on a real machine: a <em>virtual server</em> rented from
+      a cloud provider (Modules 2 &amp; 6), whose <em>operating system</em> (Modules 2 &amp; 3)
+      schedules it on a CPU, gives it memory, and lets it open a network <em class="term">port</em>
+      (say, 3000) to listen for requests. At larger scale, an <em>orchestrator</em> like Kubernetes
+      (Module 13) runs many identical copies across many machines and restarts any that die. For now,
+      picture one container listening on one port on one small server. <strong>The delivery path ends
+      here: your change is now a live process. It has not yet met a single user.</strong>
+    </p>
+
+    <div class="callout good">
+      <span class="t">Halfway checkpoint</span>
+      <p>
+        Everything so far — push, trigger, build, verify, publish, deploy, release — is the
+        <strong>delivery path</strong>, and it ran <em>once</em> for your button change. Now we flip
+        direction entirely and follow the <strong>request path</strong>, which runs every time
+        anyone visits, forever after.
+      </p>
+    </div>
+
+    <h3>6.8 The request path — how a user actually reaches your process <span class="pill p">Modules 4 · 5</span></h3>
+    <p>
+      A user in Lagos opens their browser and types <code>devboard.app</code>. Here is every hop
+      their request takes to reach the container from §6.7 and come back:
+    </p>
+    <ol>
+      <li><strong>DNS resolution</strong> (Module 4). The name <code>devboard.app</code> means nothing to the network; it must be translated to an IP address like <code>203.0.113.10</code>. The browser asks the <em class="term">Domain Name System</em>, a global distributed directory, and gets back an address. <em>This is why "the domain is not the server" — the domain is a lookup key that points at one.</em></li>
+      <li><strong>Transport &amp; TLS</strong> (Module 4). The browser opens a TCP connection to that IP and performs a <em class="term">TLS handshake</em> — the negotiation that turns <code>http</code> into encrypted <code>https</code>. The request travels as encrypted packets across many networks.</li>
+      <li><strong>The load balancer</strong> (Module 5). The request arrives not at your app but at a <em class="term">load balancer</em>: a front door that spreads incoming requests across however many identical copies of your service are running, and refuses to send traffic to unhealthy ones. To the user there is "one server"; behind the door there may be twenty.</li>
+      <li><strong>The reverse proxy</strong> (Module 5). Next, a <em class="term">reverse proxy</em> such as nginx typically <em>terminates TLS</em> (decrypts here so your app doesn't have to), serves static files itself, and routes by path — <code>/api/*</code> to the backend, everything else to the frontend. This is why <em>"HTTPS is usually handled at the edge, not in your app."</em></li>
+      <li><strong>Your process</strong> (the runtime, §6.7). The request finally reaches the container listening on port 3000. Your Express code runs the handler for that route.</li>
+      <li><strong>Data</strong> (the project stack). To render the page your code queries <em>Postgres</em> (the database of record) and perhaps <em>Redis</em> (a fast cache). These are more running processes, reached over the network the same way.</li>
+      <li><strong>The response returns</strong> back up the same chain — app → proxy → load balancer → across the internet → the user's browser, which paints the page. They see "Sign in." Your change is live.</li>
+    </ol>
+
+    <h3>6.9 Observability — the return channel that closes the loop <span class="pill p">Module 12</span></h3>
+    <p>
+      As it serves that request and millions of others, the running service emits <em>logs</em> (what
+      happened), <em>metrics</em> (how much, how fast, how many errors) and <em>traces</em> (the path
+      of one request through the systems). A monitoring stack collects these; <em>alerts</em> fire
+      when something crosses a threshold and page you; and when something breaks, a blameless
+      <em>postmortem</em> turns the incident into an improvement that feeds back to §6.1. This arrow —
+      from the running service back to you — is what makes the whole thing a <em>loop</em> rather than
+      a one-way street, and it is the only stage that reports the truth about real users (Lesson 1.1,
+      §6.2).
+    </p>
+
+    <div class="callout">
+      <span class="t">The invariants, restated as map rules</span>
+      <p>
+        Three rules from Lesson 1.1 are really rules <em>about this map</em>: (1) <strong>the pipeline
+        is the only road</strong> — no SSH-ing in to edit production, or the map becomes a lie;
+        (2) <strong>build once, promote the same artifact</strong> — the digest that passed the gate
+        is the digest that serves users; (3) <strong>fast, proven reversal</strong> — the previous
+        artifact stays ready so release can be undone in seconds.
+      </p>
+    </div>
+
+    <!-- ============================== 7 ============================== -->
+    <h2 id="s7">7 · Real Industry Examples</h2>
+
+    <h3>The course project, timed <span class="pill">devboard</span></h3>
+    <p>
+      This is the exact stack you will build: GitHub → GitHub Actions → a container registry → a $5
+      virtual server running your containers behind nginx. Here is the button change from §6, on the
+      clock:
+    </p>
+<pre><code>00:00   git push origin main            you press Enter
+00:03   GitHub fires the workflow        webhook → Actions runner boots
+00:20   checkout + npm ci + build        clean-room build of the exact SHA
+02:10   unit + integration tests pass    THE GATE (a fail would stop here)
+02:40   docker build → image tagged      one immutable artifact
+03:05   push image to registry           addressed by digest sha256:9f2c…
+03:30   deploy to staging + smoke test   runs, but no public traffic
+04:10   release to production (rolling)  health-gated; old version kept warm
+04:30   observability confirms green     error rate flat, latency normal
+        ── total: ~4.5 min, zero downtime, one-command undo available ──</code></pre>
+    <p>
+      Contrast the compressed path from §3 doing the "same" work: you SSH in, pull, rebuild on the
+      box (using whatever is installed today), restart (dropping live connections), and eyeball the
+      logs — no gate, no artifact, no health check, no record, and a rollback that means rebuilding an
+      untested state by hand. Same change; a completely different risk profile.
+    </p>
+
+    <h3>The request path, from Lagos</h3>
+    <p>
+      Once deployed, a visitor's request for <code>devboard.app</code> runs the §6.8 chain: DNS
+      resolves the name to your server's IP; the browser opens an encrypted TLS connection; the
+      request hits nginx, which terminates TLS and routes <code>/api/tasks</code> to your Express
+      container on port 3000; Express queries Postgres, checks Redis, and returns JSON; the response
+      travels back and the browser renders the board. None of that touched the delivery pipeline — it
+      is the <em>other</em> half of the map, exercised on every single visit.
+    </p>
+
+    <h3>The map is scale-invariant</h3>
+    <p>
+      Amazon deploying every 11.6 seconds and Netflix running across thousands of instances (Lesson
+      1.1, §7) use <em>the same map</em> — the nodes are identical; only the automation and
+      redundancy at each node are turned up. A solo engineer's map and Amazon's map have the same
+      shape. That is why learning the map once pays off at every scale: you are not learning a
+      beginner's simplification you will later discard, you are learning the actual structure.
+    </p>
+
+    <!-- ============================== 8 ============================== -->
+    <h2 id="s8">8 · Diagrams</h2>
+
+    <h3>8.1 The whole delivery path — keyboard to running process</h3>
+    <figure>
+<pre><code>  YOUR LAPTOP          GIT HOST            CI RUNNER (ephemeral, clean room)
+ ┌───────────┐        ┌─────────┐    ┌──────────────────────────────────────┐
+ │ edit      │        │         │    │  checkout SHA                         │
+ │ commit    │  push  │  main   │ ─▶ │  install (lockfile)   ── build once ─▶│
+ │ (hooks)   │ ─────▶ │  ref++  │    │  compile / bundle                     │
+ └───────────┘        └─────────┘    │  package → IMAGE (tag = SHA)          │
+   "just moves         webhook       │            │                          │
+    commits to         fires ────────┘            ▼                          │
+    a server"                        │      ┌─────────────┐  GATE            │
+                                     │      │   TESTS     │  fail ⇒ STOP     │
+                                     │      │  + scans    │──────────────────┤
+                                     │      └──────┬──────┘  pass ⇒ go       │
+                                     └─────────────┼────────────────────────┘
+                                                   ▼
+                                            ┌─────────────┐   addressed by
+                                            │  REGISTRY   │   digest sha256:…
+                                            │  (artifact) │
+                                            └──────┬──────┘
+                                                   ▼
+                                     ┌───────────────────────────┐
+                                     │  DEPLOY  → start container │  no traffic yet
+                                     │  RELEASE → shift traffic   │  health-gated
+                                     └──────────────┬────────────┘  (Module 10)
+                                                    ▼
+                                        ╔═══════════════════════╗
+                                        ║  THE RUNNING SERVICE  ║  ◀── the two
+                                        ║  a process on a port  ║      paths meet
+                                        ╚═══════════════════════╝      here</code></pre>
+      <figcaption>Runs once per change, left to right. <code>git push</code> only reaches the second box — everything after is triggered, not pushed.</figcaption>
+    </figure>
+
+    <h3>8.2 The request path — user to response</h3>
+    <figure>
+<pre><code>  USER (browser)
+      │  types  devboard.app
+      ▼
+ ┌──────────┐   "what IP is that name?"
+ │   DNS    │   name ─────────────────▶ 203.0.113.10        (Module 4)
+ └────┬─────┘
+      ▼  open TCP + TLS handshake (http → https)            (Module 4)
+ ┌──────────────┐   spreads traffic across healthy copies
+ │ LOAD BALANCER│   ──────────────────────────────────────  (Module 5)
+ └──────┬───────┘
+        ▼   terminates TLS · serves static · routes by path
+ ┌──────────────┐   /api/*  ─▶ backend   ·   /*  ─▶ frontend  (Module 5)
+ │ REVERSE PROXY│
+ │   (nginx)    │
+ └──────┬───────┘
+        ▼  port 3000
+ ╔══════════════╗        ┌────────────┐   ┌────────────┐
+ ║ YOUR PROCESS ║ ─────▶ │  Postgres  │   │   Redis    │   (project stack)
+ ║  (container) ║ ◀───── │ (database) │   │  (cache)   │
+ ╚══════════════╝        └────────────┘   └────────────┘
+        │
+        ▼  response travels back up the same chain → browser paints the page
+
+  Runs on EVERY visit, right to left and back. Independent of the delivery path.</code></pre>
+    </figure>
+
+    <h3>8.3 The two paths, joined — and who owns each node</h3>
+    <figure>
+<pre><code>   DELIVERY PATH  (once per change)              RETURN CHANNEL
+   push ▶ build ▶ test ▶ registry ▶ deploy ▶┐   ┌──────────────────┐
+    M9      M9     M9      M7        M10     │   │  OBSERVABILITY   │
+                                            ▼   │  logs · metrics  │
+                                 ╔═════════════╗│  traces · alerts │
+                                 ║ THE RUNNING ║┼─ postmortems ────┘  M12
+                                 ║   SERVICE   ║│      │
+                                 ╚═════════════╝│      └── feeds back to "push"
+                                            ▲   │
+   REQUEST PATH  (every visit)              │   │
+   user ◀ edge ◀ proxy ◀───────────────────┘   │
+    —    M4      M5                             │
+              runs on: OS + server + (orchestrator)
+                        M2/M3    M6      M13
+
+   Substrate under everything:  Linux (M2,M3) · Networking (M4)
+   Compose ties the local system together (M8) · Reliability & security (M11)
+   Architecture capstone puts it all in context (M14)</code></pre>
+      <figcaption>The whole course on one page. Every module is a zoom into one node here. This is the diagram Milestone 1 asks you to be able to draw unaided.</figcaption>
+    </figure>
+
+    <h3>8.4 What <code>git push</code> does vs what people think it does</h3>
+    <figure>
+<pre><code>  THE MENTAL MODEL PEOPLE HAVE:
+     git push  ═══════════════════════════════════════▶  live for users
+               (one magic step that "deploys the app")
+
+  WHAT ACTUALLY HAPPENS:
+     git push ─▶ commits on Git host.  ■ THE END. that's all push did.
+                     │
+                     └▶ (webhook) ─▶ build ─▶ test ─▶ publish ─▶ deploy
+                                                         ─▶ release ─▶ live
+                        └──────── triggered BY the push, not done by it ────┘</code></pre>
+    </figure>
+
+    <!-- ============================== 9 ============================== -->
+    <h2 id="s9">9 · Advantages</h2>
+    <p>The payoff of carrying this map in your head, concretely:</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>What the map gives you</th><th>Because…</th></tr></thead>
+        <tbody>
+          <tr><td><b>You can localise any failure</b></td><td>"Down" becomes a question with an address: DNS? proxy? the app? the database? the build? You bisect the path instead of guessing.</td></tr>
+          <tr><td><b>You can scope decisions</b></td><td>"Do I need a load balancer / staging / a registry yet?" is answerable once you know what each node does and what its absence costs.</td></tr>
+          <tr><td><b>The course becomes navigable</b></td><td>Every later module announces which node it zooms into, so new tools attach to a skeleton instead of floating free.</td></tr>
+          <tr><td><b>You debug prod/local gaps fast</b></td><td>"Works on my machine" almost always lives in the gap between the delivery path (what got built) and the request path (what the edge does). Knowing both halves points straight at it.</td></tr>
+          <tr><td><b>You can talk to anyone's system</b></td><td>Ask "show me the map" and you can read any team's setup, because they are all the same shape at different resolutions.</td></tr>
+          <tr><td><b>Interviews and design reviews</b></td><td>"Walk me through what happens when you deploy / when a request comes in" is a standard question. The map <em>is</em> the answer.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ============================== 10 ============================== -->
+    <h2 id="s10">10 · Limitations</h2>
+    <p>The map is a model, and every model lies a little. Know where.</p>
+    <dl class="terms">
+      <dt>Managed platforms collapse nodes</dt>
+      <dd>A PaaS (Heroku, Render, Fly, Vercel) or serverless platform hides several nodes behind one <code>git push</code> — they still build, publish, deploy, route and load-balance, but you don't see it. That is a convenience, not an exception: the nodes are still there, and when the platform misbehaves you must know they exist to reason about it.</dd>
+      <dt>Not every project has every node</dt>
+      <dd>A static site skips the runtime and database entirely (files served from a CDN). A tiny internal tool may have no load balancer and no staging. The map is the <em>maximal</em> path; real projects use a subset. Knowing the full shape lets you see what you chose to omit.</dd>
+      <dt>The boundaries blur in practice</dt>
+      <dd>A reverse proxy can also load-balance; a load balancer can terminate TLS; an orchestrator can subsume deploy, release, health-checking and load-balancing at once. The nodes are <em>roles</em>, not always separate boxes — one component can play several.</dd>
+      <dt>It is a happy-path sketch</dt>
+      <dd>Real systems add CDNs, message queues, background workers, cron jobs, multiple databases, read replicas, secrets managers, and more. Those attach to the map; they don't replace it. This lesson deliberately draws the spine, not every rib.</dd>
+      <dt>"Once per change / every visit" is a simplification</dt>
+      <dd>Autoscaling, restarts and config reloads mean the delivery-side machinery can stir without a new commit. The two-paths model is a teaching frame, not a claim that the delivery path is ever truly idle.</dd>
+    </dl>
+
+    <!-- ============================== 11 ============================== -->
+    <h2 id="s11">11 · Common Misconceptions</h2>
+
+    <div class="myth">
+      <div class="m">"<code>git push</code> deploys my app."</div>
+      <div class="r"><p>Push uploads commits to the Git host and updates a ref. Full stop. It may <em>trigger</em> a pipeline that eventually deploys, but push itself never builds, tests, or ships anything. On a repo with no pipeline configured, <code>git push</code> changes nothing a user can see. Conflating "push" with "deploy" is the single most common reason beginners cannot reason about what broke.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"The server runs my source code / my repository."</div>
+      <div class="r"><p>Production runs a <em>built artifact</em> — a container image containing compiled/bundled output plus pinned dependencies — not your <code>.jsx</code> files and not your <code>.git</code> folder. The repository is the recipe; the artifact is the cooked dish; the running process is the dish being served. Editing source on the server (if you even can) changes nothing until something rebuilds and redeploys.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"The domain name is my server."</div>
+      <div class="r"><p>A domain is a lookup key. DNS translates it to an IP address, and that address might point at a load balancer in front of twenty servers, or move to a completely different machine tomorrow with no code change at all. The name and the machine are joined only by a directory entry you control — which is exactly why you can swap servers without users noticing.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"If it works on localhost, it'll work in production."</div>
+      <div class="r"><p>Localhost exercises neither the real delivery path (a clean-room build with pinned deps) nor the real request path (DNS, TLS, a proxy, a load balancer, a network between your app and its database). Most "works on my machine" failures live precisely in those two gaps. The whole point of building an artifact and having a production-like staging environment is to shrink this gap to near zero.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"Deploying and releasing are the same thing."</div>
+      <div class="r"><p>Deploy puts the new version on the runtime; release sends users to it. Keeping them separate is what enables canaries (release to 1% first), blue-green (instant swap, instant swap-back), and feature flags (deploy the code dark, switch it on later). Fuse them — as a bare <code>restart</code> does — and you lose every one of those safety mechanisms at once.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"The build happens on the production server."</div>
+      <div class="r"><p>In a real pipeline the build happens <em>once</em>, on a clean CI runner, before production ever sees it — and the exact bytes that passed the tests are the bytes that get deployed. Building on the production box (as the compressed path does) reintroduces drift and means production runs something no test ever saw.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"HTTPS is handled by my application code."</div>
+      <div class="r"><p>Usually TLS is terminated at the edge — the load balancer or reverse proxy decrypts the request and forwards plain HTTP to your app on a private network. Your app code typically never touches a certificate. This is why "add HTTPS" is mostly a Module 5 (proxy) and Module 4 (certificates/DNS) task, not an application change.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"There is one server behind the domain."</div>
+      <div class="r"><p>Often there are many identical copies behind a load balancer, precisely so that one can die, or be replaced during a deploy, without downtime. "The server" is a convenient fiction for "whichever healthy instance the load balancer picked for this request."</p></div>
+    </div>
+
+    <!-- ============================== 12 ============================== -->
+    <h2 id="s12">12 · Practical Use Cases</h2>
+
+    <h3>Debugging: localise before you theorise</h3>
+    <p>
+      When something is wrong, walk the request path outside-in and ask a yes/no question at each
+      node: Does DNS resolve (<code>dig devboard.app</code>)? Does the port answer
+      (<code>curl -v https://devboard.app</code>)? Is it TLS or the app that fails? Does the proxy
+      route <code>/api</code> correctly? Is the app process up? Can it reach the database? Each answer
+      halves the search space. "The site is broken" is not a bug report; "TLS connects but
+      <code>/api</code> returns 502 while <code>/</code> loads" points at exactly one node.
+    </p>
+
+    <h3>Learning: use the map as your syllabus</h3>
+    <p>
+      Pin the §8.3 diagram somewhere. As each module arrives, mark which node it fills in. You will
+      finish the course able to point at any node and explain what it does, why it exists, and what
+      breaks without it — which is the definition of understanding a system rather than memorising its
+      tools.
+    </p>
+
+    <h3>Architecture: decide which nodes you actually need</h3>
+    <p>
+      The map is maximal on purpose. For a side project, a defensible subset is: GitHub → Actions →
+      one built image → one small server running it behind nginx, with uptime alerting. No load
+      balancer, no orchestrator, no staging — yet. Knowing the full map lets you make those omissions
+      <em>deliberately</em>, and know the exact node to add when you outgrow the choice (add a second
+      instance and a load balancer when one server is no longer enough; add staging when a bad deploy
+      first burns you).
+    </p>
+
+    <h3>Onboarding: "show me the map"</h3>
+    <p>
+      The fastest way to understand any unfamiliar system — a new job, an inherited codebase — is to
+      reconstruct its two paths: how does a change get to production here, and how does a request get
+      served? Draw it on a whiteboard and have someone correct you. You will learn more in twenty
+      minutes than from a day of reading the code.
+    </p>
+
+    <!-- ============================== 13 ============================== -->
+    <h2 id="s13">13 · Summary</h2>
+    <ul class="takeaways">
+      <li>The gap between <code>git push</code> and a served request is not one step called "deploy" — it is roughly a dozen distinct systems, each doing one job and each able to fail on its own.</li>
+      <li>There are <strong>two paths</strong>: the <strong>delivery path</strong> (code → running service, once per change, left to right) and the <strong>request path</strong> (user → response, every visit, right to left). They meet at the running service.</li>
+      <li><code>git push</code> only uploads commits to the Git host and updates a ref. Everything after — build, test, publish, deploy, release — is <em>triggered by</em> the push, not <em>done by</em> it.</li>
+      <li>The delivery path is: <strong>source → CI build (once, clean room) → verify (the gate) → registry (immutable artifact) → deploy → release (health-gated) → runtime</strong>.</li>
+      <li>The request path is: <strong>DNS → transport &amp; TLS → load balancer → reverse proxy → your process → data → back</strong>.</li>
+      <li><strong>Deploy ≠ release.</strong> Deploy places the artifact; release directs traffic. Separating them is what makes safe rollouts and instant rollback possible.</li>
+      <li>Production runs a built <strong>artifact</strong>, not your source; the registry gives "what is in production?" a precise, one-line answer (a digest).</li>
+      <li>The compressed solo deploy (SSH + pull + rebuild + restart) contains every stage of the full map, but <em>fused, manual and invisible</em> — which is the source of each of its failure modes.</li>
+      <li>The map is <strong>scale-invariant</strong>: a solo project and Amazon share its shape; only the automation and redundancy at each node differ. Managed platforms hide nodes but never remove them.</li>
+      <li>Carry the map and you can localise any failure, scope any decision, navigate the whole course, and read any team's system. It is the diagram Milestone 1 asks you to draw from memory.</li>
+    </ul>
+
+    <!-- ============================== 14 ============================== -->
+    <h2 id="s14">14 · Recommended Resources</h2>
+    <p><small>Curated, not exhaustive. <span class="rank">start here</span> marks the one to use first in each group.</small></p>
+
+    <div class="res">
+      <h4>Official / authoritative documentation</h4>
+      <ul>
+        <li><b>The Twelve-Factor App — <code>12factor.net</code></b> <span class="rank">start here</span>
+          <span class="why">Twelve rules for apps that are easy to build, ship and run. Factors V (build/release/run separated) and VII (port binding) are this lesson in checklist form. Short; read it now, revisit before Module 8.</span></li>
+        <li><b>GitHub Actions docs — "Understanding GitHub Actions"</b>
+          <span class="why">The concrete version of §6.2–6.5: events, workflows, runners, jobs. Skim now for the vocabulary; you implement it in Module 9.</span></li>
+        <li><b>Docker — "What is an image?" / "What is a container?"</b>
+          <span class="why">The precise definition of the artifact the whole delivery path revolves around. Full treatment in Module 7.</span></li>
+        <li><b>nginx docs — "Beginner's Guide" &amp; "Reverse proxy"</b>
+          <span class="why">What the edge node in §6.8 actually does. Reference for Module 5.</span></li>
+      </ul>
+
+      <h4>Talks &amp; video</h4>
+      <ul>
+        <li><b>"What happens when you type a URL and press Enter?" (many good talks/write-ups)</b> <span class="rank">start here</span>
+          <span class="why">The request path (§6.8) in full detail. A classic systems interview question; watching one good walkthrough cements DNS → TCP → TLS → server forever.</span></li>
+        <li><b>Dave Farley — <em>Continuous Delivery</em> YouTube channel</b>
+          <span class="why">His videos on the deployment pipeline and on "deploy vs release" are the moving-picture version of §5–6. Rigorous and first-principles.</span></li>
+      </ul>
+
+      <h4>Articles &amp; primary sources</h4>
+      <ul>
+        <li><b>Julia Evans — "How DNS works" and the networking zines (<code>wizardzines.com</code>)</b> <span class="rank">start here</span>
+          <span class="why">The friendliest accurate explanations of the request-path nodes (DNS, TLS, HTTP) anywhere. Free comics that happen to be correct. Perfect bridge into Module 4.</span></li>
+        <li><b>MDN — "How the web works" &amp; "What is a web server?"</b>
+          <span class="why">Vendor-neutral, precise, beginner-safe descriptions of the request path. Good second phrasing when a definition hasn't clicked.</span></li>
+        <li><b>Martin Fowler — "BlueGreenDeployment" &amp; "CanaryRelease"</b>
+          <span class="why">The two-page canonical descriptions of the release strategies named in §6.6. Read before Module 10.</span></li>
+      </ul>
+
+      <h4>Interactive labs &amp; practice</h4>
+      <ul>
+        <li><b>Your terminal: <code>dig</code>, <code>curl -v</code>, <code>traceroute</code></b> <span class="rank">start here</span>
+          <span class="why">The request path is not abstract — you can watch each hop. <code>dig devboard-style-domain</code> shows DNS; <code>curl -v https://…</code> shows the TLS handshake and headers. Used in this lesson's exercises.</span></li>
+        <li><b>Killercoda (<code>killercoda.com</code>)</b>
+          <span class="why">Free browser sandboxes for Docker and nginx when you want to poke a real proxy and registry. Useful from Module 5 onward.</span></li>
+      </ul>
+
+      <h4>GitHub repositories</h4>
+      <ul>
+        <li><b><code>kelseyhightower/nocode</code></b>
+          <span class="why">The joke from Lesson 1.1, still relevant: the simplest map is the one with the fewest nodes. Every node you add is a node that can fail.</span></li>
+        <li><b>Any small "Actions → build image → deploy to VPS" starter</b>
+          <span class="why">Search GitHub for a minimal Dockerfile + <code>deploy.yml</code> for a Node app. Read one end to end and match each part to a node on the §8.3 map — the best possible preview of Modules 7, 9 and 10.</span></li>
+      </ul>
+    </div>
+
+    <!-- ============================== 15 ============================== -->
+    <h2 id="s15">15 · Exercise</h2>
+    <p>
+      This is the Module 1 capstone, so the central exercise <em>is</em> Milestone 1: draw the map.
+      Do at least E1, E2 and E3. Budget 60–90 minutes.
+    </p>
+
+    <div class="ex">
+      <div class="h"><span>E1</span>Draw the whole map from memory</div>
+      <p>
+        On one page, without looking back, draw both paths: the delivery path from <code>git push</code>
+        to a running service, and the request path from a user to a response. Name every node. Then
+        open §8.3 and mark what you missed or misplaced.
+      </p>
+      <div class="out">Deliverable: one diagram. This is Milestone 1 — you should be able to redraw it, and narrate it in plain language with no jargon, before starting Module 2.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E2</span>Annotate the course project</div>
+      <p>
+        Take your <code>devboard</code> repo (from Lesson 1.1, E4). Onto your E1 map, write where each
+        real thing will live: which node is GitHub, which is Actions, which is the registry, which is
+        the $5 server, where nginx sits, where Postgres and Redis sit, where the domain points. Leave
+        "?" on any node you can't yet place.
+      </p>
+      <div class="out">Deliverable: your annotated map, committed to <code>docs/architecture.md</code>. The "?"s are your personal syllabus for Modules 2–12.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E3</span>Watch a real request path</div>
+      <p>Pick any site you use. In a terminal, run and read the output of:</p>
+<pre><code>dig +short example.com           # the DNS lookup: name → IP(s)
+curl -v https://example.com      # watch: DNS, TLS handshake, request, response headers</code></pre>
+      <p>Match each part of the output to a node in §8.2. Note the <code>Server:</code> header and any headers that reveal a proxy or CDN.</p>
+      <div class="out">Deliverable: three lines — the IP the name resolved to, one line proving TLS happened, and one header that reveals an edge component (proxy/CDN/load balancer).</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E4</span>Localise three past failures</div>
+      <p>
+        Recall three times something you built "didn't work" after deploying (or after it was live).
+        For each, place the failure on exactly one node of the map, and name the yes/no question that
+        would have pinpointed it fastest.
+      </p>
+      <div class="out">Deliverable: three rows: symptom → node → the one diagnostic command or check. This is the debugging method of §12 rehearsed on your own history.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E5</span>Prove what <code>git push</code> does</div>
+      <p>
+        In any repo with no CI configured, make a trivial commit and push it. Confirm that
+        <em>nothing</em> about any running site changed. Then look at the remote (e.g. GitHub's
+        commits view) and confirm the commit is there. Write one sentence explaining the gap between
+        those two observations.
+      </p>
+      <div class="out">Deliverable: one sentence stating precisely what push did and did not do — in your own words, not this lesson's.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E6</span>Optional: find the collapsed nodes</div>
+      <p>
+        If you have ever used a PaaS (Vercel, Netlify, Render, Heroku, Fly), list which nodes of the
+        §8.3 map it performs for you invisibly on a <code>git push</code>. For each hidden node, name
+        one thing that could go wrong there that you would have to understand the node to debug.
+      </p>
+      <div class="out">Deliverable: a short list. If you cannot name the hidden nodes, the platform is a black box to you — which is fine until the day it breaks.</div>
+    </div>
+
+    <!-- ============================== 16 ============================== -->
+    <h2 id="s16">16 · Quiz</h2>
+    <div class="callout warn">
+      <span class="t">How to use this</span>
+      <p>
+        Answer in your own words <strong>before</strong> revealing the model answer — retrieval builds
+        the memory; recognition only feels like it does. Two or three sentences each. Module 1 is
+        complete when you can answer Q1, Q2, Q4 and Q8 cold, and complete exercise E1 unaided.
+      </p>
+    </div>
+
+    <div class="quiz">
+
+      <details class="q"><summary>Precisely, what does <code>git push</code> do — and name three things it does not do?</summary>
+        <div class="ans"><p>It uploads your new commit objects to the Git host and advances a remote ref (e.g. <code>main</code>) to point at your latest commit. That is all. It does <strong>not</strong> build your code, does <strong>not</strong> run your tests, and does <strong>not</strong> deploy or release anything. On a repository with no pipeline configured, a push changes nothing a user can observe; anything further happens because the push <em>triggers</em> other systems, not because push did it.</p></div>
+      </details>
+
+      <details class="q"><summary>Distinguish the delivery path from the request path: direction, frequency, and where they meet.</summary>
+        <div class="ans"><p>The <strong>delivery path</strong> turns source code into a running service — build, test, publish, deploy, release — running <em>once per change</em>, left to right, keyboard to server. The <strong>request path</strong> carries a user's request to that running service and returns a response — DNS, TLS, load balancer, proxy, app, database — running <em>on every visit</em>, right to left and back. They meet at exactly one node: <strong>the running service</strong>.</p></div>
+      </details>
+
+      <details class="q"><summary>A user reports the site is down. Walk the request path and give the sequence of yes/no questions you would ask.</summary>
+        <div class="ans"><p>Outside-in: (1) Does DNS resolve the name to an IP (<code>dig</code>)? (2) Does the IP accept a connection and complete a TLS handshake (<code>curl -v</code>)? (3) Does the reverse proxy respond, and does it route the failing path correctly (e.g. <code>/</code> works but <code>/api</code> 502s)? (4) Is the app process actually running and listening on its port? (5) Can the app reach its database/cache? Each answer roughly halves the search space, turning "it's down" into a specific node.</p></div>
+      </details>
+
+      <details class="q"><summary>What is a build artifact, why build it exactly once, and what precisely goes wrong if you build on the production server instead?</summary>
+        <div class="ans"><p>An artifact is the single immutable output of the build — here, a container image of your compiled code plus pinned dependencies plus a minimal OS. Building once, in a clean CI runner, means the exact bytes that passed the tests are the bytes that run in production. Building on the production server instead makes the running code depend on that box's current state (Node version, system libraries, leftover files), so production runs something no test ever saw, environments drift into unreproducible snowflakes, and a half-finished build can leave the box in a broken in-between state.</p></div>
+      </details>
+
+      <details class="q"><summary>Explain the difference between deploy and release, and name one thing separating them makes possible.</summary>
+        <div class="ans"><p><strong>Deploy</strong> = place the new artifact on the runtime and start it (no users sent to it yet). <strong>Release</strong> = shift user traffic onto it. Separating them enables canary releases (send 1% of traffic first and watch), blue-green (instant swap with the old version kept warm for instant swap-back), and feature flags (deploy code "dark" and switch it on later). A bare <code>restart</code> fuses the two and loses all of these.</p></div>
+      </details>
+
+      <details class="q"><summary>Your friend says "I pushed my code but the website hasn't changed — <code>git push</code> is broken." What's actually going on?</summary>
+        <div class="ans"><p><code>git push</code> is working fine — it put the commits on the Git host, which you can verify in the host's commits view. The website hasn't changed because <em>nothing is configured to turn those commits into a running deploy</em>: there is no pipeline (or it failed), or the deploy step hasn't run. Push and deploy are different events; the friend has conflated "my code is on GitHub" with "my code is serving users," which are separated by the entire delivery path.</p></div>
+      </details>
+
+      <details class="q"><summary>What does a reverse proxy like nginx typically do in the request path, and why isn't that job done by your application?</summary>
+        <div class="ans"><p>It sits in front of the app and commonly: terminates TLS (decrypts HTTPS so the app can speak plain HTTP internally), serves static files directly, and routes by path (e.g. <code>/api/*</code> to the backend, everything else to the frontend). It's kept out of the app because these are cross-cutting edge concerns — certificate handling, routing, static serving — that are better centralised, hardened and reused than reimplemented in every application, and because it lets you change routing or certificates without redeploying the app.</p></div>
+      </details>
+
+      <details class="q"><summary>Why is the map called "scale-invariant," and what does that imply for how you should learn it?</summary>
+        <div class="ans"><p>Because a solo project's map and a giant like Amazon's have the <em>same shape</em> — the same nodes (source, build, gate, registry, deploy/release, runtime, edge, data, observability). Only the automation and redundancy at each node differ (one server vs thousands; manual approve vs full auto). The implication: learning the map once is not a throwaway beginner's simplification — it is the actual structure of production systems, so effort spent understanding it now pays off at every scale later.</p></div>
+      </details>
+
+      <details class="q"><summary>Name three nodes a typical PaaS (e.g. Heroku/Render/Vercel) performs invisibly on a <code>git push</code>, and why it still matters that you know they exist.</summary>
+        <div class="ans"><p>Any three of: the build (it builds your artifact), the registry/storage of that artifact, the deploy and release, the load balancer, TLS termination, and routing — all hidden behind one push. It matters because when the platform misbehaves (a build fails oddly, TLS won't provision, routing sends <code>/api</code> to the wrong place, a deploy half-succeeds), you can only diagnose it if you know the node exists behind the convenience. The platform removed the <em>work</em>, not the <em>nodes</em>.</p></div>
+      </details>
+
+      <details class="q"><summary>A change "works on localhost" but fails in production. Using the two paths, where are the most likely culprits and why?</summary>
+        <div class="ans"><p>Localhost exercises neither real path. On the <strong>delivery path</strong>, localhost skips the clean-room build with pinned dependencies, so a missing/loose dependency or an environment assumption can differ. On the <strong>request path</strong>, localhost has no DNS, no TLS, no reverse proxy, no load balancer, and the app talks to a local database instead of one across a network — so path routing, TLS, environment variables/secrets, and database connectivity are the classic culprits. The fix strategy is to shrink both gaps: build a real artifact, and use a production-like staging environment that includes the edge and real data connections.</p></div>
+      </details>
+
+    </div>
+
+    <div class="callout good">
+      <span class="t">End of Module 1</span>
+      <p>
+        Complete exercise E1 (the map, from memory) and be able to narrate both paths without jargon —
+        that is Milestone 1, and the whole point of Module 1. Module 2 zooms into the bottom of the
+        map, <em>the runtime</em>: what a server and an operating system actually are, and what you are
+        really renting when you pay $5 a month. Keep your annotated map from E2 open — every module
+        from here fills in one of its nodes.
+      </p>
+    </div>
+
+    <hr>
+
+    <nav class="pager" aria-label="Lesson navigation">
+      <a href="lesson-04-dora-metrics.html"><em>Previous lesson</em>← 1.4 · Measuring delivery (DORA metrics)</a>
+      <a class="next" href="../02-machines/lesson-01-what-a-server-is.html"><em>Next lesson</em>2.1 · What a server actually is →</a>
+    </nav>
+
+    <footer class="foot">
+      <b>From Commit to Production</b> · Module 1 · Lesson 1.5 — <em>What Really Happens Between git push and Production</em><br>
+      <small>Self-contained offline document · no external assets · regenerated in full when revised.
+      Roadmap: <a href="../../index.html">course/index.html</a></small>
+    </footer>
+  </article>
+</div>
+
+<script>
+(function(){
+  var root = document.documentElement;
+
+  /* ---------- theme ---------- */
+  var KEY='ftp.theme', saved=null;
+  try { saved = localStorage.getItem(KEY); } catch(e){}
+  if (saved) root.setAttribute('data-theme', saved);
+  document.getElementById('theme').addEventListener('click', function(){
+    var cur = root.getAttribute('data-theme');
+    if (!cur) cur = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    var next = cur === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem(KEY, next); } catch(e){}
+  });
+
+  /* ---------- expand/collapse all quiz answers ---------- */
+  var btn = document.getElementById('expand');
+  btn.addEventListener('click', function(){
+    var all = document.querySelectorAll('details.q');
+    var anyClosed = Array.prototype.some.call(all, function(d){ return !d.open; });
+    Array.prototype.forEach.call(all, function(d){ d.open = anyClosed; });
+    btn.textContent = anyClosed ? '⇕ Collapse all' : '⇕ Expand all';
+  });
+
+  /* ---------- reading progress bar ---------- */
+  var barEl = document.getElementById('readbar');
+  function onScroll(){
+    var h = document.documentElement;
+    var max = h.scrollHeight - h.clientHeight;
+    barEl.style.width = (max > 0 ? (h.scrollTop / max * 100) : 0) + '%';
+  }
+  addEventListener('scroll', onScroll, {passive:true});
+  onScroll();
+
+  /* ---------- TOC scroll-spy ---------- */
+  var links = Array.prototype.slice.call(document.querySelectorAll('#tocList a'));
+  var targets = links.map(function(a){ return document.querySelector(a.getAttribute('href')); })
+                     .filter(Boolean);
+  if ('IntersectionObserver' in window && targets.length){
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if (!e.isIntersecting) return;
+        links.forEach(function(a){
+          a.classList.toggle('on', a.getAttribute('href') === '#' + e.target.id);
+        });
+      });
+    }, { rootMargin:'-80px 0px -70% 0px', threshold:0 });
+    targets.forEach(function(t){ io.observe(t); });
+  }
+})();
+</script>
+</body>
+</html>
