@@ -1,0 +1,1324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 2.2 · What an Operating System Does — From Commit to Production</title>
+<style>
+/* ============================================================
+   DESIGN TOKENS  (same system as the roadmap)
+   ============================================================ */
+:root{
+  color-scheme: dark light;
+  --font-sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", Consolas, "SFMono-Regular", Menlo, monospace;
+
+  --bg:#0a0e17; --bg-alt:#0e1421; --surface:#131b2b; --surface-2:#19233a;
+  --border:#243049; --border-strong:#37456a;
+  --text:#e8eefb; --text-dim:#a7b4cd; --text-faint:#78869f;
+
+  --accent:#6ea8ff;  --accent-soft:rgba(110,168,255,.14);
+  --green:#4fd39c;   --green-soft:rgba(79,211,156,.13);
+  --amber:#f2b754;   --amber-soft:rgba(242,183,84,.13);
+  --red:#ff7f76;     --red-soft:rgba(255,127,118,.13);
+  --purple:#b28cff;  --purple-soft:rgba(178,140,255,.13);
+  --teal:#4fd0d9;    --teal-soft:rgba(79,208,217,.13);
+
+  --radius:14px; --radius-sm:8px;
+  --shadow:0 1px 2px rgba(0,0,0,.45), 0 14px 34px -18px rgba(0,0,0,.75);
+  --maxw:1220px; --readw:840px;
+}
+:root[data-theme="light"]{
+  color-scheme: light;
+  --bg:#f7f9fc; --bg-alt:#eef2f8; --surface:#ffffff; --surface-2:#f2f5fa;
+  --border:#dde3ee; --border-strong:#c2ccdd;
+  --text:#131a26; --text-dim:#4b586e; --text-faint:#75839a;
+  --accent:#1f5fd0; --accent-soft:rgba(31,95,208,.09);
+  --green:#0f8a5f;  --green-soft:rgba(15,138,95,.10);
+  --amber:#9a6a06;  --amber-soft:rgba(154,106,6,.10);
+  --red:#c3352b;    --red-soft:rgba(195,53,43,.09);
+  --purple:#6d3ecb; --purple-soft:rgba(109,62,203,.09);
+  --teal:#07767e;   --teal-soft:rgba(7,118,126,.10);
+  --shadow:0 1px 2px rgba(18,28,45,.06), 0 12px 28px -18px rgba(18,28,45,.25);
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    color-scheme: light;
+    --bg:#f7f9fc; --bg-alt:#eef2f8; --surface:#ffffff; --surface-2:#f2f5fa;
+    --border:#dde3ee; --border-strong:#c2ccdd;
+    --text:#131a26; --text-dim:#4b586e; --text-faint:#75839a;
+    --accent:#1f5fd0; --accent-soft:rgba(31,95,208,.09);
+    --green:#0f8a5f;  --green-soft:rgba(15,138,95,.10);
+    --amber:#9a6a06;  --amber-soft:rgba(154,106,6,.10);
+    --red:#c3352b;    --red-soft:rgba(195,53,43,.09);
+    --purple:#6d3ecb; --purple-soft:rgba(109,62,203,.09);
+    --teal:#07767e;   --teal-soft:rgba(7,118,126,.10);
+    --shadow:0 1px 2px rgba(18,28,45,.06), 0 12px 28px -18px rgba(18,28,45,.25);
+  }
+}
+
+/* ============================================================ BASE */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth; scroll-padding-top:80px}
+body{margin:0; background:var(--bg); color:var(--text);
+  font-family:var(--font-sans); font-size:16.5px; line-height:1.72; -webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{line-height:1.28; margin:0 0 .5em; letter-spacing:-.015em; font-weight:680}
+h1{font-size:clamp(1.9rem,4vw,2.7rem)}
+h2{font-size:clamp(1.35rem,2.4vw,1.72rem); margin-top:2.6em; padding-top:.2em}
+h3{font-size:1.1rem; margin-top:2em; color:var(--text)}
+h4{font-size:.98rem; margin-top:1.5em; color:var(--text-dim)}
+p{margin:0 0 1.05em}
+a{color:var(--accent); text-decoration:none}
+a:hover{text-decoration:underline}
+strong{font-weight:660}
+em.term{font-style:normal; font-weight:680; color:var(--text)}
+code{font-family:var(--font-mono); font-size:.87em; background:var(--surface-2);
+  border:1px solid var(--border); border-radius:5px; padding:.1em .38em}
+ul,ol{padding-left:1.3em; margin:0 0 1.05em}
+li{margin:.35em 0}
+blockquote{margin:1.5em 0; padding:2px 0 2px 18px; border-left:3px solid var(--border-strong);
+  color:var(--text-dim); font-style:italic}
+blockquote footer{font-style:normal; font-size:.85rem; color:var(--text-faint); margin-top:.4em}
+hr{border:0; border-top:1px solid var(--border); margin:2.6rem 0}
+small{color:var(--text-faint)}
+sup a{font-size:.7em; padding:0 1px}
+
+/* ============================================================ BAR */
+header.bar{position:sticky; top:0; z-index:60;
+  background:color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter:blur(10px); border-bottom:1px solid var(--border)}
+.bar-in{padding:10px 22px; display:flex; align-items:center; gap:14px}
+.brand{font-weight:700; font-size:.92rem; white-space:nowrap}
+.brand a{color:var(--text)}
+.brand span{color:var(--accent)}
+.crumb{font-size:.82rem; color:var(--text-faint); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.bar .right{margin-left:auto; display:flex; gap:8px; align-items:center}
+button.ghost{font:inherit; font-size:.8rem; cursor:pointer; color:var(--text-dim);
+  background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:5px 11px}
+button.ghost:hover{border-color:var(--border-strong); color:var(--text)}
+#readbar{position:fixed; top:0; left:0; height:2px; background:var(--accent); z-index:70; width:0}
+
+/* ============================================================ LAYOUT */
+.shell{padding:0 40px;
+  display:grid; grid-template-columns:1fr; gap:36px}
+
+aside.toc{display:none}
+aside.toc .inner{position:sticky; top:74px; max-height:calc(100vh - 96px); overflow:auto;
+  padding:22px 0 40px; font-size:.86rem}
+aside.toc .lbl{font-size:.7rem; letter-spacing:.12em; text-transform:uppercase;
+  color:var(--text-faint); font-weight:700; margin:0 0 10px}
+aside.toc ol{list-style:none; padding:0; margin:0; counter-reset:t}
+aside.toc li{margin:0; counter-increment:t}
+aside.toc a{display:flex; gap:8px; padding:5px 10px 5px 8px; border-radius:6px;
+  color:var(--text-dim); border-left:2px solid transparent; line-height:1.4}
+aside.toc a:before{content:counter(t); font-family:var(--font-mono); font-size:.72rem;
+  color:var(--text-faint); flex:0 0 1.4em; text-align:right}
+aside.toc a:hover{background:var(--surface-2); color:var(--text); text-decoration:none}
+aside.toc a.on{color:var(--accent); border-left-color:var(--accent); background:var(--accent-soft)}
+article{min-width:0; padding-bottom:20px}
+
+/* ============================================================ HERO */
+.lead{padding:46px 0 26px; border-bottom:1px solid var(--border); margin-bottom:8px}
+.kicker{font-family:var(--font-mono); font-size:.74rem; letter-spacing:.16em;
+  text-transform:uppercase; color:var(--accent); margin-bottom:12px}
+.subtitle{font-size:1.1rem; color:var(--text-dim); max-width:var(--readw); margin-top:.6em}
+.meta{display:flex; flex-wrap:wrap; gap:8px; margin-top:20px}
+
+/* ============================================================ COMPONENTS */
+.pill{display:inline-block; font-family:var(--font-mono); font-size:.7rem; padding:3px 9px;
+  border-radius:999px; border:1px solid var(--border-strong); color:var(--text-dim); white-space:nowrap}
+.pill.a{color:var(--accent); border-color:var(--accent); background:var(--accent-soft)}
+.pill.g{color:var(--green); border-color:var(--green); background:var(--green-soft)}
+.pill.r{color:var(--red); border-color:var(--red); background:var(--red-soft)}
+.pill.p{color:var(--purple); border-color:var(--purple); background:var(--purple-soft)}
+
+.callout{border-left:3px solid var(--accent); background:var(--accent-soft);
+  border-radius:0 var(--radius-sm) var(--radius-sm) 0; padding:15px 19px; margin:1.7em 0}
+.callout.warn{border-color:var(--amber); background:var(--amber-soft)}
+.callout.bad{border-color:var(--red); background:var(--red-soft)}
+.callout.good{border-color:var(--green); background:var(--green-soft)}
+.callout.def{border-color:var(--purple); background:var(--purple-soft)}
+.callout .t{font-weight:700; font-size:.76rem; letter-spacing:.1em; text-transform:uppercase;
+  margin-bottom:6px; display:block; color:var(--text)}
+.callout > :last-child{margin-bottom:0}
+
+dl.terms{margin:1.4em 0; padding:0}
+dl.terms dt{font-weight:680; color:var(--text); margin-top:1em; font-size:.98rem}
+dl.terms dt:first-child{margin-top:0}
+dl.terms dd{margin:.25em 0 0; color:var(--text-dim); padding-left:0}
+
+pre{background:var(--bg-alt); border:1px solid var(--border); border-radius:var(--radius-sm);
+  padding:16px 18px; overflow-x:auto; font-family:var(--font-mono); font-size:.8rem;
+  line-height:1.5; margin:1.6em 0}
+pre code{background:none; border:0; padding:0; font-size:inherit}
+figure{margin:1.8em 0}
+figure figcaption{font-size:.82rem; color:var(--text-faint); margin-top:-.6em; padding-left:2px}
+
+.tablewrap{overflow-x:auto; margin:1.6em 0; border:1px solid var(--border); border-radius:var(--radius)}
+table{border-collapse:collapse; width:100%; font-size:.9rem; min-width:560px}
+th,td{padding:10px 14px; text-align:left; border-bottom:1px solid var(--border); vertical-align:top}
+th{background:var(--surface-2); font-size:.73rem; text-transform:uppercase; letter-spacing:.08em;
+  color:var(--text-dim); font-weight:700}
+tr:last-child td{border-bottom:0}
+td.y{color:var(--green); font-weight:600} td.n{color:var(--red); font-weight:600}
+
+.card{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+  padding:20px 22px; box-shadow:var(--shadow); margin:1.6em 0}
+.card > :first-child{margin-top:0}
+.grid2{display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; margin:1.6em 0}
+.grid2 .card{margin:0}
+
+/* misconceptions */
+.myth{border:1px solid var(--border); border-radius:var(--radius); margin:14px 0; overflow:hidden}
+.myth .m{background:var(--red-soft); border-bottom:1px solid var(--border); padding:11px 16px;
+  font-weight:660; display:flex; gap:10px}
+.myth .m:before{content:"✕"; color:var(--red); font-weight:700}
+.myth .r{padding:13px 16px}
+.myth .r:before{content:"Reality "; font-family:var(--font-mono); font-size:.68rem;
+  letter-spacing:.12em; text-transform:uppercase; color:var(--green); display:block; margin-bottom:4px}
+.myth .r > :last-child{margin-bottom:0}
+
+/* resources */
+.res{margin:1.4em 0}
+.res h4{margin:1.4em 0 .4em; color:var(--accent); font-size:.78rem;
+  letter-spacing:.1em; text-transform:uppercase}
+.res ul{list-style:none; padding:0; margin:0}
+.res li{border-bottom:1px dashed var(--border); padding:8px 0; margin:0}
+.res li:last-child{border-bottom:0}
+.res .why{display:block; font-size:.85rem; color:var(--text-dim)}
+.res .rank{font-family:var(--font-mono); font-size:.66rem; padding:1px 6px; border-radius:999px;
+  border:1px solid var(--green); color:var(--green); background:var(--green-soft); margin-left:6px}
+
+/* exercises */
+.ex{border:1px solid var(--border); border-left:3px solid var(--teal);
+  border-radius:0 var(--radius) var(--radius) 0; padding:16px 20px; margin:16px 0; background:var(--surface)}
+.ex .h{font-weight:680; margin-bottom:6px}
+.ex .h span{font-family:var(--font-mono); font-size:.72rem; color:var(--teal); margin-right:8px}
+.ex .out{font-size:.86rem; color:var(--text-faint); margin-top:8px; border-top:1px dashed var(--border); padding-top:8px}
+.ex > :last-child{margin-bottom:0}
+
+/* quiz */
+.quiz{counter-reset:q}
+.q{border:1px solid var(--border); border-radius:var(--radius); margin:12px 0;
+  background:var(--surface); overflow:hidden}
+.q > summary{cursor:pointer; list-style:none; padding:14px 18px; display:flex; gap:12px;
+  font-weight:600; align-items:flex-start}
+.q > summary::-webkit-details-marker{display:none}
+.q > summary:before{counter-increment:q; content:"Q" counter(q); font-family:var(--font-mono);
+  font-size:.72rem; color:var(--accent); background:var(--accent-soft);
+  border:1px solid var(--accent); border-radius:6px; padding:2px 7px; flex:0 0 auto; margin-top:2px}
+.q > summary::after{content:"show answer"; margin-left:auto; font-size:.7rem; font-weight:600;
+  letter-spacing:.08em; text-transform:uppercase; color:var(--text-faint); flex:0 0 auto; padding-top:4px}
+.q[open] > summary::after{content:"hide"}
+.q .ans{padding:2px 18px 16px; border-top:1px solid var(--border); margin-top:0;
+  background:var(--bg-alt); color:var(--text-dim)}
+.q .ans > :first-child{margin-top:1em}
+.q .ans > :last-child{margin-bottom:0}
+.q .ans strong{color:var(--text)}
+
+/* summary list */
+ul.takeaways{list-style:none; padding:0}
+ul.takeaways li{padding:9px 0 9px 30px; position:relative; border-bottom:1px dashed var(--border)}
+ul.takeaways li:last-child{border-bottom:0}
+ul.takeaways li:before{content:"▸"; position:absolute; left:6px; top:9px; color:var(--accent)}
+
+/* pager / footer */
+.pager{display:flex; gap:12px; margin:44px 0 30px; flex-wrap:wrap; max-width:none}
+.pager a, .pager .disabled{flex:1 1 250px; border:1px solid var(--border); border-radius:var(--radius);
+  padding:14px 18px; background:var(--surface); text-decoration:none; color:var(--text)}
+.pager a:hover{border-color:var(--accent); text-decoration:none}
+.pager .disabled{opacity:.45}
+.pager em{display:block; font-style:normal; font-size:.7rem; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--text-faint); margin-bottom:3px}
+.pager .next{text-align:right}
+footer.foot{border-top:1px solid var(--border); margin-top:20px; padding:24px 0 56px;
+  color:var(--text-faint); font-size:.85rem}
+
+@media print{
+  header.bar,aside.toc,#readbar,button.ghost,.pager{display:none}
+  body{background:#fff; color:#000; font-size:10.5pt}
+  .shell{display:block; max-width:none; padding:0}
+  .q{break-inside:avoid} .q .ans{display:block !important}
+  article > *{max-width:none}
+}
+</style>
+</head>
+<body>
+
+<div id="readbar"></div>
+<header class="bar">
+  <div class="bar-in">
+    <div class="brand"><a href="../../index.html">Commit&nbsp;<span>→</span>&nbsp;Production</a></div>
+    <div class="crumb">/ Module&nbsp;2 · Machines / Lesson&nbsp;2.2</div>
+    <div class="right">
+      <button class="ghost" id="expand">⇕ Expand all</button>
+      <button class="ghost" id="theme">◐ Theme</button>
+    </div>
+  </div>
+</header>
+
+<div class="shell">
+
+  <aside class="toc">
+    <div class="inner">
+      <p class="lbl">Lesson contents</p>
+      <ol id="tocList">
+        <li><a href="#s1">Problem Statement</a></li>
+        <li><a href="#s2">Historical Context</a></li>
+        <li><a href="#s3">Previous Solution</a></li>
+        <li><a href="#s4">Why It Failed</a></li>
+        <li><a href="#s5">New Solution</a></li>
+        <li><a href="#s6">Internal Mechanics</a></li>
+        <li><a href="#s7">Real Industry Examples</a></li>
+        <li><a href="#s8">Diagrams</a></li>
+        <li><a href="#s9">Advantages</a></li>
+        <li><a href="#s10">Limitations</a></li>
+        <li><a href="#s11">Common Misconceptions</a></li>
+        <li><a href="#s12">Practical Use Cases</a></li>
+        <li><a href="#s13">Summary</a></li>
+        <li><a href="#s14">Recommended Resources</a></li>
+        <li><a href="#s15">Exercise</a></li>
+        <li><a href="#s16">Quiz</a></li>
+      </ol>
+    </div>
+  </aside>
+
+  <article>
+    <div class="lead">
+      <div class="kicker">Module 2 · Lesson 2.2</div>
+      <h1>What an operating system does: kernel, user space, system calls, privilege rings</h1>
+      <p class="subtitle">
+        Lesson 2.1 opened the box and found four parts: CPU, RAM, disk, NIC. But your Express app never
+        touches any of them directly. Between your code and the metal sits a single, privileged program
+        that decides who gets the CPU, who gets memory, and who is even <em>allowed</em> to speak to the
+        disk or the network. This lesson is that program: the operating system. We will separate the
+        <em>kernel</em> from the userland around it, watch a single <code>read()</code> cross the
+        hardware-enforced boundary between them, and see why that boundary is the reason one crashing
+        process doesn't take the whole server down with it.
+      </p>
+      <div class="meta">
+        <span class="pill a">~70 min read</span>
+        <span class="pill">Prerequisites: Lesson 2.1</span>
+        <span class="pill">Conceptual · hands-on at the end</span>
+        <span class="pill g">Module 2 · Milestone 2</span>
+      </div>
+    </div>
+
+    <div class="callout def">
+      <span class="t">Learning objectives</span>
+      <p>By the end of this lesson you will be able to:</p>
+      <ol style="margin-bottom:0">
+        <li>Explain the difference between the <em>kernel</em> and the <em>operating system</em>, and between <em>kernel space</em> and <em>user space</em>.</li>
+        <li>Describe what problem privilege levels (CPU <em>rings</em> / modes) solve and how the hardware enforces them.</li>
+        <li>Trace a <em>system call</em> from a line of your code, across the user/kernel boundary, into the kernel and back — and say why it is far more expensive than an ordinary function call.</li>
+        <li>List the kernel's core jobs — scheduling, memory management, filesystems, device drivers, networking, security — and connect each to a later lesson.</li>
+        <li>Explain why <em>containers share the host kernel</em> while <em>virtual machines do not</em>, and what that means for isolation.</li>
+      </ol>
+    </div>
+
+    <div class="callout">
+      <span class="t">Where this sits on the map</span>
+      <p>
+        Lesson 2.1 was the hardware. This lesson is the thin, all-powerful layer of software that sits
+        directly on that hardware and rents it out to everything else. It is the counterpart on the
+        <em>machine</em> to what the reverse proxy is on the <em>network</em>: a single arbiter every
+        request must pass through. The next three lessons are really "the kernel, one job at a time" —
+        2.3 is how it shares the <strong>CPU</strong> (the scheduler), 2.4 is how it shares
+        <strong>RAM</strong> (virtual memory and the OOM killer), 2.5 is how it manages the
+        <strong>disk</strong> (filesystems). Get the boundary clear here and those three become
+        variations on one idea.
+      </p>
+    </div>
+
+    <!-- ============================== 1 ============================== -->
+    <h2 id="s1">1 · Problem Statement</h2>
+
+    <p>
+      You have one machine — the $5 box from Lesson 2.1 — with four finite, physical parts. On it you
+      want to run, <em>at the same time</em>, your Express API, a PostgreSQL database, a Redis cache,
+      an Nginx proxy, an SSH session, and a dozen background housekeeping tasks you never started
+      yourself. None of these programs trusts the others; several were written by strangers; any one of
+      them may contain a bug that makes it run wild or crash. And there is exactly one CPU thread, one
+      pool of RAM, one disk, and one network card for all of them to fight over.
+    </p>
+    <p>
+      Left to themselves, running directly on the hardware, these programs create a pile of impossible
+      questions:
+    </p>
+    <ul>
+      <li>"There is one CPU and six programs that all want it <em>right now</em>. Who decides <strong>which one runs</strong>, and how do we switch without one program hogging the machine forever?"</li>
+      <li>"PostgreSQL and my API both think they own the memory. What stops my API from <strong>scribbling over the database's memory</strong> — by accident or on purpose — and corrupting it?"</li>
+      <li>"A buggy background script crashes hard. Why should that be allowed to <strong>take down the whole server</strong> and everything else running on it?"</li>
+      <li>"Both PostgreSQL and my API want to write to the disk. What stops their writes from <strong>interleaving into garbage</strong>? Who arbitrates the one disk between them?"</li>
+      <li>"A packet arrives on the NIC. <strong>Which</strong> of the six programs is it for, and how does it get delivered to that one without the others being able to read it?"</li>
+      <li>"My app should be able to read <em>its</em> files but not <code>/etc/shadow</code>. Who <strong>enforces</strong> that, and how, when the program is just machine instructions that could ask for any address?"</li>
+    </ul>
+
+    <div class="callout bad">
+      <span class="t">The core problem</span>
+      <p>
+        Multiple mutually-distrusting programs must share one set of finite hardware
+        <strong>safely</strong> (no program can corrupt or spy on another), <strong>fairly</strong>
+        (everyone makes progress; no one hogs the machine), and <strong>conveniently</strong> (programs
+        shouldn't each have to know the exact model of disk or network card installed). Nothing in the
+        hardware from Lesson 2.1 provides any of this on its own — a CPU will happily run whatever
+        instructions it is given, including ones that wreck everything. We need a trusted referee that
+        sits between every program and the metal, and we need the hardware to <em>force</em> programs to
+        go through it. That referee is the operating system, and its trusted core is the
+        <em>kernel</em>.
+      </p>
+    </div>
+
+    <p>
+      The promise of this lesson: by the end, "the OS" will stop being a vague synonym for "Windows" or
+      "the thing with the login screen" and become a precise, two-part machine — a small privileged
+      <em>kernel</em> and a large ring of <em>user-space</em> programs around it — with a single,
+      hardware-guarded door between them. Once you can see that door, you can explain process isolation,
+      "permission denied", why containers are lighter than VMs, and half the mysteries in the modules
+      ahead.
+    </p>
+
+    <!-- ============================== 2 ============================== -->
+    <h2 id="s2">2 · Historical Context</h2>
+
+    <p>
+      The operating system was not designed in one go; it accreted, one hard-won lesson at a time, as
+      people kept sharing expensive machines and kept getting burned. Watching that happen is the
+      fastest way to understand <em>why</em> a modern OS is shaped the way it is — every feature is a
+      scar from a specific disaster.
+    </p>
+
+    <h3>1940s–1950s · No operating system at all</h3>
+    <p>
+      The first computers ran one program at a time, loaded by hand, with no software layer beneath it.
+      Your program <em>was</em> the software on the machine; it talked to the hardware directly because
+      there was nothing in between. This is the baseline to keep in mind: an OS is not a law of nature.
+      A CPU with no OS just executes whatever instructions it is fed, with total access to everything.
+    </p>
+
+    <h3>1950s · The batch monitor — the first "kernel"</h3>
+    <p>
+      Human operators loading one job at a time wasted the expensive machine between jobs. The fix was a
+      small <em class="term">resident monitor</em>: a tiny program that stayed in memory, loaded the next
+      job automatically when one finished, and handed control back to itself afterwards. This is the
+      ancestral kernel — a permanent piece of software that outlives the programs it runs and to which
+      control always returns. But it was a librarian, not a referee: it ran jobs one after another and
+      trusted each completely.
+    </p>
+
+    <h3>1960s · Multiprogramming forces protection</h3>
+    <p>
+      To use the machine better, engineers kept several jobs in memory at once, switching the CPU to
+      another whenever one paused to wait for slow I/O. This was a huge efficiency win and it immediately
+      created the safety problem: with several programs resident together, one program's bug could
+      overwrite another's memory, or an infinite loop could seize the CPU and never give it back. The
+      answer was to enlist the <strong>hardware</strong>: CPUs gained a privileged <em>supervisor</em>
+      mode versus an unprivileged <em>user</em> mode, plus memory-protection hardware. For the first time
+      the machine itself could forbid a user program from doing dangerous things. That split — the
+      subject of §5 and §6 — is the load-bearing idea of this entire lesson.
+    </p>
+
+    <h3>1960s–1970s · Time-sharing and the Unix lineage</h3>
+    <p>
+      Time-sharing systems (CTSS, then the ambitious Multics) let many users share one machine
+      interactively, each feeling they had it to themselves — which demanded a real scheduler, real
+      memory protection, and a real permission system. Out of a reaction to Multics's complexity came
+      <em class="term">Unix</em> (Bell Labs, ~1969), whose design choices still define the machine you
+      will rent: a clean split between a small <em>kernel</em> and many small user-space programs;
+      "everything is a file" as a uniform interface (Module 3); processes; and a compact set of system
+      calls as the only way in. Unix was rewritten in the C language, which made it portable across
+      hardware — a first for a serious OS.
+    </p>
+
+    <h3>1980s–1990s · The genealogy splits, the ideas don't</h3>
+    <p>
+      Unix's ideas fanned out into the BSDs, into commercial Unixes, and — decisively for you — into
+      <em class="term">Linux</em>: a Unix-like kernel Linus Torvalds started in 1991, wrapped in GNU
+      user-space tools to form a complete free operating system. Meanwhile Windows NT built a
+      differently-structured but philosophically similar kernel with the same user/kernel split. The
+      surface diverged; the core lessons — privilege separation, system calls, a scheduler, virtual
+      memory — converged, because they are forced by the same physics and the same distrust.
+    </p>
+
+    <h3>Today · Why this history is not a museum</h3>
+    <p>
+      Your $5 VPS runs the Linux kernel — a direct descendant of that 1960s protection idea and that
+      1969 Unix design — underneath a GNU/Ubuntu user space. When you later run Docker (Module 7), you
+      will be using kernel features (namespaces, cgroups) added in the 2000s to slice one kernel's view
+      of the world into many. Every abstraction you will lean on for the rest of the course was invented
+      to solve one of the concrete disasters above. The vocabulary is old because the problem — sharing
+      one distrusted machine safely — never went away.
+    </p>
+
+    <!-- ============================== 3 ============================== -->
+    <h2 id="s3">3 · The Previous Solution (in detail)</h2>
+
+    <p>
+      To feel what the kernel buys you, look hard at the world without one: programs running
+      <strong>directly on the hardware</strong> in a single, shared privilege level — the way the
+      earliest machines worked, and the way some tiny embedded systems still do. This is not a strawman;
+      it is a real model with real (narrow) advantages, and understanding it precisely is what makes the
+      kernel's value obvious.
+    </p>
+
+    <p>The model, stated plainly:</p>
+<pre><code>NO-KERNEL MODEL  ("everyone runs in supervisor mode")
+
+  ┌───────────┐  ┌───────────┐  ┌───────────┐
+  │ Program A │  │ Program B │  │ Program C │   ← all fully privileged
+  └─────┬─────┘  └─────┬─────┘  └─────┬─────┘
+        └──────────────┼──────────────┘
+                       ▼
+        CPU · RAM · DISK · NIC   (raw hardware, no guard)
+
+  · Any program can execute any instruction (including "halt the CPU").
+  · Any program can read/write ANY memory address, including another program's.
+  · Any program can talk to any device register directly.
+  · Cooperation is VOLUNTARY: a program yields the CPU only if it chooses to.</code></pre>
+
+    <p>The assumptions this model bakes in:</p>
+    <dl class="terms">
+      <dt>Total mutual trust</dt>
+      <dd>Every program is assumed correct and well-behaved, because nothing can stop a misbehaving one. One bug is a whole-system bug.</dd>
+      <dt>Cooperative multitasking</dt>
+      <dd>Programs share the CPU only by voluntarily handing it back (yielding). A program that never yields — a bug, or malice — keeps the CPU forever. There is no outside force to preempt it.</dd>
+      <dt>No memory boundaries</dt>
+      <dd>There is one flat address space shared by everything. "Program A's memory" is a convention, not a rule; nothing prevents B from writing into it.</dd>
+      <dt>Direct hardware access</dt>
+      <dd>Each program includes the code to drive the specific disk and network hardware present. Change the hardware and you rewrite the programs.</dd>
+    </dl>
+
+    <p>
+      And it genuinely has virtues, which is why it survives in its niche. With no kernel in the way
+      there is <strong>zero overhead</strong> — no mode switches, no scheduler, no abstraction tax — and
+      <strong>total, predictable control</strong> of the hardware. For a microcontroller running one
+      trusted program that must respond in a fixed number of microseconds (an engine controller, a
+      pacemaker), that determinism is exactly right, and an OS would only add unwanted variance. The
+      model isn't stupid; it is a precise fit for "one trusted program, one dedicated chip." It is a
+      catastrophic fit for "six distrusting programs sharing one rented server," which is your situation.
+    </p>
+
+    <!-- ============================== 4 ============================== -->
+    <h2 id="s4">4 · Why It Failed (for shared, general-purpose machines)</h2>
+
+    <p>
+      Move the no-kernel model onto a machine running many untrusted programs and every one of its
+      assumptions turns into a failure mode. These are not hypotheticals; they are the exact reasons the
+      protection hardware of the 1960s was invented.
+    </p>
+
+    <h3>4.1 One bug crashes everything</h3>
+    <p>
+      With no memory boundaries, a single stray pointer write in the least important background script
+      can corrupt the database's memory or the kernel-less monitor itself, and the whole machine goes
+      down. There is no blast-radius containment: the unit of failure is the entire system. On a server
+      hosting your API, your database and your users' data, "any bug anywhere kills all of it" is
+      intolerable.
+    </p>
+
+    <h3>4.2 One greedy program starves the rest</h3>
+    <p>
+      Cooperative multitasking means a program keeps the CPU until it decides to give it up. A bug that
+      spins in an infinite loop — or a program that simply never yields — freezes every other program on
+      the machine indefinitely. Fairness is impossible when the thing being shared can only be
+      relinquished voluntarily by the one currently holding it.
+    </p>
+
+    <h3>4.3 No security boundary at all</h3>
+    <p>
+      If every program can read and write every byte of memory and talk to every device, then every
+      program can read every other program's secrets, tamper with their data, and seize any hardware.
+      Multi-tenant anything — multiple users, multiple services, a rented VPS — is simply impossible.
+      There is no wall to put a permission check on, because there is no wall.
+    </p>
+
+    <h3>4.4 Every program must know every device</h3>
+    <p>
+      Direct hardware access means each program carries its own code for the specific disk and NIC on the
+      machine. Swap the disk for a different model and every program breaks. There is no shared, stable
+      abstraction of "a disk" or "a network connection" to program against — so software is neither
+      portable nor maintainable.
+    </p>
+
+    <h3>4.5 No arbitration of shared resources</h3>
+    <p>
+      Two programs writing to the same disk with no coordinator interleave their writes into corruption.
+      A packet arriving on the NIC has no dispatcher to decide whose it is. Every shared resource needs a
+      single arbiter, and the no-kernel model has none — cooperation is the only mechanism, and
+      cooperation between distrusting parties is not a mechanism at all.
+    </p>
+
+    <div class="callout warn">
+      <span class="t">The pattern behind all five failures</span>
+      <p>
+        Each failure is the same shape: <strong>a shared resource with no trusted arbiter, and no power
+        to stop a program from misbehaving.</strong> You cannot fix this in software alone, because the
+        misbehaving program has the same powers as any fix you write — it can just ignore or overwrite
+        it. The fix has to come from <em>below</em> software: the CPU itself must be able to run some
+        code in a privileged mode that ordinary programs cannot enter or tamper with, and must
+        <em>force</em> ordinary programs to ask that privileged code for anything dangerous. That is
+        precisely what the next section is.
+      </p>
+    </div>
+
+    <!-- ============================== 5 ============================== -->
+    <h2 id="s5">5 · The New Solution</h2>
+
+    <p>
+      The solution has two halves that lock together: a <strong>hardware</strong> mechanism (privilege
+      levels the CPU enforces) and a <strong>software</strong> mechanism (a trusted kernel that lives in
+      the privileged level, plus a narrow, controlled doorway called the system call). Definitions
+      first — every one of these words will appear in the modules ahead.
+    </p>
+
+    <h3>5.1 The core vocabulary</h3>
+    <dl class="terms">
+      <dt>Kernel</dt>
+      <dd>The small, trusted, always-resident core of the OS that runs with full hardware privilege. It is the only software allowed to touch hardware directly and to arbitrate it among everyone else. On your VPS this is "the Linux kernel."</dd>
+      <dt>User space</dt>
+      <dd>Everywhere else — where every ordinary program runs (your Express app, PostgreSQL, Nginx, the shell, even most of the "operating system" like <code>systemd</code> and the coreutils). User-space code runs <em>unprivileged</em> and cannot touch hardware directly.</dd>
+      <dt>Kernel space</dt>
+      <dd>The privileged execution context the kernel runs in, with access to all memory and all instructions. The hardware keeps user-space code out of it.</dd>
+      <dt>Privilege level / CPU mode / ring</dt>
+      <dd>A hardware-enforced setting on the CPU marking whether the currently running code is trusted (<em>kernel/supervisor mode</em>, x86 "ring 0") or untrusted (<em>user mode</em>, x86 "ring 3"). Privileged instructions only work in kernel mode; attempting them in user mode faults.</dd>
+      <dt>System call (syscall)</dt>
+      <dd>The <em>only</em> legitimate way for a user-space program to ask the kernel to do something privileged — read a file, send a packet, allocate memory. It is a controlled, one-way door into the kernel at a fixed entry point, not a normal function call.</dd>
+      <dt>The operating system</dt>
+      <dd>Colloquially, the whole shipped system: kernel <em>plus</em> the essential user-space programs, libraries and services that make it usable (a "distribution" like Ubuntu). The kernel is the core; the OS is the kernel plus its userland.</dd>
+    </dl>
+
+    <div class="callout def">
+      <span class="t">Kernel ≠ operating system — hold this distinction</span>
+      <p>
+        "Linux" is precisely a <em>kernel</em>. "Ubuntu" is an <em>operating system</em>: the Linux
+        kernel plus GNU tools, <code>systemd</code>, a package manager, and thousands of user-space
+        programs. When people argue about "GNU/Linux vs Linux," this is the distinction they're making.
+        For the rest of the course: when we say <strong>kernel</strong> we mean the privileged core; when
+        we say <strong>OS</strong> we mean the whole assembled system.
+      </p>
+    </div>
+
+    <h3>5.2 The shape of the solution</h3>
+    <p>
+      Put the pieces together and the picture inverts the no-kernel model. Instead of every program
+      sitting directly on the hardware with full power, <em>one</em> trusted program sits on the
+      hardware with full power, and every other program sits above it, unprivileged, able to reach the
+      hardware only by asking:
+    </p>
+<pre><code>KERNEL MODEL  ("one privileged referee, everyone else asks")
+
+   USER SPACE (ring 3, unprivileged) ─ your API · Postgres · Nginx · shell
+        │      │       │        │
+        │  system calls (the ONLY door) — read, write, open, socket, ...
+        ▼      ▼       ▼        ▼
+  ══════════ user / kernel boundary (enforced by CPU hardware) ══════════
+        ▲
+   KERNEL SPACE (ring 0, privileged) ─ scheduler · memory mgr · filesystems
+        │                              device drivers · network stack
+        ▼
+        CPU · RAM · DISK · NIC   (only the kernel touches these directly)</code></pre>
+    <p>
+      Now re-answer §1's impossible questions, one line each. Who gets the CPU? The kernel's
+      <em>scheduler</em> decides, and a hardware timer lets it forcibly take the CPU back (Lesson 2.3).
+      What stops A from scribbling on B's memory? The kernel gives each process its own private
+      <em>virtual address space</em>, and the hardware blocks any access outside it (Lesson 2.4). Why
+      doesn't one crash kill everything? A user-space crash is contained to that process; the kernel
+      survives and cleans up. Who arbitrates the disk and delivers packets? The kernel's filesystem and
+      network stack (Lesson 2.5, Module 4). Who enforces "you may read this file but not that one"? The
+      kernel, on <em>every</em> system call, because the syscall is the only door and it checks your
+      permissions each time you pass through. The single design move — a privileged referee you are
+      forced to ask — answers all of them.
+    </p>
+
+    <!-- ============================== 6 ============================== -->
+    <h2 id="s6">6 · Internal Mechanics</h2>
+
+    <p>
+      Now the machine in motion. We will (6.1) look at the privilege levels the CPU enforces, (6.2) see
+      what a system call actually <em>is</em> at the instruction level, (6.3) walk one real
+      <code>read()</code> across the boundary end to end, (6.4) meet interrupts and the timer that keeps
+      the kernel in charge, (6.5) enumerate the kernel's jobs, (6.6) put a number on what all this costs,
+      and (6.7) note the one structural choice — monolithic vs microkernel — that distinguishes real
+      kernels.
+    </p>
+
+    <h3>6.1 Privilege levels: the mode bit the hardware guards</h3>
+    <p>
+      The CPU carries a tiny piece of state — think of it as a <em>mode bit</em> — that says whether the
+      code running right now is in <strong>kernel mode</strong> (privileged) or <strong>user mode</strong>
+      (unprivileged). A class of instructions is <em class="term">privileged</em>: halting the CPU,
+      changing the memory-mapping tables, talking directly to device registers, disabling interrupts.
+      These work only when the mode bit says kernel mode. If user-mode code attempts one, the CPU does
+      not obey — it raises a <em class="term">fault</em> (a trap) that transfers control to the kernel,
+      which typically kills the offending process. That is the hardware wall the whole model rests on:
+      it is not enforced by the kernel's good intentions, it is enforced by silicon.
+    </p>
+    <p>
+      x86 CPUs actually define four privilege levels, historically drawn as concentric
+      <em class="term">rings</em> 0–3, where ring 0 is most privileged and ring 3 least. In practice
+      essentially every mainstream OS uses only <strong>two</strong> of them — ring 0 for the kernel,
+      ring 3 for everything else — and ignores rings 1 and 2, because two levels are all the model needs
+      and more levels add complexity for little gain. (ARM expresses the same idea as
+      <em>exception levels</em>: EL0 for user code, EL1 for the kernel.) So "rings" is really a fancy
+      name for one bit's worth of decision: trusted, or not.
+    </p>
+    <dl class="terms">
+      <dt>Kernel mode (ring 0, supervisor)</dt>
+      <dd>Full power: every instruction, all of memory, direct device access. Only the kernel runs here. A bug here can crash the whole machine — a <em>kernel panic</em> / "blue screen."</dd>
+      <dt>User mode (ring 3)</dt>
+      <dd>Restricted: no privileged instructions, and memory access limited to the process's own address space. Every application you run lives here. A bug here crashes only that one process.</dd>
+    </dl>
+
+    <h3>6.2 What a system call actually is</h3>
+    <p>
+      Here is the subtle part. A user program cannot become privileged by simply <em>jumping</em> into
+      kernel code — if it could, the wall would be worthless (malicious code would jump straight to the
+      "give me everything" routine). So entry into the kernel is not an ordinary jump or function call.
+      It is a special instruction — <code>syscall</code> on modern x86-64 (historically the software
+      interrupt <code>int&nbsp;0x80</code>) — that does two things <em>atomically and inseparably</em>:
+    </p>
+    <ol>
+      <li>It flips the mode bit to <strong>kernel mode</strong>, and</li>
+      <li>It jumps to <strong>one fixed, kernel-defined entry point</strong> — not an address the caller chose.</li>
+    </ol>
+    <p>
+      This is the whole trick. The program can request a transition to privilege, but it does <em>not</em>
+      get to choose <em>where</em> execution lands — the kernel picked that address in advance. The
+      program passes a <em class="term">syscall number</em> in a register to say <em>which</em> service
+      it wants (e.g. "read" is a number), and arguments in other registers. The kernel's entry code reads
+      the number, looks up the right handler in its <em>system-call table</em>, validates every argument
+      (is this a file you're allowed to read? is this pointer inside your own memory?), does the work,
+      puts a return value in a register, and executes a "return to user mode" instruction that flips the
+      bit back and resumes your program right after the <code>syscall</code>. You never ran a single
+      privileged instruction yourself; you <em>asked</em>, and the kernel did it on your behalf after
+      checking you were allowed.
+    </p>
+    <div class="callout">
+      <span class="t">You call syscalls constantly without ever writing one</span>
+      <p>
+        You almost never issue the raw <code>syscall</code> instruction. Your language's standard library
+        wraps it: in C, <code>fopen()</code>/<code>read()</code> in <em>glibc</em> are thin wrappers over
+        the <code>open</code>/<code>read</code> syscalls. In Node.js, <code>fs.readFile</code> and every
+        network operation go through <em>libuv</em> down to the same syscalls. So when your DevBoard API
+        reads a request body or writes a log line, it is — several layers down — executing
+        <code>read</code> and <code>write</code> syscalls, crossing this exact boundary thousands of times
+        a second. §7 shows you how to watch it happen with <code>strace</code>.
+      </p>
+    </div>
+
+    <h3>6.3 One <code>read()</code>, end to end</h3>
+    <p>
+      Make it concrete. Your Express handler needs a byte of data from a file (or a socket — same story).
+      Follow the control flow across the boundary:
+    </p>
+<pre><code>USER SPACE                                   KERNEL SPACE (ring 0)
+──────────                                   ─────────────────────
+your code: fs.readFile(...)
+  → libuv → read(fd, buf, n)
+  → put syscall number + args in registers
+  → execute  `syscall`  ───────────────────▶ (1) CPU flips to kernel mode,
+                                                  jumps to fixed entry point
+        (your program is now paused)         (2) look up handler for "read"
+                                             (3) VALIDATE: is fd yours? may you
+                                                 read it? is buf inside your memory?
+                                             (4) do the work: copy bytes from the
+                                                 file cache / ask the disk driver
+                                             (5) put result (bytes read) in a register
+  resume right after `syscall`  ◀──────────  (6) `sysret`: flip back to user mode
+  ← read() returns the byte count
+your code continues with the data</code></pre>
+    <p>
+      Two things to notice. First, <strong>every</strong> dangerous step happened in the kernel, behind
+      the validation in step 3 — that validation is where "permission denied" (<code>EACCES</code>) comes
+      from, and it is checked on <em>every</em> call, not once at startup. Second, if the data isn't
+      ready — the disk hasn't returned it yet — the kernel doesn't busy-wait; it marks your process
+      "blocked waiting on I/O" and hands the CPU to another process (that's the scheduler, Lesson 2.3),
+      resuming yours when the data arrives. This is exactly the "your code is <em>waiting</em>, not
+      computing" insight from Lesson 2.1, now visible in the mechanism: the wait is the kernel parking
+      you and running someone else.
+    </p>
+
+    <h3>6.4 Interrupts: how the kernel keeps the upper hand</h3>
+    <p>
+      A system call is the kernel being entered <em>voluntarily</em>, by a program that asked. But the
+      kernel also needs to be entered <em>involuntarily</em> — otherwise §4.2's greedy program (which
+      never makes a syscall and never yields) would still freeze the machine. The mechanism is the
+      <em class="term">interrupt</em>: a hardware signal that forces the CPU to stop what it is doing,
+      switch to kernel mode, and run a kernel handler. Two kinds matter:
+    </p>
+    <dl class="terms">
+      <dt>Device interrupts (asynchronous)</dt>
+      <dd>The NIC signals "a packet arrived," the disk signals "your read is done." The CPU jumps into the kernel's driver to handle it, then resumes whatever it interrupted. This is how the hardware tells the kernel something happened without the kernel having to constantly poll.</dd>
+      <dt>The timer interrupt (the crucial one)</dt>
+      <dd>A hardware timer fires many times a second, forcing entry into the kernel on a fixed schedule <em>no program can disable from user space</em>. This is the kernel's heartbeat: each tick is a chance to say "you've had the CPU long enough — someone else's turn," and forcibly switch. That is <em class="term">preemptive multitasking</em>, and it is why one runaway loop can no longer freeze the server. Lesson 2.3 is built on this.</dd>
+    </dl>
+    <p>
+      So the kernel regains control two ways: you <em>ask</em> it (syscall), or the hardware
+      <em>forces</em> it (interrupt). Between those two, control always comes back to the referee — which
+      is exactly what the no-kernel model could never guarantee.
+    </p>
+
+    <h3>6.5 What the kernel is actually responsible for</h3>
+    <p>
+      "Arbitrate the hardware" unpacks into a handful of concrete jobs. Each is a whole subsystem, and
+      most are a whole later lesson — which is a good way to see how this module and course are wired
+      together:
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Kernel subsystem</th><th>Job</th><th>Arbitrates which of the four parts</th><th>Studied in</th></tr></thead>
+        <tbody>
+          <tr><td><b>Process &amp; CPU scheduler</b></td><td>Decide who runs next; switch between processes</td><td>CPU</td><td>Lesson 2.3</td></tr>
+          <tr><td><b>Memory manager</b></td><td>Give each process a private virtual address space; page to disk; kill on OOM</td><td>RAM</td><td>Lesson 2.4</td></tr>
+          <tr><td><b>Filesystem / VFS</b></td><td>Turn "files and directories" into blocks on the disk; arbitrate writes</td><td>Disk</td><td>Lesson 2.5</td></tr>
+          <tr><td><b>Device drivers</b></td><td>Speak each specific device's language; expose a uniform interface</td><td>All hardware</td><td>Module 3</td></tr>
+          <tr><td><b>Network stack</b></td><td>TCP/IP, routing, deliver packets to the right socket</td><td>NIC</td><td>Module 4</td></tr>
+          <tr><td><b>Security &amp; permissions</b></td><td>Check every syscall against users, groups, capabilities</td><td>All access</td><td>Module 3 &amp; 11</td></tr>
+          <tr><td><b>IPC</b></td><td>Let isolated processes talk on purpose (pipes, sockets, signals)</td><td>—</td><td>Module 3</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      Notice the through-line: the last three lessons of this module are just the first three rows of
+      this table, one part of the hardware each. The kernel is not a mysterious monolith; it is this
+      finite list of arbitration jobs.
+    </p>
+
+    <h3>6.6 What the boundary costs</h3>
+    <p>
+      The user/kernel boundary is not free. Crossing it — switching mode, saving and restoring registers,
+      validating arguments, and possibly polluting the CPU caches you learned to respect in Lesson 2.1 —
+      costs on the order of <strong>hundreds of nanoseconds to a microsecond</strong>, versus roughly a
+      nanosecond for an ordinary function call. Put it on Lesson 2.1's latency ladder: a plain function
+      call is an L1-cache-ish "1 second" in human time; a syscall is closer to "a few minutes." That is
+      cheap for one call and ruinous for millions.
+    </p>
+    <p>
+      This single fact explains a surprising amount of systems design. It is why high-throughput servers
+      try to do <em>more work per syscall</em> (read a big buffer instead of a byte at a time), why
+      batching interfaces like <code>epoll</code> and <code>io_uring</code> exist (handle thousands of
+      connections with few syscalls), and why extreme cases (high-frequency trading, 100&nbsp;Gbps
+      packet processing) resort to <em>kernel bypass</em> — talking to the NIC from user space to avoid
+      the boundary entirely. You will not do those things soon, but knowing <em>why</em> they exist tells
+      you the boundary is real and has a price tag.
+    </p>
+
+    <h3>6.7 One structural choice: monolithic vs microkernel</h3>
+    <p>
+      Kernels differ in <em>how much</em> lives inside the privileged core. This is the one architectural
+      distinction worth knowing:
+    </p>
+    <dl class="terms">
+      <dt>Monolithic kernel (Linux, the BSDs)</dt>
+      <dd>Almost everything — schedulers, filesystems, drivers, network stack — runs in kernel space together. Fast, because subsystems call each other directly with no boundary crossings. The cost: a bug in any driver runs with full privilege and can crash or compromise the whole kernel. Linux softens this with loadable modules, but they still run in ring 0.</dd>
+      <dt>Microkernel (seL4, MINIX, QNX; macOS's XNU is a hybrid)</dt>
+      <dd>Keep the privileged core tiny (just scheduling, memory, IPC) and push drivers and filesystems out into <em>user-space</em> services that talk via messages. A crashing driver takes down only its own service, not the machine — stronger isolation and reliability. The cost: all that message-passing crosses the boundary from §6.6 constantly, historically making microkernels slower.</dd>
+    </dl>
+    <p>
+      It is the same trade you will meet again and again in this course — put everything together for
+      speed, or separate it for isolation and blast-radius control. Linux chose speed; the fact that the
+      most-used server kernel on earth is monolithic tells you the trade often lands there. Keep the
+      tension in mind: it is the same reasoning behind monolith-vs-microservices later on.
+    </p>
+
+    <!-- ============================== 7 ============================== -->
+    <h2 id="s7">7 · Real Industry Examples</h2>
+
+    <h3>Watching the boundary with <code>strace</code></h3>
+    <p>
+      Every system call a program makes can be observed. On your Linux VPS, <code>strace</code> prints
+      the syscalls a program executes, in order — a live x-ray of the user/kernel boundary from §6.3:
+    </p>
+<pre><code>$ strace -f cat /etc/hostname
+execve("/usr/bin/cat", ["cat", "/etc/hostname"], ...) = 0
+openat(AT_FDCWD, "/etc/hostname", O_RDONLY)         = 3   ← ask kernel to open the file
+read(3, "devboard-1\n", 131072)                     = 11  ← ask kernel for its bytes
+write(1, "devboard-1\n", 11)                         = 11  ← ask kernel to write to stdout
+close(3)                                             = 0
+...</code></pre>
+    <p>
+      Reading this once rewires how you see programs: <code>cat</code> "reads a file and prints it" is
+      really "asks the kernel to <code>open</code>, then <code>read</code>, then <code>write</code>, then
+      <code>close</code>." When a program mysteriously fails or hangs, <code>strace</code> shows you the
+      exact syscall it died or stalled on — the single most useful "what is this thing actually doing"
+      tool a backend engineer owns. §15 has you run it.
+    </p>
+
+    <h3>"Permission denied" and "port 80 requires root" are the boundary talking</h3>
+    <p>
+      When your app logs <code>EACCES: permission denied</code>, that is literally step 3 of §6.3 — the
+      kernel checked, on a syscall, that you may not touch that file, and refused. When you try to run
+      your Express server on port 80 as a normal user and get <code>EACCES</code>, that is the kernel
+      enforcing a rule that binding to low ports (&lt;1024) is privileged. These are not application
+      errors; they are the referee doing its job, and recognizing them as syscall-level refusals tells
+      you immediately where to look (permissions, capabilities) instead of digging through your app code.
+    </p>
+
+    <h3>The kernel panic vs the process crash</h3>
+    <p>
+      When your Node process throws an unhandled exception and exits, the server keeps running — SSH
+      still works, the database is fine, you restart the one process. That containment is §6.1 in action:
+      a user-space crash is walled off. Contrast a <em>kernel panic</em> (Linux) or "blue screen"
+      (Windows): a bug in ring 0 has no wall above it, so the whole machine halts. The difference in blast
+      radius is the entire payoff of the privilege boundary, and it is why we push as much as possible
+      into user space.
+    </p>
+
+    <h3>Containers share one kernel; VMs don't — the defining example</h3>
+    <p>
+      This is the example that pays off in Module 7, so meet it now. A <strong>virtual machine</strong>
+      (Lesson 2.1) runs a whole <em>guest kernel</em> on top of the hypervisor — every VM has its own
+      complete OS, which is why VMs are heavy (gigabytes, tens of seconds to boot). A
+      <strong>container</strong> runs directly on the <em>host's</em> kernel; what's isolated is only the
+      user-space view — its own filesystem, process list and network, carved out by kernel features
+      (<em>namespaces</em> and <em>cgroups</em>). That's why containers are light (megabytes, boot in
+      milliseconds): there is no second kernel. The flip side is the isolation boundary: because
+      containers <em>share</em> the host kernel, a kernel-level exploit can escape a container in a way it
+      could not escape a VM. "Same kernel or its own kernel?" is the one question that separates the two
+      technologies, and you now have the machinery to answer it.
+    </p>
+
+    <!-- ============================== 8 ============================== -->
+    <h2 id="s8">8 · Diagrams</h2>
+
+    <h3>8.1 Where the OS sits — the layer cake</h3>
+    <figure>
+<pre><code>   ┌──────────────────────────────────────────────────────────────┐
+   │  USER SPACE  (ring 3, unprivileged)                            │
+   │                                                                │
+   │   your Express API   PostgreSQL   Nginx   Redis   bash   ssh   │
+   │        │                 │          │       │       │      │   │
+   │   ─────┴────── standard libraries (glibc / libuv) ───────────  │
+   │        │  they wrap the raw syscall instruction for you        │
+   └────────┼───────────────────────────────────────────────────────┘
+            │  system calls  (open, read, write, socket, mmap, ...)
+   ═════════╪═══════════ USER / KERNEL BOUNDARY (CPU-enforced) ══════
+            ▼
+   ┌──────────────────────────────────────────────────────────────┐
+   │  KERNEL SPACE  (ring 0, privileged)  — "the kernel"            │
+   │   scheduler │ memory mgr │ filesystems │ net stack │ drivers   │
+   └───────────────────────────────┬──────────────────────────────┘
+                                   ▼
+   ┌──────────────────────────────────────────────────────────────┐
+   │  HARDWARE   CPU · RAM · DISK · NIC   (from Lesson 2.1)         │
+   └──────────────────────────────────────────────────────────────┘
+   Only the kernel touches the hardware. Everyone else must ask.</code></pre>
+      <figcaption>Two layers of software over the hardware, with one guarded door between them. "The OS" is the kernel plus the essential user-space programs above it.</figcaption>
+    </figure>
+
+    <h3>8.2 The rings — privilege as concentric shells</h3>
+    <figure>
+<pre><code>            ┌───────────────────────────────────────┐
+            │  ring 3 — USER MODE                     │
+            │  your apps · no privileged instructions │
+            │   ┌─────────────────────────────────┐   │
+            │   │ (ring 2 — unused by Linux/Win)   │   │
+            │   │  ┌───────────────────────────┐   │   │
+            │   │  │ (ring 1 — unused)          │   │   │
+            │   │  │   ┌───────────────────┐    │   │   │
+            │   │  │   │ ring 0 — KERNEL    │    │   │   │
+            │   │  │   │ full hardware power│    │   │   │
+            │   │  │   └───────────────────┘    │   │   │
+            │   │  └───────────────────────────┘   │   │
+            │   └─────────────────────────────────┘   │
+            └───────────────────────────────────────┘
+
+   Hardware defines 4 rings; mainstream OSes use only 0 (kernel)
+   and 3 (user). A user-mode privileged instruction → CPU fault.</code></pre>
+    </figure>
+
+    <h3>8.3 The two doors into the kernel</h3>
+    <figure>
+<pre><code>  VOLUNTARY (the program asks)          INVOLUNTARY (hardware forces)
+  ────────────────────────────          ─────────────────────────────
+   user code runs                        user code runs
+       │  needs privileged work              │  timer / device fires
+       │  executes `syscall`                 │  INTERRUPT
+       ▼                                     ▼
+   ┌──────────── KERNEL ────────────┐   ┌──────────── KERNEL ────────────┐
+   │ validate → do work → return    │   │ handle tick/packet → maybe     │
+   │                                │   │ switch to another process      │
+   └───────────────┬────────────────┘   └───────────────┬────────────────┘
+       ▼                                     ▼
+   resume user code                     resume (maybe a DIFFERENT) process
+
+   Together these guarantee control ALWAYS returns to the referee —
+   the one thing the no-kernel model could never promise.</code></pre>
+    </figure>
+
+    <!-- ============================== 9 ============================== -->
+    <h2 id="s9">9 · Advantages</h2>
+    <p>What the kernel + privilege-boundary model buys you, mapped back to the failures of §4:</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Capability</th><th>Because…</th><th>Fixes which §4 failure</th></tr></thead>
+        <tbody>
+          <tr><td><b>Fault isolation</b></td><td>each process runs unprivileged in its own address space; a crash is contained and the kernel cleans up</td><td>4.1 (one bug crashes all)</td></tr>
+          <tr><td><b>Fair CPU sharing</b></td><td>the timer interrupt lets the scheduler preempt any process, so no one can hog the CPU</td><td>4.2 (greedy program)</td></tr>
+          <tr><td><b>Security enforcement</b></td><td>the syscall is the only door, and permissions are checked on every crossing</td><td>4.3 (no boundary)</td></tr>
+          <tr><td><b>Hardware abstraction</b></td><td>drivers hide device specifics behind uniform interfaces ("a file", "a socket"), so programs are portable</td><td>4.4 (every program knows every device)</td></tr>
+          <tr><td><b>Resource arbitration</b></td><td>one trusted referee serializes disk writes, routes packets, hands out memory</td><td>4.5 (no arbiter)</td></tr>
+          <tr><td><b>A stable programming model</b></td><td>you write to a small, documented syscall API instead of to bare metal — the same code runs on wildly different hardware</td><td>portability &amp; sanity</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ============================== 10 ============================== -->
+    <h2 id="s10">10 · Limitations</h2>
+    <p>The kernel model is not free, and knowing its edges keeps you from over-trusting it.</p>
+    <dl class="terms">
+      <dt>The boundary has a real cost</dt>
+      <dd>Every syscall pays the mode-switch tax of §6.6. Syscall-heavy workloads (many tiny reads/writes, one syscall per request) spend measurable time just crossing the boundary. The cure is doing more per call, not pretending the cost is zero.</dd>
+      <dt>The kernel is a shared single point of failure</dt>
+      <dd>User-space isolation is excellent; the kernel itself has nothing above it. A kernel bug is a whole-machine outage (panic) — every process on the box dies together, unlike a contained process crash.</dd>
+      <dt>Kernel bugs are maximum-severity security bugs</dt>
+      <dd>Code in ring 0 has full power, so a kernel vulnerability often means total system compromise (privilege escalation from user to kernel). A monolithic kernel's large surface (every driver) is a large attack surface. This is Module 11's concern.</dd>
+      <dt>Shared-kernel isolation is weaker than hardware isolation</dt>
+      <dd>Containers share the host kernel (§7), so container isolation is only as strong as the kernel's boundaries. For hostile, untrusted workloads, a VM (its own kernel) or a stronger sandbox is the safer choice. "Container" does not mean "as isolated as a VM."</dd>
+      <dt>The abstraction leaks — you still need Lesson 2.1</dt>
+      <dd>The kernel hides the hardware but cannot repeal it. Out of RAM, out of file descriptors, disk at its IOPS cap — the physical limits still surface through the abstraction. You must understand the metal underneath to interpret what the OS reports.</dd>
+      <dt>This is a simplified mental model</dt>
+      <dd>Real kernels add threads, kernel threads, virtual dynamic shared objects (vDSO) that service some "syscalls" without a full boundary crossing, and much more. The two-layer picture is a true and useful map, not the whole territory.</dd>
+    </dl>
+
+    <!-- ============================== 11 ============================== -->
+    <h2 id="s11">11 · Common Misconceptions</h2>
+
+    <div class="myth">
+      <div class="m">"The operating system is the desktop / the windows and icons."</div>
+      <div class="r"><p>The graphical desktop is just an ordinary <em>user-space</em> program (or stack of them). Your $5 server has no GUI at all and is running a complete, fully-functional operating system. The OS is the kernel plus its essential services; the pretty interface is optional decoration on top.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"The kernel and the operating system are the same thing."</div>
+      <div class="r"><p>The kernel is the privileged core; the operating system is the kernel <em>plus</em> the user-space programs, libraries and services shipped around it. "Linux" is a kernel; "Ubuntu" is an OS built from that kernel plus GNU userland, <code>systemd</code>, a package manager and much more.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"My program reads the disk / sends packets directly."</div>
+      <div class="r"><p>It never does. User-space code cannot touch hardware — it executes a <em>system call</em> and the kernel does the hardware work on its behalf, after checking permissions. Everything your app does to the outside world is, underneath, a request to the kernel. That indirection is the entire safety model.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"A system call is just a function call into the OS."</div>
+      <div class="r"><p>It crosses a hardware-enforced privilege boundary: it switches CPU mode, jumps to a fixed kernel entry point (not an address you chose), and costs hundreds of nanoseconds to a microsecond — roughly 100–1000× an ordinary function call. Treating syscalls as free is how programs end up accidentally slow.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"x86 has four rings, so real OSes use all four for extra security."</div>
+      <div class="r"><p>Mainstream OSes use only ring 0 (kernel) and ring 3 (user); rings 1 and 2 sit unused. Two privilege levels — trusted and untrusted — are all the protection model needs, and more levels add complexity without meaningful benefit. "More rings" is not "more secure."</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"A container is a lightweight virtual machine — it virtualizes the OS."</div>
+      <div class="r"><p>A container does <em>not</em> run its own kernel. It shares the host's kernel and isolates only the user-space view (filesystem, processes, network) using kernel namespaces and cgroups. A VM runs a full guest kernel on a hypervisor. That single difference explains why containers are tiny and fast to start — and why their isolation is weaker than a VM's.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"Kernel-mode code runs faster because it's privileged."</div>
+      <div class="r"><p>Privilege is about <em>permission</em>, not <em>speed</em>. Kernel code runs on the same CPU at the same clock. In fact, <em>entering</em> the kernel costs time (the mode switch). We push work into user space wherever possible precisely to avoid boundary crossings — the opposite of "kernel is faster."</p></div>
+    </div>
+
+    <!-- ============================== 12 ============================== -->
+    <h2 id="s12">12 · Practical Use Cases</h2>
+
+    <h3>Debugging with <code>strace</code> when logs don't help</h3>
+    <p>
+      A program hangs, or exits with a cryptic error, and its own logs say nothing. Run it under
+      <code>strace</code> and read the last syscall before it stalled or failed: a <code>connect()</code>
+      hanging means it's waiting on a network peer; an <code>openat()</code> returning
+      <code>ENOENT</code> means a missing file; <code>EACCES</code> means a permissions problem. You are
+      watching the exact request to the kernel that went wrong — often faster than reading the source.
+    </p>
+
+    <h3>Decoding permission and limit errors</h3>
+    <p>
+      <code>EACCES</code>/<code>EPERM</code> ("permission denied"), "port 80 requires root", "too many
+      open files" (<code>EMFILE</code>, the file-descriptor limit): these are all the kernel refusing a
+      syscall against a rule. Recognizing them as <em>boundary-level</em> refusals points you straight at
+      the fix — file permissions, capabilities, or <code>ulimit</code>s — instead of misdirecting you
+      into your application logic.
+    </p>
+
+    <h3>Choosing container vs VM for untrusted code</h3>
+    <p>
+      When you host code you don't fully trust (a customer's build, a plugin, an AI agent's output), the
+      shared-kernel fact from §7 is the deciding input: containers share your kernel, so a kernel exploit
+      escapes the sandbox. For genuinely hostile workloads, reach for a VM or a hardened sandbox
+      (gVisor, Firecracker microVMs) that doesn't share the host kernel. This lesson gives you the
+      vocabulary to make that call deliberately in Module 7.
+    </p>
+
+    <h3>Reasoning about performance and syscall load</h3>
+    <p>
+      When a service is slower than its CPU/RAM/disk numbers explain, suspect the boundary: is it making
+      one syscall per byte, or per request, where it could batch? Tools like <code>strace -c</code>
+      (which counts syscalls) or later <code>perf</code> reveal syscall-bound behaviour. This is the
+      "your code is waiting, not computing" instinct from Lesson 2.1, now with a specific new suspect —
+      boundary crossings — you can actually measure.
+    </p>
+
+    <!-- ============================== 13 ============================== -->
+    <h2 id="s13">13 · Summary</h2>
+    <ul class="takeaways">
+      <li>One machine with finite hardware must run many mutually-distrusting programs <strong>safely, fairly, and conveniently</strong>. Nothing in the hardware provides that; a trusted referee must, and the hardware must force programs to use it.</li>
+      <li>That referee is the <strong>kernel</strong>: a small, always-resident program that runs with full privilege and is the only software allowed to touch hardware directly. The <strong>operating system</strong> is the kernel <em>plus</em> its user-space programs (e.g. Ubuntu = Linux kernel + GNU userland).</li>
+      <li>The CPU enforces <strong>privilege levels</strong> in hardware: <em>kernel mode</em> (ring 0, full power) vs <em>user mode</em> (ring 3, restricted). Mainstream OSes use only those two. A privileged instruction in user mode faults — the wall is silicon, not politeness.</li>
+      <li>A <strong>system call</strong> is the only door from user space into the kernel. A special instruction atomically switches to kernel mode and jumps to a <em>fixed</em> entry point; the kernel validates the request, does the privileged work, and returns. You never run privileged instructions — you ask.</li>
+      <li>Permissions are checked on <strong>every</strong> syscall — that's where "permission denied" comes from — making the boundary the natural, unavoidable place to enforce security.</li>
+      <li>The kernel regains control two ways: <strong>voluntarily</strong> (a program's syscall) or <strong>involuntarily</strong> (an interrupt). The <em>timer interrupt</em> lets the kernel preempt any process, which is why one runaway loop can no longer freeze the machine.</li>
+      <li>The kernel's jobs are a finite list — <strong>scheduling (CPU), memory management (RAM), filesystems (disk), drivers, networking, security</strong> — and the next three lessons are the first three of these, one hardware part each.</li>
+      <li>The boundary <strong>costs</strong> ~100–1000× a function call. That single fact drives batching, <code>epoll</code>/<code>io_uring</code>, and kernel bypass — do more work per crossing.</li>
+      <li>Kernels are <strong>monolithic</strong> (Linux: everything in ring 0 — fast, larger blast radius) or <strong>microkernel</strong> (tiny core, services in user space — isolated, more boundary crossings) — the same speed-vs-isolation trade you'll meet all course.</li>
+      <li><strong>Containers share the host kernel; VMs run their own.</strong> That is why containers are light and fast, and why their isolation is weaker — the one distinction that defines both technologies, cashed in during Module 7.</li>
+    </ul>
+
+    <!-- ============================== 14 ============================== -->
+    <h2 id="s14">14 · Recommended Resources</h2>
+    <p><small>Curated, not exhaustive. <span class="rank">start here</span> marks the one to use first in each group.</small></p>
+
+    <div class="res">
+      <h4>Official / authoritative documentation</h4>
+      <ul>
+        <li><b>Linux <code>man</code> pages — <code>man 2 syscalls</code>, and section 2 generally</b> <span class="rank">start here</span>
+          <span class="why">The definitive list of every Linux system call and exactly what it does. Read <code>man 2 read</code>, <code>man 2 open</code>, <code>man 2 write</code> to see the boundary's real contract, including every error (like <code>EACCES</code>) the kernel can return.</span></li>
+        <li><b><code>man 2 syscall</code> and the kernel's syscall-table documentation</b>
+          <span class="why">Describes the mechanism from §6.2 — how a number and registers select a service. The bridge from concept to the actual instruction.</span></li>
+        <li><b>The Linux kernel documentation (kernel.org "The Linux kernel user's and administrator's guide")</b>
+          <span class="why">Authoritative reference for the subsystems in §6.5 when you want to go deeper than a lesson.</span></li>
+      </ul>
+
+      <h4>Books</h4>
+      <ul>
+        <li><b><em>Operating Systems: Three Easy Pieces</em> (OSTEP) — Arpaci-Dusseau (free online)</b> <span class="rank">start here</span>
+          <span class="why">The best free introduction to OS concepts, organised as "virtualization, concurrency, persistence." The early chapters on processes, limited direct execution, and system calls <em>are</em> this lesson at full depth, and it's genuinely readable.</span></li>
+        <li><b><em>The Linux Programming Interface</em> — Michael Kerrisk</b>
+          <span class="why">The definitive, encyclopedic account of the Linux/Unix system-call API from a programmer's seat. Not a cover-to-cover read; the reference you return to for years whenever you touch a syscall.</span></li>
+        <li><b><em>Modern Operating Systems</em> — Andrew Tanenbaum</b>
+          <span class="why">A classic textbook treatment of kernels, including the monolithic-vs-microkernel debate (§6.7) from someone central to it. Good for breadth and history.</span></li>
+      </ul>
+
+      <h4>Talks &amp; video</h4>
+      <ul>
+        <li><b>Any solid "what is a system call / user vs kernel space" explainer</b> <span class="rank">start here</span>
+          <span class="why">A ten-minute animated walk of §6.2–6.3 cements the boundary far faster than prose. Look for one that shows the mode switch and the fixed entry point.</span></li>
+        <li><b>Brendan Gregg's talks and site on Linux performance / <code>strace</code>, <code>perf</code>, tracing</b>
+          <span class="why">The authoritative practitioner on observing what the kernel is doing. A preview of Module 12 and the natural next step after §7's <code>strace</code>.</span></li>
+      </ul>
+
+      <h4>Interactive labs &amp; practice</h4>
+      <ul>
+        <li><b>Your $5 VPS + <code>strace</code>, <code>uname -a</code>, <code>cat /proc/version</code></b> <span class="rank">start here</span>
+          <span class="why">The commands that make this lesson concrete on real hardware. <code>strace</code> shows the boundary being crossed; <code>uname</code> and <code>/proc/version</code> name the exact kernel you're running. The exercise is built on them.</span></li>
+        <li><b><code>/proc</code> exploration (<code>/proc/cpuinfo</code>, <code>/proc/meminfo</code>, <code>/proc/&lt;pid&gt;/status</code>)</b>
+          <span class="why">The kernel exposes its own state as files — a hands-on look at what it's managing, and a bridge to Lessons 2.3–2.4 and Module 3.</span></li>
+      </ul>
+    </div>
+
+    <!-- ============================== 15 ============================== -->
+    <h2 id="s15">15 · Exercise</h2>
+    <p>
+      Module 2's project increment is to <strong>provision your first Linux server and inventory it</strong>.
+      Lesson 2.1 inventoried the hardware; here you inventory the <em>software layer</em> sitting on it
+      and watch the user/kernel boundary with your own eyes. Do at least E1, E2 and E3 on the real VPS.
+    </p>
+
+    <div class="ex">
+      <div class="h"><span>E1</span>Name your kernel, separate it from your OS</div>
+      <p>SSH into your VPS and run:</p>
+<pre><code>uname -a              # kernel name, version, architecture
+cat /proc/version     # the same, plus how the kernel was built
+cat /etc/os-release   # the OPERATING SYSTEM (distribution) on top of it</code></pre>
+      <p>
+        Write down which line is the <em>kernel</em> (Linux + a version number) and which is the
+        <em>operating system</em> (e.g. Ubuntu 24.04). State the distinction from §5.1 in your own words,
+        using your own machine's output.
+      </p>
+      <div class="out">Deliverable: two lines in <code>NOTES.md</code> — "my kernel is …", "my OS is …" — plus one sentence on how they differ. Adds to your Milestone&nbsp;2 inventory.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E2</span>Watch the boundary with <code>strace</code></div>
+      <p>Install <code>strace</code> if needed (<code>sudo apt install strace</code>), then run:</p>
+<pre><code>strace cat /etc/hostname          # read the syscalls a simple program makes
+strace -c cat /etc/hostname       # a COUNT of syscalls by type</code></pre>
+      <p>
+        In the first output, find the <code>openat</code>, <code>read</code>, <code>write</code> and
+        <code>close</code> calls and match them to §6.3. In the second, note which syscall was called most.
+        Then <code>strace</code> something bigger (e.g. <code>strace -c ls -la /usr</code>) and compare.
+      </p>
+      <div class="out">Deliverable: the four core syscalls from the first run, each annotated with what it asked the kernel to do; and the most-called syscall from the counted run. You are reading the user/kernel boundary directly.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E3</span>Trip the permission boundary on purpose</div>
+      <p>Provoke the kernel into refusing a privileged operation as a normal user, and read the refusal:</p>
+<pre><code>echo test &gt; /etc/lesson-test      # write to a protected location
+cat /etc/shadow                   # read a root-only file
+python3 -m http.server 80         # bind a privileged (&lt;1024) port  (Ctrl-C to stop)</code></pre>
+      <p>
+        Each should fail with "Permission denied" / <code>EACCES</code>/<code>EPERM</code>. Explain, using
+        §6.3 step 3, <em>where</em> in the syscall this refusal happens and <em>why</em> it's the kernel —
+        not the program — saying no.
+      </p>
+      <div class="out">Deliverable: the three error messages, and one sentence identifying them as the kernel refusing a syscall against a permission rule (not an application bug).</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E4</span>Sort the world into user space and kernel space</div>
+      <p>
+        For each of the following, decide whether it runs in <strong>user space</strong> or
+        <strong>kernel space</strong>, and give a one-line reason: (a) your Express app, (b) the CPU
+        scheduler, (c) <code>bash</code>, (d) a network-card device driver, (e) PostgreSQL, (f) the code
+        that decides which process runs after a timer interrupt, (g) Nginx.
+      </p>
+      <div class="out">Deliverable: seven items tagged user/kernel with reasons. Check yourself against §6.5 — anything that touches hardware directly or arbitrates it is kernel; everything else is user space.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E5</span>Optional: see the shared kernel yourself</div>
+      <p>
+        If you have Docker available (a preview of Module 7), compare the kernel on the host and inside a
+        container:
+      </p>
+<pre><code>uname -r                              # host kernel version
+docker run --rm alpine uname -r       # kernel version INSIDE a container</code></pre>
+      <p>
+        They will match — the container has no kernel of its own; it is using the host's. Explain, from
+        §7, why this makes containers lighter than VMs and what it costs in isolation.
+      </p>
+      <div class="out">Deliverable: the two version strings (identical) and two sentences: why the match proves containers share the host kernel, and one isolation consequence.</div>
+    </div>
+
+    <!-- ============================== 16 ============================== -->
+    <h2 id="s16">16 · Quiz</h2>
+    <div class="callout warn">
+      <span class="t">How to use this</span>
+      <p>
+        Answer in your own words <strong>before</strong> revealing the model answer. Two or three
+        sentences each. You're ready for Lesson 2.3 (the CPU scheduler) when you can answer Q1, Q3, Q4
+        and Q7 cold and have completed E1–E3 on a real machine.
+      </p>
+    </div>
+
+    <div class="quiz">
+
+      <details class="q"><summary>Distinguish the kernel from the operating system, with an example.</summary>
+        <div class="ans"><p>The <strong>kernel</strong> is the small, privileged core that runs in kernel mode and is the only software allowed to touch hardware directly and arbitrate it. The <strong>operating system</strong> is the kernel <em>plus</em> the essential user-space programs, libraries and services shipped around it. Example: <em>Linux</em> is a kernel; <em>Ubuntu</em> is an OS = the Linux kernel + GNU userland + systemd + package manager, etc.</p></div>
+      </details>
+
+      <details class="q"><summary>What problem do CPU privilege levels (rings/modes) solve, and how is the boundary enforced?</summary>
+        <div class="ans"><p>They let untrusted programs share one machine without being able to wreck it or each other. The CPU has a hardware mode bit: in <strong>kernel mode</strong> (ring 0) all instructions and all memory are available; in <strong>user mode</strong> (ring 3) privileged instructions and out-of-bounds memory are forbidden. Enforcement is in <em>silicon</em>: if user-mode code attempts a privileged instruction, the CPU faults and traps to the kernel rather than obeying. The kernel's rules can't be bypassed by user code because the hardware, not the kernel's goodwill, enforces them.</p></div>
+      </details>
+
+      <details class="q"><summary>Why can't a user program just jump into kernel code to run a privileged operation itself?</summary>
+        <div class="ans"><p>Because that would defeat the whole point — malicious code would jump straight to a "give me everything" routine. Entry into the kernel isn't an ordinary jump: the <code>syscall</code> instruction atomically switches to kernel mode <em>and</em> transfers control to a single <strong>fixed entry point the kernel chose in advance</strong>, not an address the caller picks. The program can request privileged work but never chooses where privileged execution lands, so the kernel always gets to validate the request first.</p></div>
+      </details>
+
+      <details class="q"><summary>Trace what happens when your code calls <code>read()</code>. Where does "permission denied" come from?</summary>
+        <div class="ans"><p>Your library puts the syscall number and arguments in registers and executes <code>syscall</code>. The CPU flips to kernel mode and jumps to the fixed entry point; the kernel looks up the read handler, <strong>validates</strong> the request (is this descriptor yours? are you allowed to read it? is the buffer inside your memory?), does the work (copy from cache or ask the disk driver), puts the result in a register, and returns to user mode right after the <code>syscall</code>. "Permission denied" (<code>EACCES</code>) is the kernel failing that validation step and refusing — checked on <em>every</em> call, which is why the syscall boundary is where security is enforced.</p></div>
+      </details>
+
+      <details class="q"><summary>A system call and a normal function call both "call some code." Why is the syscall so much more expensive?</summary>
+        <div class="ans"><p>A function call stays in the same privilege level and just jumps within your address space — about a nanosecond. A syscall <em>crosses the hardware-enforced boundary</em>: it switches CPU mode, saves and restores register state, validates arguments, and can evict useful cache lines — hundreds of nanoseconds to a microsecond, ~100–1000× more. That cost is why performance-sensitive code does more work per syscall (big buffers, <code>epoll</code>/<code>io_uring</code>) or, in extreme cases, bypasses the kernel.</p></div>
+      </details>
+
+      <details class="q"><summary>The kernel enters via syscalls when programs ask. How does it regain control from a program that never asks (an infinite loop)?</summary>
+        <div class="ans"><p>Through the <strong>timer interrupt</strong>: a hardware timer fires many times a second and forces the CPU into the kernel on a schedule that user-space code cannot disable. On each tick the kernel can decide the current process has run long enough and forcibly switch to another — <em>preemptive multitasking</em>. So a runaway loop no longer freezes the machine; the kernel simply preempts it at the next tick. (Device interrupts — packet arrived, disk done — force entry the same way for other reasons.)</p></div>
+      </details>
+
+      <details class="q"><summary>List the kernel's main jobs and which hardware part each arbitrates.</summary>
+        <div class="ans"><p><strong>Scheduler</strong> — the CPU (who runs next). <strong>Memory manager</strong> — RAM (private address spaces, paging, OOM). <strong>Filesystem</strong> — the disk (files → blocks, serialized writes). <strong>Device drivers</strong> — all hardware (speak each device's language behind a uniform interface). <strong>Network stack</strong> — the NIC (TCP/IP, deliver packets to sockets). <strong>Security/permissions</strong> — all access (check every syscall). Plus <strong>IPC</strong> so isolated processes can talk on purpose. The next three lessons are the first three of these.</p></div>
+      </details>
+
+      <details class="q"><summary>Explain why a container is lighter than a VM, in terms of the kernel.</summary>
+        <div class="ans"><p>A <strong>VM</strong> runs a full <em>guest kernel</em> on top of a hypervisor — a complete OS per VM, hence gigabytes and slow boots. A <strong>container</strong> runs on the <em>host's</em> kernel and isolates only the user-space view (filesystem, processes, network) using kernel namespaces and cgroups — no second kernel, hence megabytes and millisecond starts. The trade-off: because containers share the host kernel, a kernel-level exploit can escape a container in a way it couldn't escape a VM, so container isolation is weaker.</p></div>
+      </details>
+
+      <details class="q"><summary>Someone says "my server has no desktop, so it barely has an operating system." Correct them.</summary>
+        <div class="ans"><p>The graphical desktop is just an optional user-space program; it has nothing to do with whether an OS is present. A headless server runs a complete, fully-functional operating system — kernel plus scheduler, memory manager, filesystems, network stack, permissions and user-space services — it simply has no GUI on top. In fact most servers deliberately omit the desktop to save resources and shrink the attack surface.</p></div>
+      </details>
+
+      <details class="q"><summary>What's the difference between a monolithic kernel and a microkernel, and what trade-off does it represent?</summary>
+        <div class="ans"><p>A <strong>monolithic</strong> kernel (Linux, BSD) runs almost everything — scheduler, filesystems, drivers, network stack — together in kernel space: fast, because subsystems call each other directly, but any driver bug runs with full privilege and can crash the whole kernel. A <strong>microkernel</strong> keeps the privileged core tiny (scheduling, memory, IPC) and pushes drivers/filesystems into user-space services that message-pass: a crashing driver takes down only its service, but the constant boundary crossings cost performance. It's the recurring <em>speed vs isolation</em> trade — Linux chose speed.</p></div>
+      </details>
+
+    </div>
+
+    <div class="callout good">
+      <span class="t">Next: Lesson 2.3</span>
+      <p>
+        You now know the kernel is the referee and the syscall/interrupt boundary is how it stays in
+        charge. Lesson 2.3 zooms into the single most active part of that referee: the
+        <strong>scheduler</strong>. There is one CPU thread and many processes that all want it — so how
+        does the kernel decide who runs, for how long, and how does it switch between them thousands of
+        times a second so fast it feels simultaneous? We'll meet processes and threads, context
+        switching, and the schedulers that make "run six programs on one core" possible. Keep your E2
+        <code>strace</code> output handy — every <code>read()</code> that blocked was a moment the
+        scheduler ran someone else.
+      </p>
+    </div>
+
+    <hr>
+
+    <nav class="pager" aria-label="Lesson navigation">
+      <a href="lesson-01-what-a-server-is.html"><em>Previous lesson</em>← 2.1 · What a server actually is</a>
+      <span class="disabled next"><em>Next lesson</em>2.3 · Processes, threads, context switching &amp; the scheduler <small>(not yet generated)</small></span>
+    </nav>
+
+    <footer class="foot">
+      <b>From Commit to Production</b> · Module 2 · Lesson 2.2 — <em>What an Operating System Does</em><br>
+      <small>Self-contained offline document · no external assets · regenerated in full when revised.
+      Roadmap: <a href="../../index.html">course/index.html</a></small>
+    </footer>
+  </article>
+</div>
+
+<script>
+(function(){
+  var root = document.documentElement;
+
+  /* ---------- theme ---------- */
+  var KEY='ftp.theme', saved=null;
+  try { saved = localStorage.getItem(KEY); } catch(e){}
+  if (saved) root.setAttribute('data-theme', saved);
+  document.getElementById('theme').addEventListener('click', function(){
+    var cur = root.getAttribute('data-theme');
+    if (!cur) cur = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    var next = cur === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem(KEY, next); } catch(e){}
+  });
+
+  /* ---------- expand/collapse all quiz answers ---------- */
+  var btn = document.getElementById('expand');
+  btn.addEventListener('click', function(){
+    var all = document.querySelectorAll('details.q');
+    var anyClosed = Array.prototype.some.call(all, function(d){ return !d.open; });
+    Array.prototype.forEach.call(all, function(d){ d.open = anyClosed; });
+    btn.textContent = anyClosed ? '⇕ Collapse all' : '⇕ Expand all';
+  });
+
+  /* ---------- reading progress bar ---------- */
+  var barEl = document.getElementById('readbar');
+  function onScroll(){
+    var h = document.documentElement;
+    var max = h.scrollHeight - h.clientHeight;
+    barEl.style.width = (max > 0 ? (h.scrollTop / max * 100) : 0) + '%';
+  }
+  addEventListener('scroll', onScroll, {passive:true});
+  onScroll();
+
+  /* ---------- TOC scroll-spy ---------- */
+  var links = Array.prototype.slice.call(document.querySelectorAll('#tocList a'));
+  var targets = links.map(function(a){ return document.querySelector(a.getAttribute('href')); })
+                     .filter(Boolean);
+  if ('IntersectionObserver' in window && targets.length){
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if (!e.isIntersecting) return;
+        links.forEach(function(a){
+          a.classList.toggle('on', a.getAttribute('href') === '#' + e.target.id);
+        });
+      });
+    }, { rootMargin:'-80px 0px -70% 0px', threshold:0 });
+    targets.forEach(function(t){ io.observe(t); });
+  }
+})();
+</script>
+</body>
+</html>
