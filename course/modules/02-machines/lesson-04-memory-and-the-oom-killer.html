@@ -1,0 +1,1329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 2.4 · Memory: Virtual Address Spaces, Paging, Swap &amp; the OOM Killer — From Commit to Production</title>
+<style>
+/* ============================================================
+   DESIGN TOKENS  (same system as the roadmap)
+   ============================================================ */
+:root{
+  color-scheme: dark light;
+  --font-sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", Consolas, "SFMono-Regular", Menlo, monospace;
+
+  --bg:#0a0e17; --bg-alt:#0e1421; --surface:#131b2b; --surface-2:#19233a;
+  --border:#243049; --border-strong:#37456a;
+  --text:#e8eefb; --text-dim:#a7b4cd; --text-faint:#78869f;
+
+  --accent:#6ea8ff;  --accent-soft:rgba(110,168,255,.14);
+  --green:#4fd39c;   --green-soft:rgba(79,211,156,.13);
+  --amber:#f2b754;   --amber-soft:rgba(242,183,84,.13);
+  --red:#ff7f76;     --red-soft:rgba(255,127,118,.13);
+  --purple:#b28cff;  --purple-soft:rgba(178,140,255,.13);
+  --teal:#4fd0d9;    --teal-soft:rgba(79,208,217,.13);
+
+  --radius:14px; --radius-sm:8px;
+  --shadow:0 1px 2px rgba(0,0,0,.45), 0 14px 34px -18px rgba(0,0,0,.75);
+  --maxw:1220px; --readw:840px;
+}
+:root[data-theme="light"]{
+  color-scheme: light;
+  --bg:#f7f9fc; --bg-alt:#eef2f8; --surface:#ffffff; --surface-2:#f2f5fa;
+  --border:#dde3ee; --border-strong:#c2ccdd;
+  --text:#131a26; --text-dim:#4b586e; --text-faint:#75839a;
+  --accent:#1f5fd0; --accent-soft:rgba(31,95,208,.09);
+  --green:#0f8a5f;  --green-soft:rgba(15,138,95,.10);
+  --amber:#9a6a06;  --amber-soft:rgba(154,106,6,.10);
+  --red:#c3352b;    --red-soft:rgba(195,53,43,.09);
+  --purple:#6d3ecb; --purple-soft:rgba(109,62,203,.09);
+  --teal:#07767e;   --teal-soft:rgba(7,118,126,.10);
+  --shadow:0 1px 2px rgba(18,28,45,.06), 0 12px 28px -18px rgba(18,28,45,.25);
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    color-scheme: light;
+    --bg:#f7f9fc; --bg-alt:#eef2f8; --surface:#ffffff; --surface-2:#f2f5fa;
+    --border:#dde3ee; --border-strong:#c2ccdd;
+    --text:#131a26; --text-dim:#4b586e; --text-faint:#75839a;
+    --accent:#1f5fd0; --accent-soft:rgba(31,95,208,.09);
+    --green:#0f8a5f;  --green-soft:rgba(15,138,95,.10);
+    --amber:#9a6a06;  --amber-soft:rgba(154,106,6,.10);
+    --red:#c3352b;    --red-soft:rgba(195,53,43,.09);
+    --purple:#6d3ecb; --purple-soft:rgba(109,62,203,.09);
+    --teal:#07767e;   --teal-soft:rgba(7,118,126,.10);
+    --shadow:0 1px 2px rgba(18,28,45,.06), 0 12px 28px -18px rgba(18,28,45,.25);
+  }
+}
+
+/* ============================================================ BASE */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth; scroll-padding-top:80px}
+body{margin:0; background:var(--bg); color:var(--text);
+  font-family:var(--font-sans); font-size:16.5px; line-height:1.72; -webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{line-height:1.28; margin:0 0 .5em; letter-spacing:-.015em; font-weight:680}
+h1{font-size:clamp(1.9rem,4vw,2.7rem)}
+h2{font-size:clamp(1.35rem,2.4vw,1.72rem); margin-top:2.6em; padding-top:.2em}
+h3{font-size:1.1rem; margin-top:2em; color:var(--text)}
+h4{font-size:.98rem; margin-top:1.5em; color:var(--text-dim)}
+p{margin:0 0 1.05em}
+a{color:var(--accent); text-decoration:none}
+a:hover{text-decoration:underline}
+strong{font-weight:660}
+em.term{font-style:normal; font-weight:680; color:var(--text)}
+code{font-family:var(--font-mono); font-size:.87em; background:var(--surface-2);
+  border:1px solid var(--border); border-radius:5px; padding:.1em .38em}
+ul,ol{padding-left:1.3em; margin:0 0 1.05em}
+li{margin:.35em 0}
+blockquote{margin:1.5em 0; padding:2px 0 2px 18px; border-left:3px solid var(--border-strong);
+  color:var(--text-dim); font-style:italic}
+blockquote footer{font-style:normal; font-size:.85rem; color:var(--text-faint); margin-top:.4em}
+hr{border:0; border-top:1px solid var(--border); margin:2.6rem 0}
+small{color:var(--text-faint)}
+sup a{font-size:.7em; padding:0 1px}
+
+/* ============================================================ BAR */
+header.bar{position:sticky; top:0; z-index:60;
+  background:color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter:blur(10px); border-bottom:1px solid var(--border)}
+.bar-in{padding:10px 22px; display:flex; align-items:center; gap:14px}
+.brand{font-weight:700; font-size:.92rem; white-space:nowrap}
+.brand a{color:var(--text)}
+.brand span{color:var(--accent)}
+.crumb{font-size:.82rem; color:var(--text-faint); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.bar .right{margin-left:auto; display:flex; gap:8px; align-items:center}
+button.ghost{font:inherit; font-size:.8rem; cursor:pointer; color:var(--text-dim);
+  background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:5px 11px}
+button.ghost:hover{border-color:var(--border-strong); color:var(--text)}
+#readbar{position:fixed; top:0; left:0; height:2px; background:var(--accent); z-index:70; width:0}
+
+/* ============================================================ LAYOUT */
+.shell{padding:0 40px;
+  display:grid; grid-template-columns:1fr; gap:36px}
+
+aside.toc{display:none}
+aside.toc .inner{position:sticky; top:74px; max-height:calc(100vh - 96px); overflow:auto;
+  padding:22px 0 40px; font-size:.86rem}
+aside.toc .lbl{font-size:.7rem; letter-spacing:.12em; text-transform:uppercase;
+  color:var(--text-faint); font-weight:700; margin:0 0 10px}
+aside.toc ol{list-style:none; padding:0; margin:0; counter-reset:t}
+aside.toc li{margin:0; counter-increment:t}
+aside.toc a{display:flex; gap:8px; padding:5px 10px 5px 8px; border-radius:6px;
+  color:var(--text-dim); border-left:2px solid transparent; line-height:1.4}
+aside.toc a:before{content:counter(t); font-family:var(--font-mono); font-size:.72rem;
+  color:var(--text-faint); flex:0 0 1.4em; text-align:right}
+aside.toc a:hover{background:var(--surface-2); color:var(--text); text-decoration:none}
+aside.toc a.on{color:var(--accent); border-left-color:var(--accent); background:var(--accent-soft)}
+article{min-width:0; padding-bottom:20px}
+
+/* ============================================================ HERO */
+.lead{padding:46px 0 26px; border-bottom:1px solid var(--border); margin-bottom:8px}
+.kicker{font-family:var(--font-mono); font-size:.74rem; letter-spacing:.16em;
+  text-transform:uppercase; color:var(--accent); margin-bottom:12px}
+.subtitle{font-size:1.1rem; color:var(--text-dim); max-width:var(--readw); margin-top:.6em}
+.meta{display:flex; flex-wrap:wrap; gap:8px; margin-top:20px}
+
+/* ============================================================ COMPONENTS */
+.pill{display:inline-block; font-family:var(--font-mono); font-size:.7rem; padding:3px 9px;
+  border-radius:999px; border:1px solid var(--border-strong); color:var(--text-dim); white-space:nowrap}
+.pill.a{color:var(--accent); border-color:var(--accent); background:var(--accent-soft)}
+.pill.g{color:var(--green); border-color:var(--green); background:var(--green-soft)}
+.pill.r{color:var(--red); border-color:var(--red); background:var(--red-soft)}
+.pill.p{color:var(--purple); border-color:var(--purple); background:var(--purple-soft)}
+
+.callout{border-left:3px solid var(--accent); background:var(--accent-soft);
+  border-radius:0 var(--radius-sm) var(--radius-sm) 0; padding:15px 19px; margin:1.7em 0}
+.callout.warn{border-color:var(--amber); background:var(--amber-soft)}
+.callout.bad{border-color:var(--red); background:var(--red-soft)}
+.callout.good{border-color:var(--green); background:var(--green-soft)}
+.callout.def{border-color:var(--purple); background:var(--purple-soft)}
+.callout .t{font-weight:700; font-size:.76rem; letter-spacing:.1em; text-transform:uppercase;
+  margin-bottom:6px; display:block; color:var(--text)}
+.callout > :last-child{margin-bottom:0}
+
+dl.terms{margin:1.4em 0; padding:0}
+dl.terms dt{font-weight:680; color:var(--text); margin-top:1em; font-size:.98rem}
+dl.terms dt:first-child{margin-top:0}
+dl.terms dd{margin:.25em 0 0; color:var(--text-dim); padding-left:0}
+
+pre{background:var(--bg-alt); border:1px solid var(--border); border-radius:var(--radius-sm);
+  padding:16px 18px; overflow-x:auto; font-family:var(--font-mono); font-size:.8rem;
+  line-height:1.5; margin:1.6em 0}
+pre code{background:none; border:0; padding:0; font-size:inherit}
+figure{margin:1.8em 0}
+figure figcaption{font-size:.82rem; color:var(--text-faint); margin-top:-.6em; padding-left:2px}
+
+.tablewrap{overflow-x:auto; margin:1.6em 0; border:1px solid var(--border); border-radius:var(--radius)}
+table{border-collapse:collapse; width:100%; font-size:.9rem; min-width:560px}
+th,td{padding:10px 14px; text-align:left; border-bottom:1px solid var(--border); vertical-align:top}
+th{background:var(--surface-2); font-size:.73rem; text-transform:uppercase; letter-spacing:.08em;
+  color:var(--text-dim); font-weight:700}
+tr:last-child td{border-bottom:0}
+td.y{color:var(--green); font-weight:600} td.n{color:var(--red); font-weight:600}
+
+.card{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+  padding:20px 22px; box-shadow:var(--shadow); margin:1.6em 0}
+.card > :first-child{margin-top:0}
+.grid2{display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; margin:1.6em 0}
+.grid2 .card{margin:0}
+
+/* misconceptions */
+.myth{border:1px solid var(--border); border-radius:var(--radius); margin:14px 0; overflow:hidden}
+.myth .m{background:var(--red-soft); border-bottom:1px solid var(--border); padding:11px 16px;
+  font-weight:660; display:flex; gap:10px}
+.myth .m:before{content:"✕"; color:var(--red); font-weight:700}
+.myth .r{padding:13px 16px}
+.myth .r:before{content:"Reality "; font-family:var(--font-mono); font-size:.68rem;
+  letter-spacing:.12em; text-transform:uppercase; color:var(--green); display:block; margin-bottom:4px}
+.myth .r > :last-child{margin-bottom:0}
+
+/* resources */
+.res{margin:1.4em 0}
+.res h4{margin:1.4em 0 .4em; color:var(--accent); font-size:.78rem;
+  letter-spacing:.1em; text-transform:uppercase}
+.res ul{list-style:none; padding:0; margin:0}
+.res li{border-bottom:1px dashed var(--border); padding:8px 0; margin:0}
+.res li:last-child{border-bottom:0}
+.res .why{display:block; font-size:.85rem; color:var(--text-dim)}
+.res .rank{font-family:var(--font-mono); font-size:.66rem; padding:1px 6px; border-radius:999px;
+  border:1px solid var(--green); color:var(--green); background:var(--green-soft); margin-left:6px}
+
+/* exercises */
+.ex{border:1px solid var(--border); border-left:3px solid var(--teal);
+  border-radius:0 var(--radius) var(--radius) 0; padding:16px 20px; margin:16px 0; background:var(--surface)}
+.ex .h{font-weight:680; margin-bottom:6px}
+.ex .h span{font-family:var(--font-mono); font-size:.72rem; color:var(--teal); margin-right:8px}
+.ex .out{font-size:.86rem; color:var(--text-faint); margin-top:8px; border-top:1px dashed var(--border); padding-top:8px}
+.ex > :last-child{margin-bottom:0}
+
+/* quiz */
+.quiz{counter-reset:q}
+.q{border:1px solid var(--border); border-radius:var(--radius); margin:12px 0;
+  background:var(--surface); overflow:hidden}
+.q > summary{cursor:pointer; list-style:none; padding:14px 18px; display:flex; gap:12px;
+  font-weight:600; align-items:flex-start}
+.q > summary::-webkit-details-marker{display:none}
+.q > summary:before{counter-increment:q; content:"Q" counter(q); font-family:var(--font-mono);
+  font-size:.72rem; color:var(--accent); background:var(--accent-soft);
+  border:1px solid var(--accent); border-radius:6px; padding:2px 7px; flex:0 0 auto; margin-top:2px}
+.q > summary::after{content:"show answer"; margin-left:auto; font-size:.7rem; font-weight:600;
+  letter-spacing:.08em; text-transform:uppercase; color:var(--text-faint); flex:0 0 auto; padding-top:4px}
+.q[open] > summary::after{content:"hide"}
+.q .ans{padding:2px 18px 16px; border-top:1px solid var(--border); margin-top:0;
+  background:var(--bg-alt); color:var(--text-dim)}
+.q .ans > :first-child{margin-top:1em}
+.q .ans > :last-child{margin-bottom:0}
+.q .ans strong{color:var(--text)}
+
+/* summary list */
+ul.takeaways{list-style:none; padding:0}
+ul.takeaways li{padding:9px 0 9px 30px; position:relative; border-bottom:1px dashed var(--border)}
+ul.takeaways li:last-child{border-bottom:0}
+ul.takeaways li:before{content:"▸"; position:absolute; left:6px; top:9px; color:var(--accent)}
+
+/* pager / footer */
+.pager{display:flex; gap:12px; margin:44px 0 30px; flex-wrap:wrap; max-width:none}
+.pager a, .pager .disabled{flex:1 1 250px; border:1px solid var(--border); border-radius:var(--radius);
+  padding:14px 18px; background:var(--surface); text-decoration:none; color:var(--text)}
+.pager a:hover{border-color:var(--accent); text-decoration:none}
+.pager .disabled{opacity:.45}
+.pager em{display:block; font-style:normal; font-size:.7rem; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--text-faint); margin-bottom:3px}
+.pager .next{text-align:right}
+footer.foot{border-top:1px solid var(--border); margin-top:20px; padding:24px 0 56px;
+  color:var(--text-faint); font-size:.85rem}
+
+@media print{
+  header.bar,aside.toc,#readbar,button.ghost,.pager{display:none}
+  body{background:#fff; color:#000; font-size:10.5pt}
+  .shell{display:block; max-width:none; padding:0}
+  .q{break-inside:avoid} .q .ans{display:block !important}
+  article > *{max-width:none}
+}
+</style>
+</head>
+<body>
+
+<div id="readbar"></div>
+<header class="bar">
+  <div class="bar-in">
+    <div class="brand"><a href="../../index.html">Commit&nbsp;<span>→</span>&nbsp;Production</a></div>
+    <div class="crumb">/ Module&nbsp;2 · Machines / Lesson&nbsp;2.4</div>
+    <div class="right">
+      <button class="ghost" id="expand">⇕ Expand all</button>
+      <button class="ghost" id="theme">◐ Theme</button>
+    </div>
+  </div>
+</header>
+
+<div class="shell">
+
+  <aside class="toc">
+    <div class="inner">
+      <p class="lbl">Lesson contents</p>
+      <ol id="tocList">
+        <li><a href="#s1">Problem Statement</a></li>
+        <li><a href="#s2">Historical Context</a></li>
+        <li><a href="#s3">Previous Solution</a></li>
+        <li><a href="#s4">Why It Failed</a></li>
+        <li><a href="#s5">New Solution</a></li>
+        <li><a href="#s6">Internal Mechanics</a></li>
+        <li><a href="#s7">Real Industry Examples</a></li>
+        <li><a href="#s8">Diagrams</a></li>
+        <li><a href="#s9">Advantages</a></li>
+        <li><a href="#s10">Limitations</a></li>
+        <li><a href="#s11">Common Misconceptions</a></li>
+        <li><a href="#s12">Practical Use Cases</a></li>
+        <li><a href="#s13">Summary</a></li>
+        <li><a href="#s14">Recommended Resources</a></li>
+        <li><a href="#s15">Exercise</a></li>
+        <li><a href="#s16">Quiz</a></li>
+      </ol>
+    </div>
+  </aside>
+
+  <article>
+    <div class="lead">
+      <div class="kicker">Module 2 · Lesson 2.4</div>
+      <h1>Memory: virtual address spaces, paging, swap, and the OOM killer that ate your API</h1>
+      <p class="subtitle">
+        Lesson 2.3 was the kernel sharing one CPU among many processes in time. This lesson is the kernel
+        sharing one pool of RAM among the same processes in space — and it is where a huge fraction of
+        real production incidents actually live. Every process on your server believes it owns a vast,
+        private, contiguous memory that starts at address zero. That belief is a <em>lie the hardware
+        tells on purpose</em>, and understanding exactly how the lie is maintained explains process
+        isolation, why <code>fork()</code> is cheap, why "free memory" is almost never really free, why a
+        machine can grind to a crawl without ever crashing, and why one night the Linux kernel walks up to
+        your Express API and kills it with <code>signal 9</code> — the OOM killer that ate your API.
+      </p>
+      <div class="meta">
+        <span class="pill a">~75 min read</span>
+        <span class="pill">Prerequisites: Lessons 2.1–2.3</span>
+        <span class="pill">Conceptual · hands-on at the end</span>
+        <span class="pill g">Module 2 · Milestone 2</span>
+      </div>
+    </div>
+
+    <div class="callout def">
+      <span class="t">Learning objectives</span>
+      <p>By the end of this lesson you will be able to:</p>
+      <ol style="margin-bottom:0">
+        <li>Explain what a <em>virtual address space</em> is, why every process gets its own, and how that single mechanism delivers isolation, relocation and the illusion of contiguous memory.</li>
+        <li>Describe <em>paging</em>: pages, frames, page tables, the MMU and the TLB — and trace a virtual address being translated to a physical one.</li>
+        <li>Define a <em>page fault</em>, distinguish minor from major faults, and explain <em>demand paging</em>, <em>copy-on-write</em> and the <em>page cache</em>.</li>
+        <li>Explain what <em>swap</em> is, when it helps, and what <em>thrashing</em> is — why a box can get slow instead of crashing.</li>
+        <li>Explain <em>memory overcommit</em> and the <em>OOM killer</em>: why Linux hands out memory it doesn't have, how it chooses a victim, and how to read the kernel log that records the execution.</li>
+        <li>Read a process's real memory footprint (<em>RSS</em> vs <em>VSZ</em>) and reason about container memory limits (<code>OOMKilled</code>) you will meet in Module 7.</li>
+      </ol>
+    </div>
+
+    <div class="callout">
+      <span class="t">Where this sits on the map</span>
+      <p>
+        This is the third of Module 2's "kernel, one job at a time" lessons. Lesson 2.2 named the kernel's
+        <strong>memory manager</strong> as one row in its table of jobs; this lesson <em>is</em> that row.
+        Lesson 2.3 shared the <strong>CPU</strong> in time; this lesson shares <strong>RAM</strong> in
+        space. It leans on Lesson 2.1's fact that RAM is finite, fast and volatile, and it hands directly
+        to Lesson 2.5 (<strong>disk</strong>) — because swap and the page cache are exactly where memory
+        and disk meet. Everything here pays off again in Module 7, where a container's memory limit is
+        enforced by the very machinery (<em>cgroups</em>, the OOM killer) you meet below.
+      </p>
+    </div>
+
+    <!-- ============================== 1 ============================== -->
+    <h2 id="s1">1 · Problem Statement</h2>
+
+    <p>
+      Back to the $5 box from Lesson 2.1: one pool of RAM — say 1&nbsp;GB — and, on top of it, the same
+      crowd from Lesson 2.2 all resident at once: your Express API, PostgreSQL, Redis, Nginx, an SSH
+      session, and a scatter of background tasks. Each of those programs was compiled independently, by
+      people who never spoke to each other, and <em>each was compiled as if it owns the whole machine</em>
+      — its code expects to live at certain addresses, its data at others, with no knowledge that anything
+      else exists. Now they must all fit in the same physical RAM, at the same time, without stepping on
+      each other.
+    </p>
+    <p>
+      Left to run directly against physical memory, this produces a pile of impossible questions — the
+      spatial twin of Lesson 2.2's list:
+    </p>
+    <ul>
+      <li>"Postgres was compiled to put a variable at address <code>0x4000</code>. So was my API. There is only <strong>one</strong> physical address <code>0x4000</code>. Who gets it, and what stops one from reading or clobbering the other's data?"</li>
+      <li>"My API needs to grow its heap while it runs. The memory right after it is Postgres's. How does it grow without <strong>colliding</strong> with a neighbour it can't see?"</li>
+      <li>"I want to run a program that needs more memory than the machine physically has. Is that simply <strong>impossible</strong>, or can the OS fake it?"</li>
+      <li>"Nginx starts, uses 30&nbsp;MB, then its worker exits. That RAM is now scattered in the middle of physical memory. The next program needs one <strong>contiguous</strong> 40&nbsp;MB block. How, when free memory is in fragments?"</li>
+      <li>"All six programs together <em>ask</em> for more memory than exists — but most of them aren't using most of what they asked for. Do I deny them up front, or let them <strong>overcommit</strong> and hope? And what happens the day the hope runs out?"</li>
+      <li>"When memory genuinely runs out, <strong>who</strong> decides which program dies, and why did it pick my API and not the leaky background script?"</li>
+    </ul>
+
+    <div class="callout bad">
+      <span class="t">The core problem</span>
+      <p>
+        Many independently-compiled, mutually-distrusting programs must share one finite pool of physical
+        RAM <strong>safely</strong> (none can read or corrupt another's memory), <strong>flexibly</strong>
+        (each can grow and shrink without knowing about the others, and none needs to know where in
+        physical RAM it actually landed), and <strong>elastically</strong> (the machine should be able to
+        run programs whose combined appetite exceeds physical memory, degrading gracefully rather than
+        simply refusing). Raw physical addressing — every program naming real memory cells directly —
+        provides none of this. We need an indirection layer between the addresses a program uses and the
+        physical cells they land in, and we need the hardware to enforce it on <em>every single memory
+        access</em>, billions of times a second, at essentially zero cost.
+      </p>
+    </div>
+
+    <p>
+      The promise of this lesson: by the end, "the machine ran out of memory" will stop being a single
+      vague event and resolve into a precise chain — virtual addresses, page tables, page faults, the page
+      cache, swap, overcommit, and finally the OOM killer's victim-selection — each of which you can
+      observe on your own VPS and each of which explains a different real-world failure you will otherwise
+      misdiagnose.
+    </p>
+
+    <!-- ============================== 2 ============================== -->
+    <h2 id="s2">2 · Historical Context</h2>
+
+    <p>
+      Like the kernel itself, virtual memory was not designed in the abstract; it was assembled from a
+      sequence of increasingly clever answers to "how do we fit more programs into too little RAM without
+      them destroying each other." Each step fixed the previous step's fatal flaw.
+    </p>
+
+    <h3>1940s–1950s · Physical addressing, one program</h3>
+    <p>
+      The earliest machines had no memory management at all. A program named physical memory cells
+      directly, and since only one program ran at a time (Lesson 2.2), there was no one to collide with.
+      Memory was simply an array of numbered cells your program owned entirely. This is the baseline: an
+      address in the program <em>was</em> an address in the hardware, one-to-one.
+    </p>
+
+    <h3>1950s–1960s · Fixed partitions and the relocation problem</h3>
+    <p>
+      Multiprogramming (Lesson 2.2) put several programs in RAM at once by carving memory into fixed
+      partitions — program A in the first 32&nbsp;KB, program B in the next, and so on. This immediately
+      exposed two problems that drive the rest of the story. First, <em class="term">relocation</em>: a
+      program compiled to run at address 0 now has to run at address 32768, so every address inside it is
+      wrong. Second, <em class="term">protection</em>: nothing stopped program A from reading or writing
+      into program B's partition. Both are the §1 questions in their first, crude form.
+    </p>
+
+    <h3>1960s · Base-and-bound registers — the first indirection</h3>
+    <p>
+      The first hardware fix added two registers per program: a <em class="term">base</em> (added to every
+      address the program used, so a program written for address 0 could physically live anywhere) and a
+      <em class="term">bound</em> (the maximum offset, so an access past the end of your region faulted).
+      Base-and-bound solved relocation and gave crude protection — but it forced each program to occupy
+      <em>one contiguous physical block</em>, which is the seed of the fragmentation problem in §4.
+    </p>
+
+    <h3>1962 · The Atlas machine and demand paging</h3>
+    <p>
+      The Atlas computer at the University of Manchester introduced the idea that defines this lesson:
+      break both the address space and physical memory into fixed-size blocks (<em>pages</em> and
+      <em>frames</em>), keep a table mapping one to the other, and — crucially — let some pages live on the
+      drum (disk) instead of in core (RAM), fetching them <em>on demand</em> when touched. This is
+      <em class="term">virtual memory</em> and <em class="term">demand paging</em> in embryo: a program
+      could be larger than physical memory, and its pieces could be scattered anywhere, because the
+      page table hid all of it.
+    </p>
+
+    <h3>1960s–1970s · Paging hardware becomes standard</h3>
+    <p>
+      Through time-sharing systems and the Unix lineage, dedicated hardware — the
+      <em class="term">Memory Management Unit (MMU)</em> — was added to the CPU to perform the
+      page-table lookup on every memory access at hardware speed, with a small cache (the
+      <em class="term">TLB</em>) to keep it fast. By the time Unix matured, "each process has its own
+      paged virtual address space" was simply how serious machines worked.
+    </p>
+
+    <h3>Today · Why this is your everyday reality</h3>
+    <p>
+      Your $5 VPS runs a 64-bit Linux kernel driving a hardware MMU with multi-level page tables and a
+      TLB, doing demand paging, copy-on-write, a unified page cache, optional swap, memory overcommit, and
+      an OOM killer of last resort — every mechanism in this history, all at once, on every memory access
+      your Express handler makes. When Module 7's container "gets OOMKilled," it is this 60-year-old
+      lineage, wrapped in a 2000s-era cgroup, doing exactly what Atlas's designers set out to do: fit too
+      much into too little, safely, and decide what gives when it can't.
+    </p>
+
+    <!-- ============================== 3 ============================== -->
+    <h2 id="s3">3 · The Previous Solution (in detail)</h2>
+
+    <p>
+      To feel what virtual memory buys you, look hard at the best pre-virtual model: several programs in
+      RAM at once, each relocated into <strong>one contiguous physical region</strong> by base-and-bound
+      registers, with whole programs <em>swapped</em> out to disk when memory got tight. This is a real,
+      workable model — early Unix ran this way — and its specific pains are precisely what paging was built
+      to remove.
+    </p>
+
+    <p>The model, stated plainly:</p>
+<pre><code>CONTIGUOUS-ALLOCATION MODEL  (base + bound, whole-program swapping)
+
+  Physical RAM (one flat array of cells):
+  0                                                          1 GB
+  ├──────────┬───────────────┬──────────┬────────────────────┤
+  │  kernel  │  Postgres     │  API     │      (free)         │
+  └──────────┴───────────────┴──────────┴────────────────────┘
+        base_API ─┘   bound_API ─┘
+
+  · Each program occupies ONE contiguous physical block.
+  · CPU adds base to every address; faults if offset &gt; bound.
+  · Out of room? Copy an ENTIRE program out to disk (swap it),
+    free its block, load another. All-or-nothing.</code></pre>
+
+    <p>The assumptions this model bakes in:</p>
+    <dl class="terms">
+      <dt>Contiguity is mandatory</dt>
+      <dd>A program's memory must be one unbroken physical block. There is no way to assemble a program's address space from scattered free fragments.</dd>
+      <dt>The whole program is the unit</dt>
+      <dd>You bring in or evict an <em>entire</em> program. You cannot keep only its hot 10% in RAM and leave the cold 90% on disk; it is all-in or all-out.</dd>
+      <dt>Size is bounded by physical RAM</dt>
+      <dd>A single program can be no larger than the physical memory available to hold it. "Bigger than RAM" is simply impossible.</dd>
+      <dt>Protection is coarse</dt>
+      <dd>Base-and-bound gives one region per program with one boundary. There is no notion of "this part is read-only code, that part is writable data," and no fine-grained sharing.</dd>
+    </dl>
+
+    <p>
+      And it genuinely worked — it ran real multi-user systems for years, and its virtues are real: the
+      address translation is trivially cheap (one addition, one comparison), and the model is simple
+      enough to reason about completely. For a workload of a few similarly-sized, long-lived programs, it
+      is a reasonable fit. It becomes a catastrophic fit the moment programs are many, differently-sized,
+      short-lived, larger than RAM, or want to share memory — which is to say, the moment you have a real
+      server. The next section is exactly those failures.
+    </p>
+
+    <!-- ============================== 4 ============================== -->
+    <h2 id="s4">4 · Why It Failed</h2>
+
+    <p>
+      Push the contiguous-allocation model onto a busy, general-purpose server and each of its four
+      assumptions turns into a distinct, well-known failure. These are the exact pains paging was invented
+      to erase.
+    </p>
+
+    <h3>4.1 External fragmentation wastes memory you can't use</h3>
+    <p>
+      Programs of different sizes start and exit over time, leaving free gaps between the survivors. Soon
+      you have, say, 200&nbsp;MB free <em>in total</em> — but split into a 40&nbsp;MB gap here, a
+      70&nbsp;MB gap there, a 90&nbsp;MB gap over there. A new program needing one contiguous
+      150&nbsp;MB block cannot start, even though 200&nbsp;MB is "free." This is
+      <em class="term">external fragmentation</em>: the free memory exists but is unusable because it isn't
+      contiguous. The only remedies — compacting memory by shuffling running programs around, or careful
+      allocation policies — are expensive and never fully solve it.
+    </p>
+
+    <h3>4.2 You can't run a program bigger than RAM</h3>
+    <p>
+      Because a program must fit entirely in a physical block, a 2&nbsp;GB program simply cannot run on a
+      1&nbsp;GB machine. Yet most programs, most of the time, are only actively using a small fraction of
+      their memory — the current working set. Being forced to hold <em>all</em> of a program in RAM to run
+      <em>any</em> of it wastes the machine's most precious resource on cold data that is never touched.
+    </p>
+
+    <h3>4.3 Swapping is all-or-nothing and brutal</h3>
+    <p>
+      When memory is tight, the only lever is to evict an <em>entire</em> program to disk and reload it
+      later — copying megabytes out and megabytes back, even though the program only needed a few kilobytes
+      of its memory to make progress. The granularity is wrong by orders of magnitude, so the cost of
+      relieving memory pressure is enormous and the machine stalls hard whenever it happens.
+    </p>
+
+    <h3>4.4 Sharing and fine-grained protection are impossible</h3>
+    <p>
+      With one contiguous region and one boundary per program, there is no way to say "these two copies of
+      Nginx should <em>share</em> one physical copy of the identical read-only code" — so identical code is
+      duplicated in RAM per process. Nor is there a way to mark the code region read-only and the data
+      region writable within a single program, so a stray write into the program's own instructions goes
+      undetected. Memory is neither shared where it should be nor protected as finely as it should be.
+    </p>
+
+    <div class="callout warn">
+      <span class="t">The pattern behind all four failures</span>
+      <p>
+        Every failure traces to one root cause: <strong>the program's memory is bound directly and
+        contiguously to physical memory.</strong> Contiguity causes fragmentation; the direct binding
+        forces all-or-nothing residency and blocks sharing. The fix is to break that binding — insert a
+        translation layer so that the addresses a program uses are <em>decoupled</em> from the physical
+        cells they land in, and make the unit of that mapping small and fixed-size so memory can be
+        assembled from scattered pieces, partially resident, and shared page-by-page. That layer is
+        virtual memory, built on <em>paging</em>, and it is the whole of §5.
+      </p>
+    </div>
+
+    <!-- ============================== 5 ============================== -->
+    <h2 id="s5">5 · The New Solution</h2>
+
+    <p>
+      The solution is one idea applied ruthlessly: <strong>give every process its own private virtual
+      address space, and translate every access through a page table the hardware consults on the fly.</strong>
+      Definitions first — these words are the working vocabulary for the rest of the lesson and for
+      Module 7.
+    </p>
+
+    <h3>5.1 The core vocabulary</h3>
+    <dl class="terms">
+      <dt>Virtual address</dt>
+      <dd>An address as the program sees it. When your code holds a pointer, that number is a <em>virtual</em> address, meaningful only inside this one process. It is not where the data physically lives.</dd>
+      <dt>Physical address</dt>
+      <dd>An actual location in the RAM chips. Only the kernel and the MMU deal in these; your program never sees one.</dd>
+      <dt>Virtual address space</dt>
+      <dd>The full range of virtual addresses one process can use — on 64-bit systems, an enormous, private, sparse range that <em>every</em> process gets its own copy of. Two processes can both use virtual address <code>0x4000</code> and it maps to two <em>different</em> physical cells. This is the isolation from §1, delivered.</dd>
+      <dt>Page</dt>
+      <dd>A fixed-size chunk of a virtual address space — typically <strong>4&nbsp;KB</strong> on x86-64. The address space is divided into pages; the page is the unit of mapping.</dd>
+      <dt>Frame (page frame)</dt>
+      <dd>A fixed-size chunk of <em>physical</em> RAM, the same size as a page. Physical memory is divided into frames. A page is mapped to a frame (or to nowhere yet, or to disk).</dd>
+      <dt>Page table</dt>
+      <dd>The per-process data structure the kernel maintains that records, for each virtual page, which physical frame it maps to (and its permissions, and whether it is currently resident). The map from "what the program says" to "where it really is."</dd>
+      <dt>MMU (Memory Management Unit)</dt>
+      <dd>Hardware on the CPU that performs the page-table lookup on <em>every</em> memory access, translating virtual to physical automatically and enforcing the permission bits — at hardware speed.</dd>
+      <dt>Page fault</dt>
+      <dd>What happens when a program touches a virtual page that isn't currently mapped to a resident frame. The MMU traps into the kernel, which decides what to do (fetch it, allocate it, or kill the process). Not always an error — often just normal, lazy work.</dd>
+      <dt>Swap</dt>
+      <dd>Disk space the kernel can use to hold pages evicted from RAM, so RAM can hold something else. Lets total in-use memory exceed physical RAM, at the cost of disk-speed access to the swapped-out pages.</dd>
+    </dl>
+
+    <div class="callout def">
+      <span class="t">The one sentence to hold onto</span>
+      <p>
+        <strong>A virtual address space is a per-process illusion of a huge, private, contiguous memory,
+        implemented by mapping small fixed-size <em>pages</em> onto physical <em>frames</em> (or onto disk,
+        or onto nothing yet) through a page table that the MMU consults on every access.</strong> Almost
+        every memory behaviour in this lesson — isolation, lazy allocation, cheap <code>fork()</code>,
+        swap, the page cache, overcommit — is a consequence of that one design.
+      </p>
+    </div>
+
+    <h3>5.2 The shape of the solution</h3>
+    <p>
+      The move inverts the contiguous model. Instead of each program getting one real, contiguous slab of
+      physical RAM, each program gets its own <em>virtual</em> space that <em>looks</em> contiguous and
+      private, while the page table quietly scatters its pages across whatever physical frames happen to be
+      free — or leaves them unmapped until first touched, or parks them on disk:
+    </p>
+<pre><code>VIRTUAL MEMORY MODEL  ("every process has its own private map")
+
+  API's virtual space        Postgres's virtual space
+  (private, looks contiguous) (private, looks contiguous)
+  ┌──────┐ page 0             ┌──────┐ page 0
+  │      │──┐                 │      │──────────┐
+  ├──────┤  │  page 1         ├──────┤          │ page 1
+  │      │  │ ─────┐          │      │───┐      │ ──────┐
+  └──────┘  │      │          └──────┘   │      │       │
+   page tables (per process) map pages → frames (or disk, or nothing)
+            ▼      ▼                     ▼      ▼       ▼
+  ┌───────────────────────────────────────────────────────────┐
+  │ PHYSICAL RAM (frames, scattered)   │  SWAP (on disk)        │
+  │  [API p0][PG p1][free][API p1][PG p0] │  [PG cold page]     │
+  └───────────────────────────────────────────────────────────┘
+
+  Same virtual address in two processes → different frames.
+  Contiguity is faked; fragmentation is gone; growth just adds pages.</code></pre>
+    <p>
+      Now re-answer §1's impossible questions, one line each. Who gets physical <code>0x4000</code>? Both
+      programs use <em>virtual</em> <code>0x4000</code>; their page tables send those to different frames,
+      so there is no conflict and no way to see each other's data — <strong>isolation</strong>. How does
+      the API grow without colliding? It maps another page anywhere a free frame exists; the neighbour is
+      irrelevant — <strong>no fragmentation, free growth</strong>. Bigger than RAM? Keep only the hot pages
+      resident and leave the rest on disk — <strong>demand paging + swap</strong>. Scattered free memory?
+      Any free frame will do; contiguity is only virtual — <strong>fragmentation solved</strong>.
+      Overcommit and the day it runs out? §6.7 and §6.8. The single design move — a per-process page table
+      the hardware enforces — answers nearly all of them.
+    </p>
+
+    <!-- ============================== 6 ============================== -->
+    <h2 id="s6">6 · Internal Mechanics</h2>
+
+    <p>
+      Now the machine in motion. We will (6.1) lay out a process's virtual address space, (6.2) translate
+      a virtual address through the page table, (6.3) meet the TLB that keeps translation fast, (6.4) walk
+      a page fault end to end, (6.5) see demand paging and copy-on-write make allocation lazy, (6.6)
+      understand the page cache — why "free" RAM is a lie, (6.7) explain swap and thrashing, and (6.8)
+      face overcommit and the OOM killer that ate your API.
+    </p>
+
+    <h3>6.1 The anatomy of a process's address space</h3>
+    <p>
+      A process's virtual space is not one undifferentiated blob; the kernel lays it out in regions
+      (Linux calls them <em class="term">VMAs</em>, virtual memory areas), each with its own permissions.
+      From low addresses to high, roughly:
+    </p>
+<pre><code>  high addr ┌────────────────────────┐
+            │  stack   ↓ grows down   │  local variables, call frames (per thread)
+            │        ...              │
+            │        (gap)            │
+            │        ...              │
+            │  mmap region           │  shared libraries, mmap'd files, big mallocs
+            │        ...              │
+            │  heap    ↑ grows up     │  malloc/new: dynamic allocation
+            ├────────────────────────┤
+            │  BSS                    │  zero-initialised globals
+            │  data                   │  initialised globals
+            │  text (code)  read-only │  the program's machine instructions
+  low addr  └────────────────────────┘</code></pre>
+    <p>
+      Notice the permissions: <strong>text</strong> (your compiled code) is mapped read-only and
+      executable, so a stray write into it faults instead of silently corrupting your program — the
+      fine-grained protection §4.4 lacked. The <strong>heap</strong> (where <code>malloc</code>/Node's
+      allocations live) grows up; each thread's <strong>stack</strong> grows down. The vast space between
+      is unmapped — touching it is the classic segmentation fault. This layout is per process, private, and
+      identical-looking to every process even though each lands on totally different frames.
+    </p>
+
+    <h3>6.2 Translating one address through the page table</h3>
+    <p>
+      A virtual address splits into two parts: a <em>page number</em> (the high bits — which page) and an
+      <em>offset</em> (the low bits — how far into the page). With 4&nbsp;KB pages, the low 12 bits are the
+      offset (2<sup>12</sup>&nbsp;=&nbsp;4096) and the rest select the page. Translation replaces the page
+      number with a frame number and keeps the offset:
+    </p>
+<pre><code>  virtual address:  [  virtual page number  ][  offset (12 bits)  ]
+                              │                        │
+                              ▼   page table lookup     │  (unchanged)
+                     [ physical frame number ]          │
+                              │                         │
+                              ▼                         ▼
+  physical address: [ physical frame number ][  offset (12 bits)  ]</code></pre>
+    <p>
+      A flat table with one entry per 4&nbsp;KB page of a 64-bit space would be astronomically large, so
+      real hardware uses a <em class="term">multi-level page table</em> — a tree, typically 4 levels on
+      x86-64 — where only the branches that are actually used exist. That keeps the table small for a
+      sparse address space (most of the 64-bit range is unmapped), at the cost of several memory lookups
+      per translation — which is exactly why the TLB exists.
+    </p>
+
+    <h3>6.3 The TLB: making translation nearly free</h3>
+    <p>
+      If every memory access required walking a 4-level page table, every access would cost several extra
+      memory reads — crippling. So the MMU keeps a small, very fast cache of recent virtual→physical
+      translations called the <em class="term">Translation Lookaside Buffer (TLB)</em>. On each access the
+      MMU checks the TLB first; a <em>hit</em> gives the frame instantly, and only a <em>miss</em> triggers
+      the full page-table walk (after which the result is cached). This is the same locality principle from
+      Lesson 2.1's cache hierarchy, applied to translations: programs touch a small set of pages
+      repeatedly, so a small TLB catches the vast majority. It is also why a <em>context switch</em>
+      (Lesson 2.3) has a hidden cost we can now name precisely — switching address spaces can invalidate
+      TLB entries, so the new process starts with TLB misses until it warms up again.
+    </p>
+
+    <h3>6.4 The page fault, end to end</h3>
+    <p>
+      The page fault is the pivot of this whole lesson: it is how a not-yet-resident page becomes resident,
+      and it is <em>routine</em>, not exceptional. When the MMU finds no valid mapping for a touched page,
+      it traps to the kernel, which inspects the situation and takes one of several paths:
+    </p>
+<pre><code>  program touches virtual address X
+        │
+        ▼
+  MMU checks page table ── mapping present &amp; allowed? ──▶ yes ─▶ access proceeds
+        │ no / not resident
+        ▼   PAGE FAULT → trap into kernel
+  kernel asks: what SHOULD be at X?
+    ├─ valid page, never used yet   → allocate a zeroed frame, map it     (minor fault)
+    ├─ valid page, on swap/disk     → read it from disk into a frame      (MAJOR fault)
+    ├─ valid page, copy-on-write    → copy the shared frame, map writable (minor fault)
+    └─ NOT a valid address for you  → SIGSEGV: segmentation fault → killed</code></pre>
+    <dl class="terms">
+      <dt>Minor (soft) fault</dt>
+      <dd>The page can be satisfied without touching the disk — e.g. allocate a fresh zeroed frame, or point at a page already in the page cache. Cheap: microseconds.</dd>
+      <dt>Major (hard) fault</dt>
+      <dd>The page's contents must be read <em>from disk</em> — from swap, or from a file being demand-loaded. Expensive: the cost of a disk read (Lesson 2.1's latency ladder), thousands of times slower than a minor fault. A rising major-fault rate is a red flag your working set no longer fits in RAM.</dd>
+      <dt>Invalid access</dt>
+      <dd>The address isn't part of any region the process is allowed to touch. The kernel sends <code>SIGSEGV</code>; your program crashes with "segmentation fault." The protection §4.4 lacked, enforced on every access.</dd>
+    </dl>
+
+    <h3>6.5 Demand paging and copy-on-write: laziness as strategy</h3>
+    <p>
+      The page fault enables the kernel's central efficiency trick: <strong>do nothing until forced.</strong>
+      When your program asks for memory, or launches, the kernel does <em>not</em> immediately find and
+      zero physical frames for all of it. It merely records that the region is valid and leaves the pages
+      unmapped. Only when the program actually <em>touches</em> a page does a minor fault fire and a real
+      frame get allocated. This is <em class="term">demand paging</em>, and it is why a program can
+      <code>malloc</code> gigabytes instantly and cheaply — until it writes to them.
+    </p>
+    <p>
+      The same laziness makes <code>fork()</code> — the syscall that creates a new process by duplicating
+      the current one (you met it as the basis of processes in Lesson 2.3) — nearly free. Instead of
+      copying the parent's entire memory to the child, the kernel gives the child the <em>same</em> frames,
+      marked read-only and flagged <em class="term">copy-on-write (COW)</em>. Both processes read the
+      shared frames happily. The instant either one <em>writes</em> a shared page, a fault fires, the
+      kernel copies just that one page, and each side gets its private copy. Pages that are only ever read
+      are shared forever. This is how a Node cluster or an Nginx master forking workers duplicates a large
+      process almost instantly and without doubling RAM — and it is a direct answer to §4.4's "identical
+      code is duplicated per process."
+    </p>
+
+    <h3>6.6 The page cache: why "free memory" is a lie</h3>
+    <p>
+      Here is the fact that confuses more engineers than any other in this lesson. The kernel uses
+      <em>otherwise-idle</em> RAM to cache the contents of files it has read from disk, so the next read is
+      served from RAM at memory speed instead of disk speed. This is the <em class="term">page cache</em>,
+      and on a healthy server it will grow to fill nearly all "unused" RAM. So when <code>free -h</code>
+      shows almost no "free" memory, that is usually <em>correct and good</em>: the RAM isn't wasted, it's
+      caching your files, and the kernel will instantly hand it back to any program that needs it (cached
+      file pages are clean and can be dropped without a disk write). The number that actually matters for
+      pressure is <strong>available</strong>, not <strong>free</strong> — <code>free</code> means "cells
+      holding nothing," <code>available</code> means "cells a new program could get," which includes all
+      the reclaimable cache. Panicking at low "free" is the single most common memory misreading, and §7
+      shows you the exact command.
+    </p>
+
+    <h3>6.7 Swap and thrashing</h3>
+    <p>
+      When real demand for anonymous memory (heap, stack — memory not backed by a file) exceeds RAM, the
+      kernel can evict some pages to <em class="term">swap</em> on disk, freeing frames for hotter pages.
+      Swap is a shock absorber: it lets total in-use memory exceed physical RAM and lets the kernel push
+      genuinely cold pages out of the way. Accessing a swapped-out page later causes a <em>major</em>
+      fault (§6.4) to read it back.
+    </p>
+    <p>
+      The danger is <em class="term">thrashing</em>: when the active working set is <em>larger</em> than
+      RAM, the kernel spends more time swapping pages in and out than doing real work. Every page it brings
+      in forces another out, which is needed again immediately. Throughput collapses; the CPU sits mostly
+      idle waiting on disk; the machine becomes unresponsive without ever crashing. This is the answer to
+      "why did my server get slow instead of dying?" — it was thrashing. It is also why many modern
+      production setups run with little or no swap and prefer a <em>fast, clean kill</em> (the OOM killer)
+      over a slow, agonising thrash: a crashed process restarts in seconds; a thrashing box can be
+      unreachable for minutes.
+    </p>
+
+    <h3>6.8 Overcommit and the OOM killer that ate your API</h3>
+    <p>
+      Because of demand paging (§6.5), programs routinely reserve far more memory than they ever touch. If
+      Linux refused every allocation the moment total <em>promises</em> exceeded RAM+swap, it would deny
+      memory that would never actually be used and waste the machine. So by default Linux
+      <em class="term">overcommits</em>: it says "yes" to allocations optimistically, betting that not
+      everyone will cash in their promise at once. Usually the bet pays off.
+    </p>
+    <p>
+      The day the bet fails — processes actually touch enough of what they were promised that RAM
+      <em>and</em> swap are genuinely exhausted, and there are no reclaimable pages left — the kernel is
+      stuck: some running process is about to touch a valid page and there is no frame to give it. Rather
+      than fail that access (which would crash a random process at a random instruction), the kernel
+      invokes the <em class="term">OOM (out-of-memory) killer</em>: it scores every process by a heuristic
+      (dominated by how much memory each is using, adjustable via <code>oom_score_adj</code>), picks the
+      one whose death frees the most memory for the least importance, and kills it with an unblockable
+      <code>SIGKILL</code> (signal&nbsp;9). It records the whole execution in the kernel log.
+    </p>
+    <div class="callout bad">
+      <span class="t">Why it "ate your API" and not the leaky script</span>
+      <p>
+        The OOM killer optimises for <em>freeing the most memory</em>, and your Express/Node API — with its
+        V8 heap, loaded modules and buffers — is frequently the single biggest memory user on a small box.
+        So a memory leak in a <em>tiny</em> background task can push the machine over the edge, and the
+        kernel's response is to kill the <em>largest</em> resident process to recover the most RAM: your
+        API. The victim of an OOM event is very often not the culprit. Recognising this — and knowing you
+        can protect a critical process with <code>oom_score_adj</code>, or better, cap the real culprit's
+        memory — is the difference between blaming the wrong service and fixing the actual leak. In Module 7
+        this exact mechanism, scoped to one container by a cgroup, is what an <code>OOMKilled</code> pod or
+        container status means.
+      </p>
+    </div>
+
+    <!-- ============================== 7 ============================== -->
+    <h2 id="s7">7 · Real Industry Examples</h2>
+
+    <h3>Reading the OOM killer's report in <code>dmesg</code></h3>
+    <p>
+      Every OOM kill is logged. On your VPS, <code>dmesg</code> (or <code>journalctl -k</code>) shows the
+      kernel's account of exactly what happened — the machinery of §6.8, made visible:
+    </p>
+<pre><code>$ sudo dmesg | grep -i -A1 'killed process'
+[12345.678] Out of memory: Killed process 8123 (node) total-vm:2101344kB,
+            anon-rss:912004kB, file-rss:0kB, shmem-rss:0kB, ... oom_score:812
+[12345.679] oom_reaper: reaped process 8123 (node) ...</code></pre>
+    <p>
+      Read it like a coroner's report: the machine ran out of memory, the kernel picked PID&nbsp;8123
+      (<code>node</code> — your API) because its <code>anon-rss</code> (resident heap/stack) of ~890&nbsp;MB
+      made it the biggest, highest-scoring target, and killed it. If your API "just disappears" with no
+      application error and exit code 137 (128&nbsp;+&nbsp;9, i.e. SIGKILL), this log is where the truth
+      is. No stack trace in your app will ever mention it, because your app didn't crash — the kernel
+      executed it from the outside.
+    </p>
+
+    <h3><code>OOMKilled</code> containers and cgroup memory limits</h3>
+    <p>
+      When you run DevBoard's containers in Module 7 with a memory limit (<code>--memory=512m</code>, or a
+      Kubernetes <code>limits.memory</code>), the kernel enforces that limit with a <em>cgroup</em> — and
+      the OOM killer runs <em>scoped to that one container</em>. Exceed the limit and the container's main
+      process is SIGKILLed, the container exits with code 137, and Docker/Kubernetes reports the status as
+      <code>OOMKilled</code>. This is the whole of §6.8 confined to a box: same overcommit logic, same
+      victim-selection, same signal — just walled to one container so it can't take the host down. Knowing
+      the mechanism now means "why is my pod OOMKilled?" is not a mystery later; it's "its working set
+      exceeded its cgroup limit."
+    </p>
+
+    <h3>Node's heap limit vs the machine's RAM</h3>
+    <p>
+      A recurring confusion: a Node process dies with "JavaScript heap out of memory" on a box that has
+      plenty of free RAM. That is <em>not</em> the OOM killer — it's V8's <em>own</em> internal heap cap
+      (historically ~1.5–2&nbsp;GB unless raised with <code>--max-old-space-size</code>), a user-space
+      limit the runtime enforces before the kernel is ever involved. The mirror case — the process killed
+      by the kernel (exit 137, nothing in the app log) with RAM exhausted — <em>is</em> the OOM killer.
+      Same symptom ("out of memory"), two completely different mechanisms at two different layers; this
+      lesson lets you tell them apart instantly.
+    </p>
+
+    <h3>RSS vs VSZ: the number that lies and the number that counts</h3>
+    <p>
+      Look at any process in <code>ps</code> or <code>top</code> and you see two memory numbers, straight
+      out of §5–6. <em class="term">VSZ</em> (virtual size) is how much virtual address space the process
+      has <em>mapped</em> — including demand-paged regions it never touched and shared-library pages shared
+      with everyone. It is often huge and mostly meaningless for "how much RAM is this using."
+      <em class="term">RSS</em> (resident set size) is how many of its pages are actually <em>resident in
+      physical frames</em> right now — the number that matters for memory pressure, though it still
+      double-counts shared pages across processes. Engineers who panic at a multi-gigabyte VSZ, or who add
+      up RSS across forked workers and double-count their shared COW pages, are misreading these; §6 tells
+      you why the numbers look the way they do.
+    </p>
+
+    <!-- ============================== 8 ============================== -->
+    <h2 id="s8">8 · Diagrams</h2>
+
+    <h3>8.1 Two processes, one physical RAM — isolation via page tables</h3>
+    <figure>
+<pre><code>   PROCESS A (virtual)          PROCESS B (virtual)
+   ┌───────────────┐            ┌───────────────┐
+   │ vpage 0x4 ────┼───┐    ┌───┼──── vpage 0x4 │   same virtual address...
+   │ vpage 0x5 ────┼─┐ │    │ ┌─┼──── vpage 0x5 │
+   └───────────────┘ │ │    │ │ └───────────────┘
+       page table A  │ │    │ │  page table B
+                     ▼ ▼    ▼ ▼
+   ┌──────────────────────────────────────────────────┐
+   │ PHYSICAL RAM (frames)                              │
+   │  [frame 71: A.0x4] [frame 12: B.0x5] [frame 88: A.0x5] [frame 30: B.0x4] │
+   └──────────────────────────────────────────────────┘
+   ...maps to DIFFERENT frames. A cannot even name B's memory.
+   Isolation isn't a rule the kernel checks — it's the absence of a mapping.</code></pre>
+      <figcaption>The same virtual address in two processes resolves, through two private page tables, to two different physical frames. Neither process can express an address that lands in the other's memory.</figcaption>
+    </figure>
+
+    <h3>8.2 The page-fault decision tree</h3>
+    <figure>
+<pre><code>            program reads/writes a virtual page
+                          │
+                          ▼
+             ┌─ MMU: valid mapping in TLB? ─┐
+        hit  │                              │ miss
+             ▼                              ▼
+      access proceeds            walk page table
+      (nanoseconds)                     │
+                          ┌─────────────┴─────────────┐
+                     mapping resident?          not resident / absent
+                          │ yes                       │
+                          ▼                           ▼
+                   access proceeds              PAGE FAULT → kernel
+                                        ┌───────────┼───────────────┐
+                                        ▼           ▼               ▼
+                                  never-used   on disk/swap    invalid address
+                                  → zero frame → read in       → SIGSEGV (crash)
+                                  (minor)      (MAJOR, slow)
+</code></pre>
+    </figure>
+
+    <h3>8.3 The road to an OOM kill</h3>
+    <figure>
+<pre><code>   allocations succeed (overcommit: kernel says yes optimistically)
+        │
+        ▼
+   real usage rises ─▶ page cache shrinks to make room  (RAM still "fine")
+        │
+        ▼
+   anonymous demand &gt; RAM ─▶ kernel swaps cold pages to disk
+        │
+        ├─▶ working set &gt; RAM ─▶ THRASHING (slow, not dead)
+        │
+        ▼
+   RAM + swap exhausted, nothing reclaimable left
+        │
+        ▼
+   OOM KILLER: score every process → SIGKILL the biggest/least-important
+        │
+        ▼
+   victim dies (exit 137), memory freed, machine recovers — logged in dmesg</code></pre>
+      <figcaption>"Out of memory" is the end of a chain, not a single event. Each stage — cache shrink, swap, thrash, OOM kill — is separately observable, and each suggests a different fix.</figcaption>
+    </figure>
+
+    <!-- ============================== 9 ============================== -->
+    <h2 id="s9">9 · Advantages</h2>
+    <p>What virtual memory + paging buys you, mapped back to the failures of §4:</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Capability</th><th>Because…</th><th>Fixes which §4 failure</th></tr></thead>
+        <tbody>
+          <tr><td><b>Process isolation</b></td><td>each process has its own page table; a process literally cannot name a frame outside its own map</td><td>§4.4 (no protection/sharing) &amp; core safety</td></tr>
+          <tr><td><b>No external fragmentation</b></td><td>any free frame can back any page; contiguity is only virtual, so scattered free frames are fully usable</td><td>4.1 (fragmentation)</td></tr>
+          <tr><td><b>Run programs bigger than RAM</b></td><td>demand paging + swap keep only the working set resident; cold pages live on disk</td><td>4.2 (bounded by RAM)</td></tr>
+          <tr><td><b>Fine-grained residency &amp; eviction</b></td><td>the page (4&nbsp;KB), not the whole program, is the unit — evict/fetch exactly what's needed</td><td>4.3 (all-or-nothing swap)</td></tr>
+          <tr><td><b>Cheap fork &amp; shared code</b></td><td>copy-on-write shares frames until written; identical read-only code exists once in RAM</td><td>4.4 (duplication)</td></tr>
+          <tr><td><b>Per-region protection</b></td><td>page permissions mark code read-only/executable, data writable; stray writes fault instead of corrupting</td><td>4.4 (coarse protection)</td></tr>
+          <tr><td><b>Fast file I/O for free</b></td><td>the page cache turns idle RAM into a disk cache transparently</td><td>bonus: performance</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ============================== 10 ============================== -->
+    <h2 id="s10">10 · Limitations</h2>
+    <p>Virtual memory is not free, and its edges are where production surprises live.</p>
+    <dl class="terms">
+      <dt>Translation has real cost</dt>
+      <dd>Every access is translated; a TLB miss forces a multi-level page-table walk. Workloads with poor locality (random access over huge data sets) suffer TLB thrashing — one reason huge pages exist. The abstraction is cheap, not free.</dd>
+      <dt>Major faults are disk-speed</dt>
+      <dd>A page that must come from swap or disk costs a disk read — thousands of times a resident access. A workload whose working set doesn't fit in RAM pays this constantly, and no cleverness in your code repeals it.</dd>
+      <dt>Thrashing degrades before it fails</dt>
+      <dd>Under memory pressure a machine can become unusably slow long before anything crashes, and a slow box is often harder to diagnose and recover than a crashed one. Swap can turn a fast failure into a long outage.</dd>
+      <dt>Overcommit means allocation can lie</dt>
+      <dd>A successful <code>malloc</code> does <em>not</em> guarantee the memory is really there; the reckoning is deferred to first touch, where an OOM kill can strike a process that did nothing wrong. Success at allocation is not a promise of delivery.</dd>
+      <dt>The OOM killer is a blunt instrument</dt>
+      <dd>It kills a whole process with an uncatchable signal, often the biggest rather than the guilty one, with no graceful shutdown. It is a last resort that prevents total lockup, not a resource-management strategy.</dd>
+      <dt>This is a simplified model</dt>
+      <dd>Real systems add huge pages, NUMA (memory attached to specific CPUs, with distance costs), memory compaction, per-cgroup accounting, <code>zram</code>/compressed swap, and more. The page-and-frame picture is a true, load-bearing map — not the entire territory.</dd>
+    </dl>
+
+    <!-- ============================== 11 ============================== -->
+    <h2 id="s11">11 · Common Misconceptions</h2>
+
+    <div class="myth">
+      <div class="m">"Low 'free' memory means my server is about to run out."</div>
+      <div class="r"><p>Almost always false. The kernel deliberately fills idle RAM with the <em>page cache</em> (§6.6) to speed up file access, and hands it back instantly when a program needs it. The meaningful number is <strong>available</strong> (which counts reclaimable cache), not <strong>free</strong>. A healthy server runs with almost no "free" memory by design.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"A pointer in my program is an address in the RAM chips."</div>
+      <div class="r"><p>It's a <em>virtual</em> address, meaningful only inside your process, translated to a physical frame by the MMU on every access. Two processes can hold the identical pointer value pointing at completely different physical memory. Your code never sees a physical address.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"<code>malloc</code> (or allocating a big array) reserves that much physical RAM immediately."</div>
+      <div class="r"><p>No. Thanks to demand paging (§6.5), allocation just marks a region valid; physical frames are assigned lazily, only as you actually <em>touch</em> pages. You can allocate more than exists and pay nothing until you write to it — which is exactly why overcommit and the OOM killer exist.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"My API crashed, so there's a bug in my code."</div>
+      <div class="r"><p>If it vanished with exit code 137 and nothing in the application log, the <em>kernel</em> killed it (SIGKILL) during an OOM event — your code never threw. The truth is in <code>dmesg</code>/<code>journalctl -k</code>, not your stack traces. And the victim is often the biggest process, not the one that leaked.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"Adding swap always makes a memory-tight server more reliable."</div>
+      <div class="r"><p>Swap helps when it parks genuinely <em>cold</em> pages. But if the active working set exceeds RAM, swap causes <em>thrashing</em> (§6.7): the box gets crawlingly slow instead of failing fast. Many production setups prefer little/no swap plus a clean OOM kill and auto-restart over a machine that thrashes for minutes.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"VSZ is how much memory my process uses."</div>
+      <div class="r"><p>VSZ is <em>virtual</em> size — address space mapped, including untouched demand-paged regions and shared libraries. It's often huge and misleading. <strong>RSS</strong> (resident set size) is the pages actually in physical RAM, and it's the number to watch — while remembering RSS still double-counts pages shared between processes.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"'JavaScript heap out of memory' means the server ran out of RAM."</div>
+      <div class="r"><p>Usually not. That's V8's <em>own</em> heap cap being hit inside the Node process, before the kernel is involved — raise it with <code>--max-old-space-size</code> (or fix the leak). The kernel's OOM killer is a different event: exit 137, silent in your logs, RAM genuinely exhausted. Same words, different layer.</p></div>
+    </div>
+
+    <!-- ============================== 12 ============================== -->
+    <h2 id="s12">12 · Practical Use Cases</h2>
+
+    <h3>Diagnosing "my service keeps disappearing"</h3>
+    <p>
+      A container or process restarts with no application error and exit code 137. Straight to the memory
+      story: check <code>dmesg</code>/<code>journalctl -k</code> for an OOM kill, look at the process's RSS
+      trend over time (a steady climb is a leak; a spike matches a heavy request), and compare peak RSS
+      against the machine's RAM or the container's cgroup limit. The lesson tells you the exact chain to
+      walk (§6.8) instead of guessing.
+    </p>
+
+    <h3>Right-sizing a server and container limits</h3>
+    <p>
+      Deciding "how much RAM does DevBoard need?" becomes concrete: measure each service's steady-state and
+      peak <em>RSS</em> (not VSZ), add headroom for the page cache and for request spikes, and set container
+      memory limits above real peak working set — not so tight that normal traffic triggers
+      <code>OOMKilled</code>, not so loose that a leak takes the whole host down. This is the reasoning
+      behind Module 6's cost model and Module 7's container limits.
+    </p>
+
+    <h3>Reading <code>free</code>, <code>top</code> and <code>/proc</code> correctly</h3>
+    <p>
+      When someone says "the server's out of memory," you now check <em>available</em> memory, the
+      page-cache size, the swap-in/swap-out rate, and the major-fault rate — not the scary-but-normal "free
+      ≈ 0." You can distinguish "healthy box with a full page cache" from "box thrashing on swap" from "box
+      one request away from an OOM kill," which are three completely different situations that look
+      superficially similar.
+    </p>
+
+    <h3>Protecting the process that must not die</h3>
+    <p>
+      When one process is critical (say the database) and another is expendable (a batch worker), you can
+      tilt the OOM killer's choice with <code>oom_score_adj</code> so it sacrifices the worker first — or,
+      better, cap the memory-hungry culprit with a cgroup so it hits its own limit before the host is ever
+      endangered. Understanding victim-selection (§6.8) turns the OOM killer from a random assassin into a
+      policy you can set.
+    </p>
+
+    <!-- ============================== 13 ============================== -->
+    <h2 id="s13">13 · Summary</h2>
+    <ul class="takeaways">
+      <li>Many independently-compiled processes must share one finite RAM <strong>safely, flexibly and elastically</strong>. Binding program addresses directly and contiguously to physical memory (base-and-bound) causes fragmentation, forces all-or-nothing residency, and blocks sharing.</li>
+      <li>The fix is <strong>virtual memory</strong>: every process gets its own private <em>virtual address space</em>, and every access is translated through a per-process <em>page table</em> by the hardware <em>MMU</em>. Isolation is the <em>absence of a mapping</em>, not a check.</li>
+      <li>Memory is managed in fixed-size <strong>pages</strong> (≈4&nbsp;KB) mapped to physical <strong>frames</strong>. Contiguity is faked, so scattered free frames are fully usable and growth just maps more pages — external fragmentation is gone.</li>
+      <li>The <strong>TLB</strong> caches recent translations so translation is nearly free; a miss forces a multi-level page-table walk. Context switches can cost TLB warmth (a hidden cost from Lesson 2.3).</li>
+      <li>A <strong>page fault</strong> is routine, not an error: <em>minor</em> faults allocate a frame or hit the cache (fast); <em>major</em> faults read from disk/swap (slow); an <em>invalid</em> access is SIGSEGV.</li>
+      <li><strong>Demand paging</strong> allocates frames only on first touch (so <code>malloc</code> is cheap and lazy); <strong>copy-on-write</strong> makes <code>fork()</code> nearly free and shares read-only code across processes.</li>
+      <li>The <strong>page cache</strong> uses idle RAM to cache disk contents, so low "free" memory is normal and good — watch <strong>available</strong>, not <strong>free</strong>.</li>
+      <li><strong>Swap</strong> parks cold pages on disk to stretch RAM; if the working set exceeds RAM the machine <strong>thrashes</strong> — slow, not dead. Many setups prefer a fast OOM kill to a long thrash.</li>
+      <li>Linux <strong>overcommits</strong> memory (says yes optimistically because most promises are never cashed). When RAM+swap truly run out, the <strong>OOM killer</strong> SIGKILLs the highest-scoring process — often the biggest, not the guilty one. That's why it "ate your API" (exit 137, logged in <code>dmesg</code>).</li>
+      <li>Read <strong>RSS</strong> (resident, what matters) not <strong>VSZ</strong> (virtual, misleading). In Module 7 the same OOM machinery, scoped by a cgroup, is what <code>OOMKilled</code> means.</li>
+    </ul>
+
+    <!-- ============================== 14 ============================== -->
+    <h2 id="s14">14 · Recommended Resources</h2>
+    <p><small>Curated, not exhaustive. <span class="rank">start here</span> marks the one to use first in each group.</small></p>
+
+    <div class="res">
+      <h4>Official / authoritative documentation</h4>
+      <ul>
+        <li><b>Linux kernel docs — "Memory Management" and <code>Documentation/admin-guide/mm/</code></b> <span class="rank">start here</span>
+          <span class="why">The authoritative account of overcommit (<code>/proc/sys/vm/overcommit_memory</code>), the OOM killer, swappiness and transparent huge pages — the exact knobs from §6.7–6.8.</span></li>
+        <li><b><code>man 2 mmap</code>, <code>man 2 madvise</code>, <code>man 5 proc</code></b>
+          <span class="why"><code>mmap</code> is how regions get mapped (§6.1); <code>proc</code> documents <code>/proc/meminfo</code> and <code>/proc/&lt;pid&gt;/status</code> (VmRSS, VmSize) that the exercise uses.</span></li>
+        <li><b><code>proc(5)</code> fields <code>VmRSS</code>, <code>VmSwap</code>, and <code>/proc/meminfo</code>'s <code>MemAvailable</code></b>
+          <span class="why">The precise definitions behind RSS vs VSZ and "available vs free" (§6.6, §7).</span></li>
+      </ul>
+
+      <h4>Books</h4>
+      <ul>
+        <li><b><em>Operating Systems: Three Easy Pieces</em> (OSTEP) — Arpaci-Dusseau (free online), the "Virtualization / Memory" chapters</b> <span class="rank">start here</span>
+          <span class="why">The best free treatment of address spaces, paging, TLBs, multi-level page tables and swapping — this lesson at full depth, and genuinely readable.</span></li>
+        <li><b><em>The Linux Programming Interface</em> — Michael Kerrisk (memory chapters)</b>
+          <span class="why">The definitive programmer's-seat account of process memory layout, <code>mmap</code>, and the memory-related syscalls. A lifelong reference.</span></li>
+        <li><b><em>What Every Programmer Should Know About Memory</em> — Ulrich Drepper (paper)</b>
+          <span class="why">Deep on caches, TLBs and access patterns. Dense, but the definitive answer to "why does memory layout affect speed."</span></li>
+      </ul>
+
+      <h4>Talks &amp; video</h4>
+      <ul>
+        <li><b>Any solid "virtual memory / paging explained" walkthrough that animates page-table translation</b> <span class="rank">start here</span>
+          <span class="why">Seeing the virtual→frame lookup and a page fault animated cements §6.2–6.4 far faster than prose.</span></li>
+        <li><b>Brendan Gregg on Linux memory analysis (site &amp; talks)</b>
+          <span class="why">The practitioner's guide to measuring memory pressure, faults and swap on real Linux — a preview of Module 12 and the natural sequel to §7.</span></li>
+      </ul>
+
+      <h4>Interactive labs &amp; practice</h4>
+      <ul>
+        <li><b>Your $5 VPS + <code>free -h</code>, <code>cat /proc/meminfo</code>, <code>cat /proc/&lt;pid&gt;/status</code>, <code>dmesg</code></b> <span class="rank">start here</span>
+          <span class="why">The commands that make this lesson concrete: the page cache, available vs free, a process's RSS/VSZ, and the OOM killer's own report. The exercise is built on them.</span></li>
+        <li><b><code>stress-ng --vm</code> / a small memory-eater script + <code>vmstat 1</code></b>
+          <span class="why">Deliberately push a (disposable) box toward swap and OOM while watching swap-in/out and faults live — the safest way to <em>see</em> §6.7–6.8 happen.</span></li>
+      </ul>
+    </div>
+
+    <!-- ============================== 15 ============================== -->
+    <h2 id="s15">15 · Exercise</h2>
+    <p>
+      Module 2's project increment is to <strong>provision your first Linux server and inventory it</strong>.
+      Lesson 2.2 inventoried the software layer; here you inventory and stress the <em>memory</em> of that
+      machine and watch every mechanism in §6 with your own eyes. Do at least E1–E3 on the real VPS.
+      <strong>E4 deliberately drives the box toward an OOM kill — only ever run it on a disposable server
+      you can reboot, never one hosting anything you care about.</strong>
+    </p>
+
+    <div class="ex">
+      <div class="h"><span>E1</span>Read memory correctly: available, not free, and the page cache</div>
+      <p>SSH into your VPS and run:</p>
+<pre><code>free -h                 # total / used / free / buff/cache / available
+cat /proc/meminfo | head -5   # MemTotal, MemFree, MemAvailable, Buffers, Cached</code></pre>
+      <p>
+        Note how small <code>free</code> is and how large <code>buff/cache</code> is. Explain, using §6.6,
+        why low "free" is normal, and why <strong>available</strong> is the number that reflects real
+        headroom. Read a file (<code>cat somebigfile &gt; /dev/null</code>) twice and watch
+        <code>Cached</code> grow.
+      </p>
+      <div class="out">Deliverable: your <code>free -h</code> line, plus two sentences distinguishing "free" from "available" and identifying what <code>buff/cache</code> is. Adds to your Milestone&nbsp;2 inventory.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E2</span>Measure a real process: RSS vs VSZ</div>
+      <p>Pick a running process (your shell, or start a small program) and inspect its memory:</p>
+<pre><code>ps -o pid,rss,vsz,comm -p $$          # RSS and VSZ for your shell ($$ = its PID)
+grep -E 'VmRSS|VmSize|VmSwap' /proc/$$/status   # the same, from /proc</code></pre>
+      <p>
+        Compare the two numbers and explain, from §7, why VSZ is (much) larger than RSS and which one you
+        would watch to answer "how much RAM is this using." Then check a heavier process (e.g. your shell
+        vs a running database if present).
+      </p>
+      <div class="out">Deliverable: RSS and VSZ for one process, and one sentence on why they differ and which matters for memory pressure.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E3</span>Trip a segmentation fault on purpose</div>
+      <p>See the "invalid access" branch of §6.4 fire. In Python:</p>
+<pre><code>python3 -c "import ctypes; ctypes.string_at(0)"   # dereference address 0 → SIGSEGV</code></pre>
+      <p>
+        It dies with a segmentation fault. Explain, using §6.1 and §6.4, why address 0 is not mapped into
+        your process and why the MMU + kernel turn that access into a crash rather than letting it read
+        random memory.
+      </p>
+      <div class="out">Deliverable: the error, and one sentence identifying it as the kernel refusing an access to an unmapped page (the protection base-and-bound couldn't do finely).</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E4</span>Summon the OOM killer (disposable box only!)</div>
+      <p>
+        On a server you can afford to reboot, watch memory pressure build and the OOM killer strike. In one
+        terminal run <code>vmstat 1</code> (watch the <code>si</code>/<code>so</code> swap columns and
+        <code>free</code>). In another, run a deliberate memory-eater — e.g.:
+      </p>
+<pre><code># eats ~200MB chunks until the kernel kills it; Ctrl-C to abort early
+python3 -c "a=[]
+while True: a.append(bytearray(200*1024*1024))"</code></pre>
+      <p>
+        When it (or another process) is killed, run <code>sudo dmesg | tail -20</code> and find the "Out
+        of memory: Killed process" line. Identify the victim, its <code>anon-rss</code>, and — per §6.8 —
+        explain <em>why the kernel chose that process</em>. If it killed something other than your eater,
+        explain why (victim selection favours the biggest, not the guilty).
+      </p>
+      <div class="out">Deliverable: the <code>dmesg</code> OOM line, the victim's name and RSS, and two sentences: what overcommit let happen, and why that specific process was chosen. If swap moved, note the <code>si</code>/<code>so</code> activity as thrashing.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E5</span>Optional: see copy-on-write / demand paging cheapness</div>
+      <p>
+        Allocate a large region but don't touch it, and watch RSS stay small while VSZ jumps:
+      </p>
+<pre><code>python3 -c "import time; b=bytearray(500*1024*1024); time.sleep(30)" &amp;
+grep -E 'VmRSS|VmSize' /proc/$!/status   # right after start
+# now change the script to WRITE every page (for i in range(...)) and compare RSS</code></pre>
+      <p>
+        Explain, from §6.5, why merely allocating barely moves RSS (demand paging: no frames until
+        touched) while writing every page makes RSS climb toward the full size.
+      </p>
+      <div class="out">Deliverable: RSS before and after touching the pages, and one sentence naming demand paging as the reason allocation is nearly free until first write.</div>
+    </div>
+
+    <!-- ============================== 16 ============================== -->
+    <h2 id="s16">16 · Quiz</h2>
+    <div class="callout warn">
+      <span class="t">How to use this</span>
+      <p>
+        Answer in your own words <strong>before</strong> revealing the model answer. Two or three
+        sentences each. You're ready for Lesson 2.5 (storage) when you can answer Q1, Q3, Q6 and Q8 cold
+        and have completed E1–E3 (and, on a disposable box, E4) on a real machine.
+      </p>
+    </div>
+
+    <div class="quiz">
+
+      <details class="q"><summary>What is a virtual address space, and how does it give each process isolation?</summary>
+        <div class="ans"><p>It's the private range of virtual addresses one process uses, with its own <strong>page table</strong> mapping those addresses to physical frames. Because each process has its own map, the same virtual address in two processes resolves to <em>different</em> frames, and a process cannot even <em>express</em> an address that lands in another's memory. Isolation is the <em>absence of a mapping</em>, enforced by the MMU on every access — not a check the kernel runs each time.</p></div>
+      </details>
+
+      <details class="q"><summary>Why break memory into fixed-size pages and frames instead of variable-size contiguous regions?</summary>
+        <div class="ans"><p>Because fixed-size pages let any free frame back any page, so a process's memory can be assembled from <em>scattered</em> free frames — eliminating external fragmentation (§4.1). It also makes the page the small, uniform unit of residency, eviction, sharing and protection, so the kernel can bring in, swap out, share or protect exactly what's needed rather than the whole program. Contiguity becomes purely virtual.</p></div>
+      </details>
+
+      <details class="q"><summary>What is a page fault? Distinguish a minor fault from a major fault.</summary>
+        <div class="ans"><p>A page fault fires when a program touches a virtual page with no valid resident mapping; the MMU traps to the kernel, which decides what to do. A <strong>minor</strong> fault is resolved without disk — allocate a zeroed frame, satisfy a copy-on-write, or point at a page already in the page cache (microseconds). A <strong>major</strong> fault requires reading the page from disk/swap (a disk-latency operation, thousands of times slower). A rising major-fault rate signals the working set no longer fits in RAM.</p></div>
+      </details>
+
+      <details class="q"><summary>Why is <code>malloc</code>-ing a huge array nearly instant, and how does that make <code>fork()</code> cheap?</summary>
+        <div class="ans"><p><strong>Demand paging</strong>: allocation just marks the region valid; no physical frames are assigned until you actually <em>touch</em> a page (each first touch is a minor fault). So allocating gigabytes costs almost nothing until you write to them. The same laziness makes <code>fork()</code> cheap via <strong>copy-on-write</strong>: parent and child share the same frames marked read-only, and only a page that gets <em>written</em> is copied — read-only pages (like program code) stay shared forever.</p></div>
+      </details>
+
+      <details class="q"><summary>Your <code>free -h</code> shows almost no free memory. Is the server in trouble? Explain.</summary>
+        <div class="ans"><p>Almost certainly not. The kernel fills idle RAM with the <strong>page cache</strong> (cached file contents) to speed up I/O, and reclaims it instantly when a program needs memory. So low "free" is normal and healthy. The number that reflects real headroom is <strong>available</strong> (which includes reclaimable cache), not <strong>free</strong>. You'd only worry if <em>available</em> were low and swap activity or major faults were climbing.</p></div>
+      </details>
+
+      <details class="q"><summary>What is swap, and what is thrashing? Why might you run a server with little or no swap?</summary>
+        <div class="ans"><p><strong>Swap</strong> is disk space the kernel uses to hold pages evicted from RAM, letting in-use memory exceed physical RAM by parking cold pages on disk (fetched back via major faults). <strong>Thrashing</strong> is when the active working set is <em>larger</em> than RAM, so the kernel spends more time swapping pages in and out than doing work — throughput collapses and the box crawls without crashing. Some setups prefer little/no swap plus a fast OOM kill and auto-restart, because a crashed process recovers in seconds while a thrashing box can be unreachable for minutes.</p></div>
+      </details>
+
+      <details class="q"><summary>What is memory overcommit, and why does Linux do it?</summary>
+        <div class="ans"><p>Overcommit means the kernel grants allocations optimistically even when total <em>promised</em> memory exceeds RAM+swap, because — thanks to demand paging — most processes never touch most of what they reserve. Refusing every over-promise would deny memory that would never actually be used and waste the machine. The bet usually pays off; the risk is that if enough processes <em>do</em> cash in their promises, the kernel is forced into an OOM kill.</p></div>
+      </details>
+
+      <details class="q"><summary>The OOM killer killed your Node API, but a tiny background script had the memory leak. Explain.</summary>
+        <div class="ans"><p>The OOM killer's goal is to free the most memory for the least importance, so it scores processes largely by how much RAM they're using and kills the highest scorer. A small leak in a background task can push the machine over the edge, but the kernel then kills the <em>biggest</em> resident process to recover the most RAM — often your API (large V8 heap, modules, buffers). So the victim is frequently not the culprit. You can bias the choice with <code>oom_score_adj</code> or, better, cap the real culprit's memory with a cgroup so it fails first.</p></div>
+      </details>
+
+      <details class="q"><summary>Your service vanished with exit code 137 and nothing in its logs. What happened, and where do you look?</summary>
+        <div class="ans"><p>Exit code 137 = 128 + 9, meaning the process received <strong>SIGKILL</strong> — almost always the <em>kernel's OOM killer</em> during memory exhaustion (or, in a container, its cgroup limit being hit → <code>OOMKilled</code>). Your app didn't throw, so there's nothing in its logs; the kernel executed it from the outside. Look in <code>dmesg</code> / <code>journalctl -k</code> for the "Out of memory: Killed process" line, which names the victim and its RSS.</p></div>
+      </details>
+
+      <details class="q"><summary>A process shows VSZ of 2&nbsp;GB but RSS of 80&nbsp;MB. Which tells you its real RAM use, and why the gap?</summary>
+        <div class="ans"><p><strong>RSS</strong> (resident set size) — the pages actually in physical frames — is the real RAM figure; here that's ~80&nbsp;MB. <strong>VSZ</strong> (virtual size) is all the address space <em>mapped</em>, including demand-paged regions never touched and shared-library pages shared with other processes, so it's far larger and mostly meaningless for "how much RAM." The gap is exactly demand paging and shared mappings: lots is mapped, little is resident. (Caveat: RSS still double-counts pages shared across processes.)</p></div>
+      </details>
+
+    </div>
+
+    <div class="callout good">
+      <span class="t">Next: Lesson 2.5</span>
+      <p>
+        You've now seen the kernel share the CPU (2.3) and RAM (2.4). But two threads in this lesson led
+        straight to the disk: <em>swap</em> lives on disk, and the <em>page cache</em> is RAM standing in
+        <em>for</em> disk. Lesson 2.5 is that third resource — <strong>storage</strong>: block vs file vs
+        object, filesystems and inodes, IOPS and durability. It closes Module 2's tour of the four
+        hardware parts and explains why a "major fault" is slow, why your database cares about
+        <code>fsync</code>, and what you're really buying when a cloud disk quotes you an IOPS number. Keep
+        your E4 <code>vmstat</code> output handy — every swap-in was a trip to the device Lesson 2.5 is
+        about.
+      </p>
+    </div>
+
+    <hr>
+
+    <nav class="pager" aria-label="Lesson navigation">
+      <a href="lesson-03-processes-threads-and-the-scheduler.html"><em>Previous lesson</em>← 2.3 · Processes, threads, context switching &amp; the scheduler</a>
+      <span class="disabled next"><em>Next lesson</em>2.5 · Storage: block vs file vs object, filesystems, inodes, IOPS &amp; durability <small>(not yet generated)</small></span>
+    </nav>
+
+    <footer class="foot">
+      <b>From Commit to Production</b> · Module 2 · Lesson 2.4 — <em>Memory: Virtual Address Spaces, Paging, Swap &amp; the OOM Killer</em><br>
+      <small>Self-contained offline document · no external assets · regenerated in full when revised.
+      Roadmap: <a href="../../index.html">course/index.html</a></small>
+    </footer>
+  </article>
+</div>
+
+<script>
+(function(){
+  var root = document.documentElement;
+
+  /* ---------- theme ---------- */
+  var KEY='ftp.theme', saved=null;
+  try { saved = localStorage.getItem(KEY); } catch(e){}
+  if (saved) root.setAttribute('data-theme', saved);
+  document.getElementById('theme').addEventListener('click', function(){
+    var cur = root.getAttribute('data-theme');
+    if (!cur) cur = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    var next = cur === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem(KEY, next); } catch(e){}
+  });
+
+  /* ---------- expand/collapse all quiz answers ---------- */
+  var btn = document.getElementById('expand');
+  btn.addEventListener('click', function(){
+    var all = document.querySelectorAll('details.q');
+    var anyClosed = Array.prototype.some.call(all, function(d){ return !d.open; });
+    Array.prototype.forEach.call(all, function(d){ d.open = anyClosed; });
+    btn.textContent = anyClosed ? '⇕ Collapse all' : '⇕ Expand all';
+  });
+
+  /* ---------- reading progress bar ---------- */
+  var barEl = document.getElementById('readbar');
+  function onScroll(){
+    var h = document.documentElement;
+    var max = h.scrollHeight - h.clientHeight;
+    barEl.style.width = (max > 0 ? (h.scrollTop / max * 100) : 0) + '%';
+  }
+  addEventListener('scroll', onScroll, {passive:true});
+  onScroll();
+
+  /* ---------- TOC scroll-spy ---------- */
+  var links = Array.prototype.slice.call(document.querySelectorAll('#tocList a'));
+  var targets = links.map(function(a){ return document.querySelector(a.getAttribute('href')); })
+                     .filter(Boolean);
+  if ('IntersectionObserver' in window && targets.length){
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if (!e.isIntersecting) return;
+        links.forEach(function(a){
+          a.classList.toggle('on', a.getAttribute('href') === '#' + e.target.id);
+        });
+      });
+    }, { rootMargin:'-80px 0px -70% 0px', threshold:0 });
+    targets.forEach(function(t){ io.observe(t); });
+  }
+})();
+</script>
+</body>
+</html>

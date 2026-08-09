@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 2.3 · Processes, Threads, Context Switching &amp; the Scheduler — From Commit to Production</title>
+<style>
+/* ============================================================
+   DESIGN TOKENS  (same system as the roadmap)
+   ============================================================ */
+:root{
+  color-scheme: dark light;
+  --font-sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", Consolas, "SFMono-Regular", Menlo, monospace;
+
+  --bg:#0a0e17; --bg-alt:#0e1421; --surface:#131b2b; --surface-2:#19233a;
+  --border:#243049; --border-strong:#37456a;
+  --text:#e8eefb; --text-dim:#a7b4cd; --text-faint:#78869f;
+
+  --accent:#6ea8ff;  --accent-soft:rgba(110,168,255,.14);
+  --green:#4fd39c;   --green-soft:rgba(79,211,156,.13);
+  --amber:#f2b754;   --amber-soft:rgba(242,183,84,.13);
+  --red:#ff7f76;     --red-soft:rgba(255,127,118,.13);
+  --purple:#b28cff;  --purple-soft:rgba(178,140,255,.13);
+  --teal:#4fd0d9;    --teal-soft:rgba(79,208,217,.13);
+
+  --radius:14px; --radius-sm:8px;
+  --shadow:0 1px 2px rgba(0,0,0,.45), 0 14px 34px -18px rgba(0,0,0,.75);
+  --maxw:1220px; --readw:840px;
+}
+:root[data-theme="light"]{
+  color-scheme: light;
+  --bg:#f7f9fc; --bg-alt:#eef2f8; --surface:#ffffff; --surface-2:#f2f5fa;
+  --border:#dde3ee; --border-strong:#c2ccdd;
+  --text:#131a26; --text-dim:#4b586e; --text-faint:#75839a;
+  --accent:#1f5fd0; --accent-soft:rgba(31,95,208,.09);
+  --green:#0f8a5f;  --green-soft:rgba(15,138,95,.10);
+  --amber:#9a6a06;  --amber-soft:rgba(154,106,6,.10);
+  --red:#c3352b;    --red-soft:rgba(195,53,43,.09);
+  --purple:#6d3ecb; --purple-soft:rgba(109,62,203,.09);
+  --teal:#07767e;   --teal-soft:rgba(7,118,126,.10);
+  --shadow:0 1px 2px rgba(18,28,45,.06), 0 12px 28px -18px rgba(18,28,45,.25);
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    color-scheme: light;
+    --bg:#f7f9fc; --bg-alt:#eef2f8; --surface:#ffffff; --surface-2:#f2f5fa;
+    --border:#dde3ee; --border-strong:#c2ccdd;
+    --text:#131a26; --text-dim:#4b586e; --text-faint:#75839a;
+    --accent:#1f5fd0; --accent-soft:rgba(31,95,208,.09);
+    --green:#0f8a5f;  --green-soft:rgba(15,138,95,.10);
+    --amber:#9a6a06;  --amber-soft:rgba(154,106,6,.10);
+    --red:#c3352b;    --red-soft:rgba(195,53,43,.09);
+    --purple:#6d3ecb; --purple-soft:rgba(109,62,203,.09);
+    --teal:#07767e;   --teal-soft:rgba(7,118,126,.10);
+    --shadow:0 1px 2px rgba(18,28,45,.06), 0 12px 28px -18px rgba(18,28,45,.25);
+  }
+}
+
+/* ============================================================ BASE */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth; scroll-padding-top:80px}
+body{margin:0; background:var(--bg); color:var(--text);
+  font-family:var(--font-sans); font-size:16.5px; line-height:1.72; -webkit-font-smoothing:antialiased}
+h1{line-height:1.28; margin:0 0 .5em; letter-spacing:-.015em; font-weight:680; font-size:clamp(1.9rem,4vw,2.7rem)}
+p{margin:0 0 1.05em}
+a{color:var(--accent); text-decoration:none}
+a:hover{text-decoration:underline}
+code{font-family:var(--font-mono); font-size:.87em; background:var(--surface-2);
+  border:1px solid var(--border); border-radius:5px; padding:.1em .38em}
+ul{padding-left:1.3em; margin:0 0 1.05em}
+li{margin:.35em 0}
+hr{border:0; border-top:1px solid var(--border); margin:2.6rem 0}
+small{color:var(--text-faint)}
+
+/* ============================================================ BAR */
+header.bar{position:sticky; top:0; z-index:60;
+  background:color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter:blur(10px); border-bottom:1px solid var(--border)}
+.bar-in{padding:10px 22px; display:flex; align-items:center; gap:14px}
+.brand{font-weight:700; font-size:.92rem; white-space:nowrap}
+.brand a{color:var(--text)}
+.brand span{color:var(--accent)}
+.crumb{font-size:.82rem; color:var(--text-faint); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.bar .right{margin-left:auto; display:flex; gap:8px; align-items:center}
+button.ghost{font:inherit; font-size:.8rem; cursor:pointer; color:var(--text-dim);
+  background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:5px 11px}
+button.ghost:hover{border-color:var(--border-strong); color:var(--text)}
+
+/* ============================================================ LAYOUT */
+.shell{padding:0 40px; max-width:var(--maxw); margin:0 auto}
+article{min-width:0; padding-bottom:20px}
+
+.lead{padding:46px 0 26px; border-bottom:1px solid var(--border); margin-bottom:8px}
+.kicker{font-family:var(--font-mono); font-size:.74rem; letter-spacing:.16em;
+  text-transform:uppercase; color:var(--accent); margin-bottom:12px}
+.subtitle{font-size:1.1rem; color:var(--text-dim); max-width:var(--readw); margin-top:.6em}
+.meta{display:flex; flex-wrap:wrap; gap:8px; margin-top:20px}
+
+.pill{display:inline-block; font-family:var(--font-mono); font-size:.7rem; padding:3px 9px;
+  border-radius:999px; border:1px solid var(--border-strong); color:var(--text-dim); white-space:nowrap}
+.pill.a{color:var(--accent); border-color:var(--accent); background:var(--accent-soft)}
+.pill.p{color:var(--purple); border-color:var(--purple); background:var(--purple-soft)}
+
+.callout{border-left:3px solid var(--accent); background:var(--accent-soft);
+  border-radius:0 var(--radius-sm) var(--radius-sm) 0; padding:15px 19px; margin:1.7em 0}
+.callout.warn{border-color:var(--amber); background:var(--amber-soft)}
+.callout .t{font-weight:700; font-size:.76rem; letter-spacing:.1em; text-transform:uppercase;
+  margin-bottom:6px; display:block; color:var(--text)}
+.callout > :last-child{margin-bottom:0}
+
+.stub{border:1px dashed var(--border-strong); border-radius:var(--radius);
+  background:var(--surface); padding:34px 30px; margin:2em 0; text-align:center}
+.stub .badge{font-family:var(--font-mono); font-size:.72rem; letter-spacing:.12em;
+  text-transform:uppercase; color:var(--amber); border:1px solid var(--amber);
+  background:var(--amber-soft); border-radius:999px; padding:4px 12px; display:inline-block; margin-bottom:16px}
+.stub h2{font-size:1.15rem; margin:0 0 .5em; font-weight:680}
+.stub p{color:var(--text-dim); max-width:60ch; margin:0 auto 1em}
+.stub p:last-child{margin-bottom:0}
+
+.planned{max-width:var(--readw); margin:2em auto}
+.planned h3{font-size:1rem; color:var(--text); margin:0 0 .6em; font-weight:680}
+.planned ol{color:var(--text-dim); columns:2; column-gap:32px; font-size:.9rem}
+@media(max-width:640px){ .planned ol{columns:1} }
+
+/* pager / footer */
+.pager{display:flex; gap:12px; margin:44px 0 30px; flex-wrap:wrap; max-width:none}
+.pager a, .pager .disabled{flex:1 1 250px; border:1px solid var(--border); border-radius:var(--radius);
+  padding:14px 18px; background:var(--surface); text-decoration:none; color:var(--text)}
+.pager a:hover{border-color:var(--accent); text-decoration:none}
+.pager .disabled{opacity:.45}
+.pager em{display:block; font-style:normal; font-size:.7rem; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--text-faint); margin-bottom:3px}
+.pager .next{text-align:right}
+footer.foot{border-top:1px solid var(--border); margin-top:20px; padding:24px 0 56px;
+  color:var(--text-faint); font-size:.85rem}
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <div class="bar-in">
+    <div class="brand"><a href="../../index.html">Commit&nbsp;<span>→</span>&nbsp;Production</a></div>
+    <div class="crumb">/ Module&nbsp;2 · Machines / Lesson&nbsp;2.3</div>
+    <div class="right">
+      <button class="ghost" id="theme">◐ Theme</button>
+    </div>
+  </div>
+</header>
+
+<div class="shell">
+  <article>
+    <div class="lead">
+      <div class="kicker">Module 2 · Lesson 2.3</div>
+      <h1>Processes, threads, context switching and the scheduler</h1>
+      <p class="subtitle">
+        Lesson 2.2 established that the kernel is the referee that shares one machine among many programs.
+        This lesson zooms into the busiest part of that referee: how it shares the single most contended
+        resource — the CPU — among many processes at once, switching between them thousands of times a
+        second so quickly that six programs feel simultaneous on one core.
+      </p>
+      <div class="meta">
+        <span class="pill a">Placeholder</span>
+        <span class="pill">Prerequisites: Lessons 2.1–2.2</span>
+        <span class="pill p">Module 2 · Milestone 2</span>
+      </div>
+    </div>
+
+    <div class="stub">
+      <span class="badge">◷ Coming soon</span>
+      <h2>This lesson has not been written yet</h2>
+      <p>
+        It's scaffolded and slotted into Module 2, but the content is still to come — we'll return to it.
+        In the meantime, Lesson 2.4 (memory) is fully written and can be read independently, and Lesson
+        2.2 gives you the user/kernel boundary this lesson builds on.
+      </p>
+      <p><small>When generated, this file will be regenerated in full to the standard 16-section lesson structure.</small></p>
+    </div>
+
+    <div class="planned">
+      <h3>Planned coverage (the 16-section structure)</h3>
+      <ol>
+        <li>Problem Statement — one CPU, many programs</li>
+        <li>Historical Context — cooperative → preemptive</li>
+        <li>Previous Solution — run-to-completion / cooperative</li>
+        <li>Why It Failed — one hog freezes everything</li>
+        <li>New Solution — the process, the thread, the scheduler</li>
+        <li>Internal Mechanics — PCB, context switch, run queues, time slices</li>
+        <li>Real Industry Examples — <code>top</code>, load average, CPU steal</li>
+        <li>Diagrams — process states, a context switch</li>
+        <li>Advantages</li>
+        <li>Limitations — context-switch cost, cache/TLB effects</li>
+        <li>Common Misconceptions — threads vs cores, load average</li>
+        <li>Practical Use Cases — sizing workers, diagnosing CPU starvation</li>
+        <li>Summary</li>
+        <li>Recommended Resources</li>
+        <li>Exercise — read process state on your VPS</li>
+        <li>Quiz</li>
+      </ol>
+    </div>
+
+    <div class="callout warn">
+      <span class="t">Note</span>
+      <p>
+        This is a stub page kept so the roadmap's navigation stays intact. Its "Next" link points to
+        Lesson 2.4, which <em>is</em> complete.
+      </p>
+    </div>
+
+    <hr>
+
+    <nav class="pager" aria-label="Lesson navigation">
+      <a href="lesson-02-what-an-operating-system-does.html"><em>Previous lesson</em>← 2.2 · What an operating system does</a>
+      <a class="next" href="lesson-04-memory-and-the-oom-killer.html"><em>Next lesson</em>2.4 · Memory: virtual address spaces, paging, swap &amp; the OOM killer →</a>
+    </nav>
+
+    <footer class="foot">
+      <b>From Commit to Production</b> · Module 2 · Lesson 2.3 — <em>Processes, Threads, Context Switching &amp; the Scheduler</em> (placeholder)<br>
+      <small>Self-contained offline document · no external assets · to be regenerated in full when written.
+      Roadmap: <a href="../../index.html">course/index.html</a></small>
+    </footer>
+  </article>
+</div>
+
+<script>
+(function(){
+  var root = document.documentElement;
+  var KEY='ftp.theme', saved=null;
+  try { saved = localStorage.getItem(KEY); } catch(e){}
+  if (saved) root.setAttribute('data-theme', saved);
+  document.getElementById('theme').addEventListener('click', function(){
+    var cur = root.getAttribute('data-theme');
+    if (!cur) cur = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    var next = cur === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem(KEY, next); } catch(e){}
+  });
+})();
+</script>
+</body>
+</html>
