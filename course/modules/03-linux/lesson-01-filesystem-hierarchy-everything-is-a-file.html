@@ -1,0 +1,1283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 3.1 · The Filesystem Hierarchy &amp; "Everything Is a File" — From Commit to Production</title>
+<style>
+/* ============================================================
+   DESIGN TOKENS  (same system as the roadmap)
+   ============================================================ */
+:root{
+  color-scheme: dark light;
+  --font-sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", Consolas, "SFMono-Regular", Menlo, monospace;
+
+  --bg:#0a0e17; --bg-alt:#0e1421; --surface:#131b2b; --surface-2:#19233a;
+  --border:#243049; --border-strong:#37456a;
+  --text:#e8eefb; --text-dim:#a7b4cd; --text-faint:#78869f;
+
+  --accent:#6ea8ff;  --accent-soft:rgba(110,168,255,.14);
+  --green:#4fd39c;   --green-soft:rgba(79,211,156,.13);
+  --amber:#f2b754;   --amber-soft:rgba(242,183,84,.13);
+  --red:#ff7f76;     --red-soft:rgba(255,127,118,.13);
+  --purple:#b28cff;  --purple-soft:rgba(178,140,255,.13);
+  --teal:#4fd0d9;    --teal-soft:rgba(79,208,217,.13);
+
+  --radius:14px; --radius-sm:8px;
+  --shadow:0 1px 2px rgba(0,0,0,.45), 0 14px 34px -18px rgba(0,0,0,.75);
+  --maxw:1220px; --readw:840px;
+}
+:root[data-theme="light"]{
+  color-scheme: light;
+  --bg:#f7f9fc; --bg-alt:#eef2f8; --surface:#ffffff; --surface-2:#f2f5fa;
+  --border:#dde3ee; --border-strong:#c2ccdd;
+  --text:#131a26; --text-dim:#4b586e; --text-faint:#75839a;
+  --accent:#1f5fd0; --accent-soft:rgba(31,95,208,.09);
+  --green:#0f8a5f;  --green-soft:rgba(15,138,95,.10);
+  --amber:#9a6a06;  --amber-soft:rgba(154,106,6,.10);
+  --red:#c3352b;    --red-soft:rgba(195,53,43,.09);
+  --purple:#6d3ecb; --purple-soft:rgba(109,62,203,.09);
+  --teal:#07767e;   --teal-soft:rgba(7,118,126,.10);
+  --shadow:0 1px 2px rgba(18,28,45,.06), 0 12px 28px -18px rgba(18,28,45,.25);
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    color-scheme: light;
+    --bg:#f7f9fc; --bg-alt:#eef2f8; --surface:#ffffff; --surface-2:#f2f5fa;
+    --border:#dde3ee; --border-strong:#c2ccdd;
+    --text:#131a26; --text-dim:#4b586e; --text-faint:#75839a;
+    --accent:#1f5fd0; --accent-soft:rgba(31,95,208,.09);
+    --green:#0f8a5f;  --green-soft:rgba(15,138,95,.10);
+    --amber:#9a6a06;  --amber-soft:rgba(154,106,6,.10);
+    --red:#c3352b;    --red-soft:rgba(195,53,43,.09);
+    --purple:#6d3ecb; --purple-soft:rgba(109,62,203,.09);
+    --teal:#07767e;   --teal-soft:rgba(7,118,126,.10);
+    --shadow:0 1px 2px rgba(18,28,45,.06), 0 12px 28px -18px rgba(18,28,45,.25);
+  }
+}
+
+/* ============================================================ BASE */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth; scroll-padding-top:80px}
+body{margin:0; background:var(--bg); color:var(--text);
+  font-family:var(--font-sans); font-size:16.5px; line-height:1.72; -webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{line-height:1.28; margin:0 0 .5em; letter-spacing:-.015em; font-weight:680}
+h1{font-size:clamp(1.9rem,4vw,2.7rem)}
+h2{font-size:clamp(1.35rem,2.4vw,1.72rem); margin-top:2.6em; padding-top:.2em}
+h3{font-size:1.1rem; margin-top:2em; color:var(--text)}
+h4{font-size:.98rem; margin-top:1.5em; color:var(--text-dim)}
+p{margin:0 0 1.05em}
+a{color:var(--accent); text-decoration:none}
+a:hover{text-decoration:underline}
+strong{font-weight:660}
+em.term{font-style:normal; font-weight:680; color:var(--text)}
+code{font-family:var(--font-mono); font-size:.87em; background:var(--surface-2);
+  border:1px solid var(--border); border-radius:5px; padding:.1em .38em}
+ul,ol{padding-left:1.3em; margin:0 0 1.05em}
+li{margin:.35em 0}
+blockquote{margin:1.5em 0; padding:2px 0 2px 18px; border-left:3px solid var(--border-strong);
+  color:var(--text-dim); font-style:italic}
+blockquote footer{font-style:normal; font-size:.85rem; color:var(--text-faint); margin-top:.4em}
+hr{border:0; border-top:1px solid var(--border); margin:2.6rem 0}
+small{color:var(--text-faint)}
+sup a{font-size:.7em; padding:0 1px}
+
+/* ============================================================ BAR */
+header.bar{position:sticky; top:0; z-index:60;
+  background:color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter:blur(10px); border-bottom:1px solid var(--border)}
+.bar-in{padding:10px 22px; display:flex; align-items:center; gap:14px}
+.brand{font-weight:700; font-size:.92rem; white-space:nowrap}
+.brand a{color:var(--text)}
+.brand span{color:var(--accent)}
+.crumb{font-size:.82rem; color:var(--text-faint); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.bar .right{margin-left:auto; display:flex; gap:8px; align-items:center}
+button.ghost{font:inherit; font-size:.8rem; cursor:pointer; color:var(--text-dim);
+  background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:5px 11px}
+button.ghost:hover{border-color:var(--border-strong); color:var(--text)}
+#readbar{position:fixed; top:0; left:0; height:2px; background:var(--accent); z-index:70; width:0}
+
+/* ============================================================ LAYOUT */
+.shell{padding:0 40px;
+  display:grid; grid-template-columns:1fr; gap:36px}
+
+aside.toc{display:none}
+aside.toc .inner{position:sticky; top:74px; max-height:calc(100vh - 96px); overflow:auto;
+  padding:22px 0 40px; font-size:.86rem}
+aside.toc .lbl{font-size:.7rem; letter-spacing:.12em; text-transform:uppercase;
+  color:var(--text-faint); font-weight:700; margin:0 0 10px}
+aside.toc ol{list-style:none; padding:0; margin:0; counter-reset:t}
+aside.toc li{margin:0; counter-increment:t}
+aside.toc a{display:flex; gap:8px; padding:5px 10px 5px 8px; border-radius:6px;
+  color:var(--text-dim); border-left:2px solid transparent; line-height:1.4}
+aside.toc a:before{content:counter(t); font-family:var(--font-mono); font-size:.72rem;
+  color:var(--text-faint); flex:0 0 1.4em; text-align:right}
+aside.toc a:hover{background:var(--surface-2); color:var(--text); text-decoration:none}
+aside.toc a.on{color:var(--accent); border-left-color:var(--accent); background:var(--accent-soft)}
+article{min-width:0; padding-bottom:20px}
+
+/* ============================================================ HERO */
+.lead{padding:46px 0 26px; border-bottom:1px solid var(--border); margin-bottom:8px}
+.kicker{font-family:var(--font-mono); font-size:.74rem; letter-spacing:.16em;
+  text-transform:uppercase; color:var(--accent); margin-bottom:12px}
+.subtitle{font-size:1.1rem; color:var(--text-dim); max-width:var(--readw); margin-top:.6em}
+.meta{display:flex; flex-wrap:wrap; gap:8px; margin-top:20px}
+
+/* ============================================================ COMPONENTS */
+.pill{display:inline-block; font-family:var(--font-mono); font-size:.7rem; padding:3px 9px;
+  border-radius:999px; border:1px solid var(--border-strong); color:var(--text-dim); white-space:nowrap}
+.pill.a{color:var(--accent); border-color:var(--accent); background:var(--accent-soft)}
+.pill.g{color:var(--green); border-color:var(--green); background:var(--green-soft)}
+.pill.r{color:var(--red); border-color:var(--red); background:var(--red-soft)}
+.pill.p{color:var(--purple); border-color:var(--purple); background:var(--purple-soft)}
+
+.callout{border-left:3px solid var(--accent); background:var(--accent-soft);
+  border-radius:0 var(--radius-sm) var(--radius-sm) 0; padding:15px 19px; margin:1.7em 0}
+.callout.warn{border-color:var(--amber); background:var(--amber-soft)}
+.callout.bad{border-color:var(--red); background:var(--red-soft)}
+.callout.good{border-color:var(--green); background:var(--green-soft)}
+.callout.def{border-color:var(--purple); background:var(--purple-soft)}
+.callout .t{font-weight:700; font-size:.76rem; letter-spacing:.1em; text-transform:uppercase;
+  margin-bottom:6px; display:block; color:var(--text)}
+.callout > :last-child{margin-bottom:0}
+
+dl.terms{margin:1.4em 0; padding:0}
+dl.terms dt{font-weight:680; color:var(--text); margin-top:1em; font-size:.98rem}
+dl.terms dt:first-child{margin-top:0}
+dl.terms dd{margin:.25em 0 0; color:var(--text-dim); padding-left:0}
+
+pre{background:var(--bg-alt); border:1px solid var(--border); border-radius:var(--radius-sm);
+  padding:16px 18px; overflow-x:auto; font-family:var(--font-mono); font-size:.8rem;
+  line-height:1.5; margin:1.6em 0}
+pre code{background:none; border:0; padding:0; font-size:inherit}
+figure{margin:1.8em 0}
+figure figcaption{font-size:.82rem; color:var(--text-faint); margin-top:-.6em; padding-left:2px}
+
+.tablewrap{overflow-x:auto; margin:1.6em 0; border:1px solid var(--border); border-radius:var(--radius)}
+table{border-collapse:collapse; width:100%; font-size:.9rem; min-width:560px}
+th,td{padding:10px 14px; text-align:left; border-bottom:1px solid var(--border); vertical-align:top}
+th{background:var(--surface-2); font-size:.73rem; text-transform:uppercase; letter-spacing:.08em;
+  color:var(--text-dim); font-weight:700}
+tr:last-child td{border-bottom:0}
+td.y{color:var(--green); font-weight:600} td.n{color:var(--red); font-weight:600}
+
+.card{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+  padding:20px 22px; box-shadow:var(--shadow); margin:1.6em 0}
+.card > :first-child{margin-top:0}
+.grid2{display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; margin:1.6em 0}
+.grid2 .card{margin:0}
+
+/* misconceptions */
+.myth{border:1px solid var(--border); border-radius:var(--radius); margin:14px 0; overflow:hidden}
+.myth .m{background:var(--red-soft); border-bottom:1px solid var(--border); padding:11px 16px;
+  font-weight:660; display:flex; gap:10px}
+.myth .m:before{content:"✕"; color:var(--red); font-weight:700}
+.myth .r{padding:13px 16px}
+.myth .r:before{content:"Reality "; font-family:var(--font-mono); font-size:.68rem;
+  letter-spacing:.12em; text-transform:uppercase; color:var(--green); display:block; margin-bottom:4px}
+.myth .r > :last-child{margin-bottom:0}
+
+/* resources */
+.res{margin:1.4em 0}
+.res h4{margin:1.4em 0 .4em; color:var(--accent); font-size:.78rem;
+  letter-spacing:.1em; text-transform:uppercase}
+.res ul{list-style:none; padding:0; margin:0}
+.res li{border-bottom:1px dashed var(--border); padding:8px 0; margin:0}
+.res li:last-child{border-bottom:0}
+.res .why{display:block; font-size:.85rem; color:var(--text-dim)}
+.res .rank{font-family:var(--font-mono); font-size:.66rem; padding:1px 6px; border-radius:999px;
+  border:1px solid var(--green); color:var(--green); background:var(--green-soft); margin-left:6px}
+
+/* exercises */
+.ex{border:1px solid var(--border); border-left:3px solid var(--teal);
+  border-radius:0 var(--radius) var(--radius) 0; padding:16px 20px; margin:16px 0; background:var(--surface)}
+.ex .h{font-weight:680; margin-bottom:6px}
+.ex .h span{font-family:var(--font-mono); font-size:.72rem; color:var(--teal); margin-right:8px}
+.ex .out{font-size:.86rem; color:var(--text-faint); margin-top:8px; border-top:1px dashed var(--border); padding-top:8px}
+.ex > :last-child{margin-bottom:0}
+
+/* quiz */
+.quiz{counter-reset:q}
+.q{border:1px solid var(--border); border-radius:var(--radius); margin:12px 0;
+  background:var(--surface); overflow:hidden}
+.q > summary{cursor:pointer; list-style:none; padding:14px 18px; display:flex; gap:12px;
+  font-weight:600; align-items:flex-start}
+.q > summary::-webkit-details-marker{display:none}
+.q > summary:before{counter-increment:q; content:"Q" counter(q); font-family:var(--font-mono);
+  font-size:.72rem; color:var(--accent); background:var(--accent-soft);
+  border:1px solid var(--accent); border-radius:6px; padding:2px 7px; flex:0 0 auto; margin-top:2px}
+.q > summary::after{content:"show answer"; margin-left:auto; font-size:.7rem; font-weight:600;
+  letter-spacing:.08em; text-transform:uppercase; color:var(--text-faint); flex:0 0 auto; padding-top:4px}
+.q[open] > summary::after{content:"hide"}
+.q .ans{padding:2px 18px 16px; border-top:1px solid var(--border); margin-top:0;
+  background:var(--bg-alt); color:var(--text-dim)}
+.q .ans > :first-child{margin-top:1em}
+.q .ans > :last-child{margin-bottom:0}
+.q .ans strong{color:var(--text)}
+
+/* summary list */
+ul.takeaways{list-style:none; padding:0}
+ul.takeaways li{padding:9px 0 9px 30px; position:relative; border-bottom:1px dashed var(--border)}
+ul.takeaways li:last-child{border-bottom:0}
+ul.takeaways li:before{content:"▸"; position:absolute; left:6px; top:9px; color:var(--accent)}
+
+/* pager / footer */
+.pager{display:flex; gap:12px; margin:44px 0 30px; flex-wrap:wrap; max-width:none}
+.pager a, .pager .disabled{flex:1 1 250px; border:1px solid var(--border); border-radius:var(--radius);
+  padding:14px 18px; background:var(--surface); text-decoration:none; color:var(--text)}
+.pager a:hover{border-color:var(--accent); text-decoration:none}
+.pager .disabled{opacity:.45}
+.pager em{display:block; font-style:normal; font-size:.7rem; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--text-faint); margin-bottom:3px}
+.pager .next{text-align:right}
+footer.foot{border-top:1px solid var(--border); margin-top:20px; padding:24px 0 56px;
+  color:var(--text-faint); font-size:.85rem}
+
+@media print{
+  header.bar,aside.toc,#readbar,button.ghost,.pager{display:none}
+  body{background:#fff; color:#000; font-size:10.5pt}
+  .shell{display:block; max-width:none; padding:0}
+  .q{break-inside:avoid} .q .ans{display:block !important}
+  article > *{max-width:none}
+}
+</style>
+</head>
+<body>
+
+<div id="readbar"></div>
+<header class="bar">
+  <div class="bar-in">
+    <div class="brand"><a href="../../index.html">Commit&nbsp;<span>→</span>&nbsp;Production</a></div>
+    <div class="crumb">/ Module&nbsp;3 · Linux / Lesson&nbsp;3.1</div>
+    <div class="right">
+      <button class="ghost" id="expand">⇕ Expand all</button>
+      <button class="ghost" id="theme">◐ Theme</button>
+    </div>
+  </div>
+</header>
+
+<div class="shell">
+
+  <aside class="toc">
+    <div class="inner">
+      <p class="lbl">Lesson contents</p>
+      <ol id="tocList">
+        <li><a href="#s1">Problem Statement</a></li>
+        <li><a href="#s2">Historical Context</a></li>
+        <li><a href="#s3">Previous Solution</a></li>
+        <li><a href="#s4">Why It Failed</a></li>
+        <li><a href="#s5">New Solution</a></li>
+        <li><a href="#s6">Internal Mechanics</a></li>
+        <li><a href="#s7">Real Industry Examples</a></li>
+        <li><a href="#s8">Diagrams</a></li>
+        <li><a href="#s9">Advantages</a></li>
+        <li><a href="#s10">Limitations</a></li>
+        <li><a href="#s11">Common Misconceptions</a></li>
+        <li><a href="#s12">Practical Use Cases</a></li>
+        <li><a href="#s13">Summary</a></li>
+        <li><a href="#s14">Recommended Resources</a></li>
+        <li><a href="#s15">Exercise</a></li>
+        <li><a href="#s16">Quiz</a></li>
+      </ol>
+    </div>
+  </aside>
+
+  <article>
+    <div class="lead">
+      <div class="kicker">Module 3 · Lesson 3.1</div>
+      <h1>The filesystem hierarchy and "everything is a file" (including your socket)</h1>
+      <p class="subtitle">
+        Module 2 explained the machine — CPU, RAM, storage — from the hardware up. Module 3 turns that
+        understanding into the ability to <em>operate</em> a Linux server, and it begins where every
+        Linux interaction begins: the single tree of paths that starts at <code>/</code>. In Lesson 2.5 you
+        learned that a file is really an inode over some blocks. This lesson is the astonishing decision Unix
+        made on top of that: to present <em>almost everything</em> — your disks, your terminal, your
+        running processes, your kernel's tuning knobs, even a live network socket — as entries in that one
+        filesystem tree, readable and writable with the same handful of operations. Understand this and the
+        entire Linux system stops being a pile of unrelated commands and becomes one navigable, inspectable
+        object you can explore with <code>cd</code>, <code>ls</code> and <code>cat</code>.
+      </p>
+      <div class="meta">
+        <span class="pill a">~70 min read</span>
+        <span class="pill">Prerequisites: Module 2 (esp. 2.2, 2.5)</span>
+        <span class="pill">Conceptual · hands-on at the end</span>
+        <span class="pill g">Module 3 · Milestone 3</span>
+      </div>
+    </div>
+
+    <div class="callout def">
+      <span class="t">Learning objectives</span>
+      <p>By the end of this lesson you will be able to:</p>
+      <ol style="margin-bottom:0">
+        <li>Explain the <em>single-rooted directory tree</em>, how <em>mounting</em> grafts separate filesystems into it, and why Linux has no drive letters.</li>
+        <li>Navigate the <em>Filesystem Hierarchy Standard (FHS)</em> — know what actually lives in <code>/etc</code>, <code>/var</code>, <code>/usr</code>, <code>/home</code>, <code>/tmp</code>, <code>/bin</code> and friends, and why DevBoard's config, logs and data land where they do.</li>
+        <li>State precisely what <em>"everything is a file"</em> means and does <em>not</em> mean, and name the file <em>types</em> (regular, directory, symlink, device, socket, pipe, and the <code>/proc</code> pseudo-files).</li>
+        <li>Explain the <em>file descriptor</em> abstraction — why <code>stdin</code>/<code>stdout</code>/<code>stderr</code>, an open file, a socket and a pipe all look identical to a program.</li>
+        <li>Read <code>/dev</code>, <code>/proc</code> and <code>/sys</code> as live windows into devices, processes and kernel state — connecting them back to Module 2's memory, CPU and storage.</li>
+        <li>Distinguish <em>hard</em> from <em>symbolic</em> links, and reason about absolute vs relative paths, <code>.</code>, <code>..</code> and the current working directory.</li>
+      </ol>
+    </div>
+
+    <div class="callout">
+      <span class="t">Where this sits on the map</span>
+      <p>
+        This is the doorway to Module 3. It builds directly on Lesson 2.5's inode (a filename is a label on
+        an inode) and Lesson 2.2's kernel/user-space split (the tree is the interface the kernel offers user
+        space). Everything after it in this module is an application of the ideas here: Lesson 3.2 (users
+        &amp; permissions) attaches ownership bits to these files; 3.3 (the shell) pipes data between the
+        file descriptors defined here; 3.6 (<code>systemd</code>) reads unit files from <code>/etc</code>
+        and writes logs to <code>/var</code>; 3.8 (diagnosing a sick box) is almost entirely the art of
+        reading <code>/proc</code> and <code>/sys</code>. Master the tree now and the rest of Linux is
+        exploration, not memorisation.
+      </p>
+    </div>
+
+    <!-- ============================== 1 ============================== -->
+    <h2 id="s1">1 · Problem Statement</h2>
+
+    <p>
+      You now own a live Linux server (Milestone 2). SSH into it and you are dropped at a prompt with a
+      single starting point — <code>/</code> — and nothing else obvious. On this one machine there are many
+      genuinely different <em>kinds</em> of things you will need to reach: the actual bytes of your
+      configuration files; two or three separate storage devices (the root disk, maybe a data volume from
+      Lesson 2.5, a swap partition); the keyboard and screen of your terminal; dozens of running processes;
+      the network card; the kernel's own internal counters and tuning knobs; and later, DevBoard's Unix
+      socket. Historically, each of these came with its own bespoke way to name it and its own special
+      commands to inspect it. The problem this lesson solves is the one that makes a machine
+      <em>operable</em> at all:
+    </p>
+    <ul>
+      <li>"There are many devices, filesystems, processes and kernel structures on this box, each a different <em>kind</em> of thing. Do I need a <strong>different naming scheme and a different tool</strong> for every one — or can they share a single addressing system I can learn once?"</li>
+      <li>"I have three separate storage devices. On the systems I grew up with they'd be <code>C:</code>, <code>D:</code>, <code>E:</code>. Where are they here, and why does <code>/</code>, <code>/home</code> and <code>/data</code> all look like <strong>one seamless tree</strong> with no drive letters?"</li>
+      <li>"A program reads from the keyboard, writes to the screen, reads a file, and talks over the network. Must it use <strong>four completely different APIs</strong>, or can it treat all four the same way?"</li>
+      <li>"When I need to know how much memory a process is using, or what the CPU is doing, or what's tuning the kernel — is there a <strong>place I can just look</strong>, with <code>cat</code>, instead of a magic tool per question?"</li>
+      <li>"Someone tells me DevBoard's config goes in <code>/etc</code>, its logs in <code>/var/log</code>, its binary in <code>/usr/bin</code>. Is that arbitrary folklore, or is there a <strong>predictable map</strong> I can rely on across every Linux machine I'll ever touch?"</li>
+    </ul>
+
+    <div class="callout bad">
+      <span class="t">The core problem</span>
+      <p>
+        A running Unix machine is a zoo of fundamentally different resources — storage devices, partitions,
+        terminals, processes, network endpoints, kernel data structures — and a human operator (and every
+        program) needs to <strong>name</strong>, <strong>find</strong>, <strong>inspect</strong> and
+        <strong>manipulate</strong> all of them. The naïve approach gives each resource its own namespace,
+        its own access API and its own specialised tools, so operating the machine means learning dozens of
+        unrelated systems. What we want instead is <em>one</em> uniform namespace — a single tree of paths —
+        and <em>one</em> small set of operations (open, read, write, close) that work on nearly everything in
+        it, plus a <em>predictable convention</em> for where each kind of thing lives, so that knowledge of
+        one Linux box transfers to every other. That unification is the whole of this lesson.
+      </p>
+    </div>
+
+    <p>
+      The promise: by the end, a Linux system will look like a single explorable object. "Where does that
+      live?" will have a principled answer (the FHS), "what is this thing?" will be one of a short list of
+      file types, and "how do I look at it?" will almost always be "it's a path — <code>cat</code> it,
+      <code>ls</code> it, or open it," whether the thing is a text file, a hard disk, a process, or a socket.
+    </p>
+
+    <!-- ============================== 2 ============================== -->
+    <h2 id="s2">2 · Historical Context</h2>
+
+    <p>
+      The single tree and "everything is a file" were not obvious; they were a deliberate, radical
+      simplification made at Bell Labs, and much of their staying power comes from how ruthlessly they were
+      applied. Each step in the history pushed one more kind of thing into the file abstraction.
+    </p>
+
+    <h3>Before Unix · A namespace per resource</h3>
+    <p>
+      Earlier operating systems typically addressed different resources in different ways: files by one
+      scheme, devices by special control calls, each subsystem with its own vocabulary. Reaching a tape
+      drive, a disk and a printer meant three unrelated mechanisms. There was no unifying idea that these
+      might all be <em>the same shape</em> to a program.
+    </p>
+
+    <h3>1969–1971 · Unix: one tree, and files as byte streams</h3>
+    <p>
+      Ken Thompson and Dennis Ritchie's Unix made two decisions that define this lesson. First, a
+      <em>single hierarchical directory tree</em> rooted at <code>/</code>, into which all storage was
+      grafted — no per-device namespaces. Second, and more radical, the file was redefined as a featureless
+      <em>stream of bytes</em> with a tiny interface — <code>open</code>, <code>read</code>,
+      <code>write</code>, <code>close</code> — and then <em>devices were made to wear that same interface</em>.
+      A program writing to a disk file and a program writing to a terminal used identical calls. This is the
+      birth of "everything is a file."
+    </p>
+
+    <h3>1970s · Device files and the uniform interface deepen</h3>
+    <p>
+      Special files under <code>/dev</code> let programs treat hardware as files: <code>/dev/tty</code> for
+      the terminal, disk devices for raw storage, and the famous pseudo-devices <code>/dev/null</code> (a
+      sink that discards everything) and later <code>/dev/zero</code> and <code>/dev/random</code>. The
+      insight compounded: if a device looks like a file, every existing file tool — redirection, piping,
+      <code>cp</code>, <code>cat</code> — suddenly works on hardware too, for free.
+    </p>
+
+    <h3>Late 1970s–1980s · Pipes and sockets — same interface, new plumbing</h3>
+    <p>
+      The <em>pipe</em> (1973) let the output of one program become the input of another as an anonymous
+      in-kernel file. Then Berkeley Unix added <em>sockets</em> (1983) for networking. Sockets are the one
+      famous place the abstraction bends — they need extra calls to <em>establish</em> a connection — but
+      once connected they are read and written as file descriptors like everything else. Your DevBoard
+      process talking to PostgreSQL over a Unix socket is using this lineage.
+    </p>
+
+    <h3>1990s · <code>/proc</code> and <code>/sys</code> — the kernel as files</h3>
+    <p>
+      Linux pushed the idea to its logical end with <em>pseudo-filesystems</em>. <code>/proc</code> exposes
+      every process and much of the kernel's state as files you can <code>cat</code>
+      (<code>/proc/meminfo</code>, <code>/proc/&lt;pid&gt;/status</code> — the very files you used in Lesson
+      2.4). <code>/sys</code> exposes devices and kernel tunables the same way. Nothing under these is on a
+      disk; reading the "file" runs kernel code that produces the answer on the spot. The machine's own
+      internals became browsable with <code>ls</code> and <code>cat</code>.
+    </p>
+
+    <h3>1994 onward · The FHS standardises the map</h3>
+    <p>
+      As Unix fragmented into many variants and Linux distributions multiplied, <em>where</em> things lived
+      threatened to diverge. The <em>Filesystem Hierarchy Standard</em> (from the earlier FSSTND, first
+      released 1994) codified the meaning of <code>/etc</code>, <code>/var</code>, <code>/usr</code>,
+      <code>/bin</code> and the rest, so that skills and scripts transfer across distributions. That standard
+      is the map §6.2 teaches, and it is why DevBoard's files have predictable homes on any Linux server you
+      will ever rent.
+    </p>
+
+    <!-- ============================== 3 ============================== -->
+    <h2 id="s3">3 · The Previous Solution (in detail)</h2>
+
+    <p>
+      To feel what the single tree buys you, look at the model many engineers already carry from other
+      systems: <em>multiple named volumes as separate roots</em> (drive letters), plus <em>special-purpose
+      APIs for non-file resources</em>. This is not a strawman — it is a coherent, widely-used design, and
+      seeing its specific frictions is the fastest way to appreciate Unix's choice.
+    </p>
+
+    <p>The model, stated plainly:</p>
+<pre><code>MULTI-ROOT + PER-RESOURCE-API MODEL  (e.g. drive letters)
+
+  Storage: each device is its own root namespace
+     C:\Windows\...        (system disk)
+     D:\data\...           (second disk)
+     E:\backup\...         (a USB stick)
+  A path must FIRST name a volume, THEN a location within it.
+
+  Non-file resources: each has its own dedicated interface
+     devices   → special device-control calls / a Device Manager
+     processes → a process API / Task Manager
+     network   → a sockets API (separate from files)
+     settings  → a registry / config database (its own tree, its own tools)
+
+  To inspect the system you learn a DIFFERENT tool per resource type.</code></pre>
+
+    <p>The assumptions this model bakes in:</p>
+    <dl class="terms">
+      <dt>Storage is many roots, not one</dt>
+      <dd>There is no single top; a path is meaningless until you say which volume it is on. Add or remove a device and the set of top-level roots changes.</dd>
+      <dt>Non-file resources are not files</dt>
+      <dd>Devices, processes, the network and system settings each live behind their own API and their own inspection tools. The uniform "open/read/write" of files does not extend to them.</dd>
+      <dt>Tools are resource-specific</dt>
+      <dd>Because each resource has its own interface, general text tools (search, redirect, pipe) can't be reused across resource types. You need a bespoke utility per question.</dd>
+      <dt>Location is convention-light</dt>
+      <dd>Without a strong cross-system standard for where things belong, each application chooses its own home for config, logs and data, and that placement varies between machines.</dd>
+    </dl>
+
+    <p>
+      And this model genuinely works — hundreds of millions of people use it daily, and separating volumes
+      by letter is arguably more immediately intuitive for a newcomer ("the USB stick is E:"). Its virtues
+      are real: explicit volume names make "which disk is this on?" instantly visible, and purpose-built
+      tools can be tuned to their resource. It becomes friction the moment you want to <em>automate</em>,
+      <em>script</em> and <em>compose</em> operations across many resource types on a headless server —
+      exactly the job of a DevOps engineer. The next section is those frictions.
+    </p>
+
+    <!-- ============================== 4 ============================== -->
+    <h2 id="s4">4 · Why It Failed (for servers)</h2>
+
+    <p>
+      "Failed" here is scoped: the multi-root, per-resource model is fine for a desktop, but for a
+      programmable, remotely-operated server it fights you at every turn. Each assumption becomes a concrete
+      cost.
+    </p>
+
+    <h3>4.1 Fragmented namespaces resist composition</h3>
+    <p>
+      When storage lives under many roots and every other resource has its own namespace, there is no single
+      way to <em>refer</em> to "a thing on this machine." A script that must touch a config, a device and a
+      log has to speak three dialects. Automation — the heart of DevOps — thrives on uniform addressing, and
+      fragmentation denies it.
+    </p>
+
+    <h3>4.2 A different tool per resource multiplies what you must learn and build</h3>
+    <p>
+      If inspecting memory needs one tool, processes another, devices a third, and network a fourth, then
+      both humans and programs must master a sprawling, unrelated toolset — and every new resource type adds
+      yet another. The general, powerful text tools (search, filter, transform, redirect) can't be pointed
+      at resources that aren't files, so their power is stranded.
+    </p>
+
+    <h3>4.3 Non-file resources can't be piped, redirected or scripted uniformly</h3>
+    <p>
+      The single most productive pattern in Unix — take the output of X, feed it to Y — only works if X and
+      Y both speak the file interface. When a device or a process or a kernel counter is <em>not</em> a file,
+      you cannot <code>cat</code> it, cannot redirect it, cannot pipe it into <code>grep</code>. The
+      composition that makes a server operable from a keyboard evaporates.
+    </p>
+
+    <h3>4.4 Weak location conventions make systems unpredictable</h3>
+    <p>
+      Without a strong, shared standard for where config, logs, binaries and data belong, every machine is a
+      little different, and every application hides its files somewhere new. Operating a fleet becomes an
+      exercise in remembering exceptions, and a script that works on one box breaks on the next.
+    </p>
+
+    <div class="callout warn">
+      <span class="t">The pattern behind all four frictions</span>
+      <p>
+        Every friction traces to one root cause: <strong>resources are addressed and accessed in many
+        incompatible ways.</strong> The fix is a double unification — put <em>everything into one namespace</em>
+        (a single directory tree, so there is exactly one way to name any resource) and give <em>almost
+        everything the same tiny interface</em> (open/read/write/close, so one set of tools operates on all
+        of it) — and then <em>standardise where things live</em> (the FHS, so knowledge transfers). That is
+        precisely the design of §5: one tree, "everything is a file," and a predictable map.
+      </p>
+    </div>
+
+    <!-- ============================== 5 ============================== -->
+    <h2 id="s5">5 · The New Solution</h2>
+
+    <p>
+      The solution is three ideas that reinforce each other: <strong>one single-rooted tree</strong> for all
+      naming, <strong>"everything is a file"</strong> for all access, and <strong>the FHS</strong> for all
+      placement. Definitions first — the vocabulary for the rest of the module.
+    </p>
+
+    <h3>5.1 The core vocabulary</h3>
+    <dl class="terms">
+      <dt>Root (<code>/</code>) &amp; the single tree</dt>
+      <dd>There is exactly one top of the filesystem, written <code>/</code>. Every path in the system descends from it. There are no drive letters; all storage is grafted into this one tree.</dd>
+      <dt>Path (absolute vs relative)</dt>
+      <dd>A location in the tree. An <em>absolute</em> path starts at the root (<code>/etc/nginx/nginx.conf</code>); a <em>relative</em> path starts at your <em>current working directory</em> (<code>logs/app.log</code>), and uses <code>.</code> (here) and <code>..</code> (parent).</dd>
+      <dt>Mount &amp; mount point</dt>
+      <dd>The act of grafting a separate filesystem (a partition, a disk, a network share, a pseudo-filesystem) onto a directory in the tree, called its <em>mount point</em>. After mounting a data disk at <code>/data</code>, paths under <code>/data</code> transparently live on that disk. This is how many devices become one seamless tree.</dd>
+      <dt>"Everything is a file"</dt>
+      <dd>The design principle that most system resources — regular files, directories, devices, pipes, sockets, and kernel state — are represented as entries in the filesystem and accessed through the same small interface (open/read/write/close). "File" here means "something you can address by a path and operate on uniformly," not "bytes on a disk."</dd>
+      <dt>File descriptor (fd)</dt>
+      <dd>A small integer the kernel gives a process when it opens something; the process then reads/writes using that integer, regardless of what it refers to. Every process starts with three: <code>0</code>=stdin, <code>1</code>=stdout, <code>2</code>=stderr. An open file, a socket and a pipe are all just file descriptors to the program.</dd>
+      <dt>File type</dt>
+      <dd>What an entry actually is, shown by the first character of <code>ls -l</code>: <code>-</code> regular file, <code>d</code> directory, <code>l</code> symlink, <code>c</code>/<code>b</code> character/block device, <code>s</code> socket, <code>p</code> named pipe.</dd>
+      <dt>Pseudo-filesystem (<code>/proc</code>, <code>/sys</code>)</dt>
+      <dd>A filesystem whose "files" are not stored on any disk; reading one runs kernel code that generates the answer live. <code>/proc</code> exposes processes and kernel info; <code>/sys</code> exposes devices and tunables.</dd>
+      <dt>FHS (Filesystem Hierarchy Standard)</dt>
+      <dd>The convention defining the purpose of each top-level directory (<code>/etc</code>, <code>/var</code>, <code>/usr</code>, <code>/home</code>, …), so that files have predictable homes across Linux systems.</dd>
+    </dl>
+
+    <div class="callout def">
+      <span class="t">The one sentence to hold onto</span>
+      <p>
+        <strong>Linux presents the entire machine as a single directory tree rooted at <code>/</code>, into
+        which all storage is <em>mounted</em>, in which almost every resource — files, devices, processes,
+        kernel state, even sockets — appears as a path you can open and read/write through the same tiny
+        interface (the <em>file descriptor</em>), organised by the predictable <em>FHS</em> map.</strong>
+        Nearly every Linux operation in this course — piping, redirection, reading <code>/proc</code>,
+        editing <code>/etc</code>, mounting a data volume — is a consequence of that one design.
+      </p>
+    </div>
+
+    <h3>5.2 The shape of the solution</h3>
+    <p>
+      Picture the machine as one tree. Different subtrees are backed by different things — a partition, a
+      pseudo-filesystem, a device node — but to you they are all just directories and files under
+      <code>/</code>:
+    </p>
+<pre><code>THE SINGLE TREE  ("one namespace, many backends, mounted together")
+
+  /                         ← the one root (on the root partition)
+  ├── etc/                  system configuration        (text files)
+  ├── home/deploy/          your user's files
+  ├── var/log/              logs that grow over time
+  ├── usr/bin/              installed programs
+  ├── tmp/                  scratch, cleared on reboot
+  ├── data/         ◀── a SEPARATE disk mounted here (Lesson 2.5 volume)
+  ├── dev/          ◀── device files: sda, null, tty   (the hardware, as files)
+  ├── proc/         ◀── pseudo-fs: one dir per process + kernel info (live)
+  └── sys/          ◀── pseudo-fs: devices & kernel tunables (live)
+
+  Same tools everywhere:
+     cat /etc/hostname          # a config file
+     cat /proc/meminfo          # LIVE kernel memory stats (not on any disk)
+     cat /sys/class/net/eth0/address   # the NIC's MAC address
+     cp file /dev/null          # discard, using the ordinary copy tool</code></pre>
+    <p>
+      Now re-answer §1's questions, one line each. One scheme for many kinds of thing? Yes — a path, for all
+      of them. Where are the three disks? Mounted into the one tree at <code>/</code>, <code>/data</code>,
+      and (swap aside) wherever you graft them — <strong>no drive letters</strong>. Four APIs for
+      keyboard/screen/file/network? No — all four are file descriptors, read and written identically. A
+      place to just look at memory/CPU/kernel? Yes — <code>/proc</code> and <code>/sys</code>, with
+      <code>cat</code>. Arbitrary folklore for config/logs/binaries? No — the FHS, the same on every box.
+      One tree, one interface, one map.
+    </p>
+
+    <!-- ============================== 6 ============================== -->
+    <h2 id="s6">6 · Internal Mechanics</h2>
+
+    <p>
+      Now the machine in detail. We will (6.1) build the single tree via mounting; (6.2) walk the FHS map;
+      (6.3) enumerate the file types; (6.4) explain the file descriptor and the three standard streams;
+      (6.5) read <code>/dev</code> as hardware-as-files; (6.6) read <code>/proc</code> and <code>/sys</code>
+      as the live kernel; (6.7) pin down where sockets and pipes fit the abstraction; and (6.8) separate
+      hard links from symlinks.
+    </p>
+
+    <h3>6.1 One tree from many filesystems: mounting</h3>
+    <p>
+      At boot, the kernel mounts one filesystem as the <em>root</em> (<code>/</code>). Every other
+      filesystem — a second data disk, a swap-free partition, a USB stick, a network share, or a
+      pseudo-filesystem like <code>/proc</code> — is <em>mounted</em> onto a directory within that tree, its
+      <em>mount point</em>. Once mounted, the boundary is invisible in normal use: <code>cd /data</code>
+      simply enters whatever filesystem is mounted there, on whatever device. This is why Linux needs no
+      drive letters — the tree <em>absorbs</em> devices instead of listing them as separate roots. You saw
+      the block devices behind this in Lesson 2.5's <code>lsblk</code>; <code>mount</code> (or
+      <code>findmnt</code>) shows which device is grafted where and with which filesystem type. The
+      elegance: a program reading <code>/data/uploads/x.png</code> neither knows nor cares that
+      <code>/data</code> is a different physical disk than <code>/</code>.
+    </p>
+
+    <h3>6.2 The FHS: a place for everything</h3>
+    <p>
+      The top-level directories are not arbitrary. Learn this map once and you can find anything on any Linux
+      box, and you will know exactly where DevBoard's pieces belong:
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Path</th><th>Holds</th><th>DevBoard relevance</th></tr></thead>
+        <tbody>
+          <tr><td><code>/etc</code></td><td>System-wide <b>configuration</b>, as editable text files. No binaries.</td><td>Nginx config, <code>systemd</code> unit files, SSH config live here (Lessons 3.6–3.7).</td></tr>
+          <tr><td><code>/var</code></td><td><b>Variable</b> data that grows/changes at runtime: logs, spools, caches, databases.</td><td><code>/var/log</code> for logs; a container/DB's data may live under <code>/var/lib</code>.</td></tr>
+          <tr><td><code>/usr</code></td><td>Installed <b>read-only program</b> files: most binaries (<code>/usr/bin</code>), libraries (<code>/usr/lib</code>), docs.</td><td>Where installed tools (node, nginx, docker) actually live.</td></tr>
+          <tr><td><code>/home</code></td><td>Ordinary <b>users' home directories</b> (<code>/home/deploy</code>).</td><td>Your <code>deploy</code> user's files, SSH keys, project checkout (Lesson 3.2).</td></tr>
+          <tr><td><code>/root</code></td><td>The <b>root user's</b> home (note: <em>not</em> <code>/</code>).</td><td>Avoid working here; use a normal user (least privilege, Lesson 3.2).</td></tr>
+          <tr><td><code>/tmp</code></td><td><b>Temporary</b> scratch, world-writable, often cleared on reboot.</td><td>Safe scratch space; never store anything you need to keep.</td></tr>
+          <tr><td><code>/bin</code>, <code>/sbin</code></td><td>Essential <b>commands</b> (and system/admin commands in <code>sbin</code>). On modern distros these symlink into <code>/usr</code>.</td><td><code>ls</code>, <code>cp</code>, <code>ss</code>, <code>mount</code>.</td></tr>
+          <tr><td><code>/opt</code></td><td>Self-contained <b>third-party</b> software installed outside the package manager.</td><td>Occasionally where a vendor blob lands.</td></tr>
+          <tr><td><code>/dev</code></td><td><b>Device</b> files (see §6.5).</td><td>Disks, <code>/dev/null</code>, the terminal.</td></tr>
+          <tr><td><code>/proc</code>, <code>/sys</code></td><td><b>Live kernel/process</b> pseudo-files (see §6.6).</td><td>Every diagnosis in Lesson 3.8.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      The organising logic is worth internalising: the FHS separates files along two axes — <em>static</em>
+      (programs in <code>/usr</code>, config in <code>/etc</code>) vs <em>variable</em> (runtime data in
+      <code>/var</code>), and <em>shareable</em> vs <em>host-specific</em>. That is why "config is text in
+      <code>/etc</code>, logs are in <code>/var/log</code>, the program is in <code>/usr/bin</code>" is a
+      rule, not a coincidence — and why a well-behaved package puts its pieces exactly there.
+    </p>
+
+    <h3>6.3 The file types: what an entry actually is</h3>
+    <p>
+      "Everything is a file" does not mean everything is the <em>same</em> — it means everything wears the
+      file interface. The first character of an <code>ls -l</code> line tells you which of a short list of
+      types you're looking at:
+    </p>
+<pre><code>$ ls -l
+-rw-r--r--  1 deploy deploy  1240 app.log        # -  regular file (ordinary bytes)
+drwxr-xr-x  2 deploy deploy  4096 uploads/       # d  directory (a name→inode table)
+lrwxrwxrwx  1 root   root      11 latest -> app.log   # l  symbolic link
+crw-rw-rw-  1 root   root  1,   3 /dev/null       # c  character device (byte-stream hw)
+brw-rw----  1 root   disk  8,   0 /dev/sda        # b  block device (block storage, L2.5)
+srw-rw-rw-  1 postgres postgres 0 /var/run/postgresql/.s.PGSQL.5432   # s  socket
+prw-r--r--  1 deploy deploy    0 mypipe           # p  named pipe (FIFO)
+    │
+    └─ first character = the file TYPE</code></pre>
+    <dl class="terms">
+      <dt>Regular file (<code>-</code>)</dt>
+      <dd>Ordinary bytes on a filesystem — the inode-over-blocks of Lesson 2.5. Text, binaries, images.</dd>
+      <dt>Directory (<code>d</code>)</dt>
+      <dd>A file whose contents map names to inode numbers (Lesson 2.5). "Folders" are just this.</dd>
+      <dt>Symbolic link (<code>l</code>)</dt>
+      <dd>A tiny file whose contents are a <em>path</em> to another location — a pointer by name (§6.8).</dd>
+      <dt>Character &amp; block devices (<code>c</code>, <code>b</code>)</dt>
+      <dd>Files under <code>/dev</code> standing in for hardware: character devices deliver a byte stream (terminals, <code>/dev/null</code>), block devices deliver fixed-size blocks (disks). The two numbers (major, minor) identify the driver and the specific device.</dd>
+      <dt>Socket (<code>s</code>) &amp; named pipe (<code>p</code>)</dt>
+      <dd>Inter-process communication endpoints that appear as paths (§6.7) — a Unix-domain socket like PostgreSQL's, or a FIFO for streaming one program's output into another.</dd>
+    </dl>
+
+    <h3>6.4 The file descriptor: why everything reads the same</h3>
+    <p>
+      The mechanism that makes "everything is a file" real for <em>programs</em> is the
+      <em class="term">file descriptor</em>. When a process opens anything — a file, a device, a socket, a
+      pipe — the kernel returns a small integer. From then on the process calls <code>read(fd, …)</code> and
+      <code>write(fd, …)</code> with that integer, and the kernel routes the operation to the right
+      subsystem behind the scenes. The program does not branch on "is this a disk or a network card"; it
+      just reads and writes an fd. Three descriptors are opened for every process automatically:
+    </p>
+<pre><code>  fd 0  stdin    ← where the program READS input   (keyboard by default)
+  fd 1  stdout   → where it WRITES normal output    (screen by default)
+  fd 2  stderr   → where it WRITES error output      (screen by default)
+
+  Because these are just fds pointing at "some file," the shell can REPOINT them:
+     myapp  > out.log        # fd 1 now points at a file, not the screen
+     myapp 2> err.log        # fd 2 (errors) to a separate file
+     myapp < input.txt       # fd 0 reads from a file, not the keyboard
+     producer | consumer     # fd 1 of producer wired to fd 0 of consumer (a pipe)</code></pre>
+    <p>
+      This is the quiet engine of the entire Unix command line, and it is why Lesson 3.3 (the shell) is so
+      powerful: redirection and pipes are nothing more than the shell swapping what fds 0/1/2 point at
+      <em>before</em> launching your program. The program is written once, against "read fd 0, write fd 1,"
+      and works whether its input is a keyboard, a file, or another program's output. That uniformity is
+      "everything is a file," paying off.
+    </p>
+
+    <h3>6.5 <code>/dev</code>: the hardware, as files</h3>
+    <p>
+      <code>/dev</code> is where devices wear the file interface. Some entries are real hardware
+      (<code>/dev/sda</code>, <code>/dev/nvme0n1</code> — the block devices of Lesson 2.5;
+      <code>/dev/tty</code> — your terminal), and some are useful fictions the kernel provides:
+    </p>
+    <dl class="terms">
+      <dt><code>/dev/null</code></dt>
+      <dd>A bottomless sink: anything written to it is discarded, reading it returns end-of-file. The universal "throw this away" — you already used <code>&gt; /dev/null</code> in Lesson 2.5's exercises.</dd>
+      <dt><code>/dev/zero</code></dt>
+      <dd>An infinite source of zero bytes — used to create or wipe files (Lesson 2.5's <code>dd if=/dev/zero</code>).</dd>
+      <dt><code>/dev/random</code>, <code>/dev/urandom</code></dt>
+      <dd>Sources of cryptographic-quality random bytes from the kernel — where key generation and tokens draw entropy (you'll meet this in Module 4's cryptography).</dd>
+    </dl>
+    <p>
+      Because these are files, ordinary tools operate on hardware and pseudo-devices for free:
+      <code>cat /dev/urandom | head -c 16</code> pulls 16 random bytes; <code>cp bigfile /dev/null</code>
+      is a read-speed test; writing an image to <code>/dev/sdb</code> with <code>dd</code> flashes a disk.
+      No special API — just the file interface, pointed at hardware.
+    </p>
+
+    <h3>6.6 <code>/proc</code> and <code>/sys</code>: the live kernel as files</h3>
+    <p>
+      This is where the abstraction becomes genuinely magical. Nothing under <code>/proc</code> or
+      <code>/sys</code> is stored on a disk. When you <code>cat /proc/meminfo</code>, the kernel
+      <em>generates</em> the answer at that instant. It is a window, not a document. The layout:
+    </p>
+<pre><code>  /proc/meminfo             # live memory stats (Lesson 2.4's MemAvailable etc.)
+  /proc/cpuinfo             # the CPUs (Lesson 2.1)
+  /proc/loadavg             # system load
+  /proc/mounts              # what's mounted where (the §6.1 tree)
+  /proc/<PID>/              # ONE directory per running process:
+  /proc/<PID>/status        #   its state, RSS/VSZ (Lesson 2.4)
+  /proc/<PID>/fd/           #   every file descriptor it has OPEN (§6.4!) — as symlinks
+  /proc/<PID>/cmdline       #   the command that started it
+  /sys/class/net/eth0/address   # the NIC's MAC (Module 4)
+  /sys/block/sda/queue/rotational  # 1=spinning disk, 0=SSD (Lesson 2.5!)</code></pre>
+    <p>
+      Read <code>/proc/&lt;pid&gt;/fd/</code> and the whole lesson closes on itself: it lists, as symlinks,
+      exactly the file descriptors from §6.4 — you can literally see that "everything is a file" is true for
+      a running process, because its open socket, its log file and its stdin all appear there as fds. Much of
+      Lesson 3.8's debugging, and tools like <code>ps</code>, <code>top</code> and <code>lsof</code>, are
+      just friendly readers of <code>/proc</code>. And <code>/sys</code> is often <em>writable</em>: echoing
+      a value into a <code>/sys</code> or <code>/proc/sys</code> file retunes the kernel live — which is
+      exactly how you dropped the page cache in Lesson 2.5 (<code>echo 3 &gt; /proc/sys/vm/drop_caches</code>).
+    </p>
+
+    <h3>6.7 Where sockets and pipes fit — the honest caveat</h3>
+    <p>
+      Sockets are the celebrated exception that proves the rule. A <em>Unix-domain socket</em> (like
+      PostgreSQL's <code>/var/run/postgresql/.s.PGSQL.5432</code>) appears in the tree as a path with type
+      <code>s</code> — you can see it, permission it, and DevBoard connects to it by that path. But you
+      cannot simply <code>cat</code> a socket the way you can a regular file: establishing a connection needs
+      extra system calls (<code>socket</code>, <code>bind</code>, <code>connect</code>, <code>accept</code>)
+      that plain files don't. <em>Network</em> sockets (TCP/IP, Module 4) aren't even in the tree at all.
+      The reconciling truth: once a socket is <em>connected</em>, it is a file descriptor read and written
+      exactly like a file — so "everything is a file" holds for the <em>data</em> phase even where it bends
+      for the <em>setup</em> phase. Named pipes (<code>p</code>) are the tidier case: a FIFO is a real path
+      you can redirect into and out of like a file, letting two unrelated programs stream through the
+      filesystem.
+    </p>
+
+    <h3>6.8 Hard links vs symbolic links</h3>
+    <p>
+      Lesson 2.5 introduced the hard link (a second directory entry pointing at the same inode). It is worth
+      placing it beside the symbolic link, because they are constantly confused and behave very differently:
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th></th><th>Hard link</th><th>Symbolic (soft) link</th></tr></thead>
+        <tbody>
+          <tr><td><b>Points at</b></td><td>the same <em>inode</em> (the actual file)</td><td>a <em>path</em> (a name), which it dereferences</td></tr>
+          <tr><td><b>If original name deleted</b></td><td>data survives — link count &gt; 0</td><td>link <em>dangles</em> (points at nothing)</td></tr>
+          <tr><td><b>Across filesystems</b></td><td>impossible (inodes are per-filesystem)</td><td>fine — it's just a path string</td></tr>
+          <tr><td><b>To a directory</b></td><td>generally not allowed</td><td>allowed and common</td></tr>
+          <tr><td><b>Made with</b></td><td><code>ln target name</code></td><td><code>ln -s target name</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      Symlinks are everywhere in a real system — <code>/usr/bin/python</code> pointing at
+      <code>python3.11</code>, a "current release" symlink swapped atomically during a deploy (a trick you'll
+      use in Module 10's zero-downtime deploys). Knowing that a symlink stores a <em>path</em> while a hard
+      link shares an <em>inode</em> explains why a symlink can dangle and cross disks while a hard link
+      can't.
+    </p>
+
+    <!-- ============================== 7 ============================== -->
+    <h2 id="s7">7 · Real Industry Examples</h2>
+
+    <h3>Redirecting a noisy program's output — because streams are files</h3>
+    <p>
+      A cron job or a service floods the terminal, and you want its normal output in one file and its errors
+      in another. Because stdout and stderr are just fds 1 and 2 (§6.4), you write
+      <code>myjob &gt; out.log 2&gt; err.log</code>, or discard chatter with <code>2&gt; /dev/null</code>.
+      No feature of <code>myjob</code> made this possible — the file-descriptor abstraction did. This is the
+      daily bread of operating services and the foundation of Lesson 3.3.
+    </p>
+
+    <h3>Diagnosing "what is this process actually doing" via <code>/proc</code></h3>
+    <p>
+      A process is stuck or leaking. You <code>cat /proc/&lt;pid&gt;/status</code> for its memory (Lesson
+      2.4's RSS/VSZ), <code>ls -l /proc/&lt;pid&gt;/fd</code> to see every file, socket and pipe it has open
+      (§6.4/6.6), and <code>cat /proc/&lt;pid&gt;/cmdline</code> for exactly how it was launched. Tools like
+      <code>lsof</code> and <code>ps</code> are just prettier front-ends to these files. The machine's
+      internals are browsable because the kernel exposed them as files.
+    </p>
+
+    <h3>Mounting DevBoard's data volume into the tree</h3>
+    <p>
+      In Lesson 2.5 you attached a block device for data. Here it becomes real: you create a filesystem on
+      it, then <em>mount</em> it at <code>/data</code> (and add it to <code>/etc/fstab</code> so it remounts
+      on boot). From that moment, <code>/data/postgres</code> transparently lives on the separate disk while
+      the rest of DevBoard lives on the root disk — one tree, two devices, invisible seam (§6.1). This is the
+      standard way to keep a database's storage separable from the OS.
+    </p>
+
+    <h3>The PostgreSQL Unix socket your app connects to</h3>
+    <p>
+      DevBoard's Express API connects to PostgreSQL. On the same host it typically uses the Unix-domain
+      socket at <code>/var/run/postgresql/.s.PGSQL.5432</code> — a path in the tree with type <code>s</code>
+      (§6.7). You can <code>ls -l</code> it, see its permissions, and understand that "connect to the
+      database" is, at bottom, "open this socket file and read/write the connection as a file descriptor."
+      When Module 8 containerises the stack, this same socket-vs-TCP choice returns.
+    </p>
+
+    <!-- ============================== 8 ============================== -->
+    <h2 id="s8">8 · Diagrams</h2>
+
+    <h3>8.1 Many devices, one tree (mounting)</h3>
+    <figure>
+<pre><code>   PHYSICAL DEVICES                 THE SINGLE TREE (what you see)
+   ┌──────────────┐                        /
+   │ /dev/sda1    │  mounted at  ──▶  ├── etc/   home/   usr/   var/
+   │ (root disk)  │      /            │
+   └──────────────┘                   ├── data/  ◀── /dev/sdb1 mounted here
+   ┌──────────────┐                   │            (a SEPARATE disk)
+   │ /dev/sdb1    │  mounted at  ──▶  │
+   │ (data disk)  │     /data         ├── proc/  ◀── pseudo-fs (kernel, no disk)
+   └──────────────┘                   └── sys/   ◀── pseudo-fs (devices, no disk)
+   ┌──────────────┐
+   │  kernel      │  mounted at  ──▶  cd /data just "enters" sdb1;
+   │  (proc/sys)  │   /proc, /sys     no drive letters, one seamless namespace.
+   └──────────────┘</code></pre>
+      <figcaption>Separate filesystems — real disks and pseudo-filesystems alike — are grafted onto directories of one tree by mounting. The result is a single namespace with no visible device boundaries.</figcaption>
+    </figure>
+
+    <h3>8.2 One interface, many backends (the file descriptor)</h3>
+    <figure>
+<pre><code>            a PROGRAM does only:  read(fd)   write(fd)   close(fd)
+                                     │
+                 ┌───────────┬───────┼────────┬─────────────┐
+              fd points at…  │       │        │             │
+                 ▼           ▼       ▼         ▼             ▼
+          regular file   terminal  socket    pipe     /proc/…/status
+          (disk blocks)  (/dev/tty)(network) (FIFO)   (live kernel data)
+                 │           │       │         │             │
+                 └───────────┴───────┴─────────┴─────────────┘
+                        the KERNEL routes each fd to the
+                        right subsystem — the program never knows.
+
+   Same read()/write() reach a disk, a screen, the net, another
+   program, or the kernel's own counters. THAT is "everything is a file."</code></pre>
+      <figcaption>A file descriptor is a uniform handle. The program issues the same read/write calls; the kernel dispatches to disk, device, network or pseudo-filesystem underneath.</figcaption>
+    </figure>
+
+    <h3>8.3 Hard link vs symlink</h3>
+    <figure>
+<pre><code>   HARD LINK (shares the inode)          SYMLINK (stores a path)
+   a.txt ─┐                              latest ──▶ "app.log"  (a text path)
+          ├──▶ INODE 4412 ──▶ [data]        │
+   b.txt ─┘   (link count 2)                └─▶ resolves to ──▶ app.log ──▶ inode
+   delete a.txt → data safe (b.txt)      delete app.log → latest DANGLES
+   same filesystem only                  crosses filesystems, can point to dirs</code></pre>
+      <figcaption>A hard link is another name for the same inode; a symlink is a small file holding a path it dereferences. One shares the data; the other points at a name and can break.</figcaption>
+    </figure>
+
+    <!-- ============================== 9 ============================== -->
+    <h2 id="s9">9 · Advantages</h2>
+    <p>What the single tree + "everything is a file" + FHS buys you, mapped back to §4:</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Capability</th><th>Because…</th><th>Fixes which §4 friction</th></tr></thead>
+        <tbody>
+          <tr><td><b>One way to name anything</b></td><td>every resource is a path in the single tree — files, devices, processes, kernel state</td><td>4.1 (fragmented namespaces)</td></tr>
+          <tr><td><b>One toolset for everything</b></td><td>the same <code>ls</code>/<code>cat</code>/<code>cp</code>/redirect operate on files, hardware and kernel data alike</td><td>4.2 (a tool per resource)</td></tr>
+          <tr><td><b>Universal composition</b></td><td>because resources speak the file interface, pipes and redirection wire any output to any input</td><td>4.3 (can't pipe non-files)</td></tr>
+          <tr><td><b>Predictable placement</b></td><td>the FHS fixes where config, logs, binaries and data belong on every Linux system</td><td>4.4 (weak conventions)</td></tr>
+          <tr><td><b>Live, browsable internals</b></td><td><code>/proc</code> and <code>/sys</code> expose kernel/process state as readable (and often writable) files</td><td>bonus: observability &amp; tuning</td></tr>
+          <tr><td><b>Device independence for storage</b></td><td>mounting absorbs any block device into the tree without changing paths programs use</td><td>bonus: portability (builds on L2.5)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ============================== 10 ============================== -->
+    <h2 id="s10">10 · Limitations</h2>
+    <p>The abstraction is powerful but not total, and its edges matter.</p>
+    <dl class="terms">
+      <dt>"Everything is a file" is aspirational, not literal</dt>
+      <dd>Sockets need setup calls beyond open/read/write; network sockets aren't in the tree at all; some modern interfaces (certain <code>ioctl</code>-heavy devices, some kernel APIs) don't fit the byte-stream shape cleanly. The slogan is a strong tendency, not an invariant.</dd>
+      <dt>Text-stream everything can be lossy</dt>
+      <dd>Because the interface is "a stream of bytes," structure is often flattened to text that must be re-parsed downstream (the reason tools like <code>awk</code>/<code>jq</code> exist, Lesson 3.4). Newer approaches (structured logging, object APIs) push back on pure text.</dd>
+      <dt>The FHS is a convention, not enforcement</dt>
+      <dd>Nothing stops software from ignoring it; some vendor packages dump everything in <code>/opt</code> or a home directory. The map is reliable for well-behaved software, not guaranteed.</dd>
+      <dt>Pseudo-files can mislead the unwary</dt>
+      <dd>A <code>/proc</code> "file" has size 0 and changes every read; naïvely treating it like a static document (copying, diffing) produces nonsense. You must know it's a live window.</dd>
+      <dt>Mount complexity is real</dt>
+      <dd>Bind mounts, overlay filesystems (the basis of Docker images, Module 7), namespaces per container, network mounts that hang — the single-tree simplicity hides genuine complexity you'll meet later.</dd>
+    </dl>
+
+    <!-- ============================== 11 ============================== -->
+    <h2 id="s11">11 · Common Misconceptions</h2>
+
+    <div class="myth">
+      <div class="m">"'Everything is a file' means every resource is literally bytes stored on a disk."</div>
+      <div class="r"><p>No. "File" here means "addressable by a path and operated on through the open/read/write interface." Many "files" store nothing on disk: <code>/proc</code> and <code>/sys</code> are generated live by the kernel, <code>/dev/null</code> is a discard sink, a socket is a connection endpoint. It's a uniform <em>interface</em>, not a claim about storage.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"Linux needs drive letters like <code>C:</code> and <code>D:</code> for multiple disks."</div>
+      <div class="r"><p>It has none. Every filesystem is <em>mounted</em> onto a directory in the one tree rooted at <code>/</code> (§6.1). A second disk appears at, say, <code>/data</code>; entering it is just <code>cd /data</code>. Devices are absorbed into the namespace, not listed as separate roots.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"<code>/root</code> is the root of the filesystem."</div>
+      <div class="r"><p>The root of the tree is <code>/</code>. <code>/root</code> is merely the <em>home directory of the root user</em>, one ordinary directory under <code>/</code>. Easy to conflate, occasionally costly.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"A symbolic link and a hard link are basically the same."</div>
+      <div class="r"><p>They differ fundamentally (§6.8). A <em>hard</em> link is another name for the same inode (shares the data, same filesystem only, survives deletion of the other name). A <em>symlink</em> stores a <em>path</em> it dereferences (can dangle, can cross filesystems, can point to directories). One shares the file; the other points at a name.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"Configuration and logs could be anywhere; you just have to know each app."</div>
+      <div class="r"><p>For well-behaved software the FHS makes it predictable: editable config is text under <code>/etc</code>, growing runtime data and logs under <code>/var</code> (<code>/var/log</code>), installed binaries under <code>/usr/bin</code> (§6.2). That's a standard, not per-app folklore — which is exactly why skills transfer between Linux machines.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"You can <code>cat</code> a socket to read the database's traffic."</div>
+      <div class="r"><p>No — a Unix socket appears as a path but needs connection-setup syscalls (<code>connect</code>/<code>accept</code>); plain <code>cat</code> won't speak the protocol (§6.7). Once a program has <em>connected</em>, though, it reads and writes the socket as a file descriptor exactly like a file — the abstraction holds for the data phase, not the setup phase.</p></div>
+    </div>
+
+    <!-- ============================== 12 ============================== -->
+    <h2 id="s12">12 · Practical Use Cases</h2>
+
+    <h3>Finding where a service keeps its config, data and logs</h3>
+    <p>
+      Faced with an unfamiliar service on DevBoard's server, the FHS tells you where to look before you read
+      a single doc: config in <code>/etc/&lt;service&gt;</code>, runtime data in <code>/var/lib/&lt;service&gt;</code>,
+      logs in <code>/var/log</code> (or <code>journalctl</code>, Lesson 3.6). This map turns "I don't know
+      this software" into "I know where its parts live."
+    </p>
+
+    <h3>Wiring programs together on the command line</h3>
+    <p>
+      Because stdout/stderr/stdin are files (§6.4), you compose: send a program's output to a file, split
+      errors out, feed one command into another with a pipe, discard noise into <code>/dev/null</code>.
+      Every non-trivial operational task — filtering logs, transforming data, chaining tools — is built on
+      this, and it only works because these streams are files.
+    </p>
+
+    <h3>Inspecting the running system without special tools</h3>
+    <p>
+      Need the machine's memory, CPU, mounts, a process's open files, or whether a disk is an SSD? It's a
+      <code>cat</code> away in <code>/proc</code> or <code>/sys</code> (§6.6) — and the same files power
+      <code>ps</code>, <code>top</code>, <code>free</code> and <code>lsof</code>. When those tools aren't
+      installed on a minimal container, you can still read the raw files directly.
+    </p>
+
+    <h3>Adding and organising DevBoard's storage</h3>
+    <p>
+      Mounting (§6.1) lets you keep the database's data on a dedicated volume mounted at <code>/data</code>,
+      separate from the OS disk, so you can resize, snapshot or move it independently — and a symlink for the
+      "current release" directory (§6.8) is the atomic-swap trick behind zero-downtime deploys in Module 10.
+      The tree is not just for reading; it's how you lay out a system.
+    </p>
+
+    <!-- ============================== 13 ============================== -->
+    <h2 id="s13">13 · Summary</h2>
+    <ul class="takeaways">
+      <li>A Linux machine is a zoo of different resources — storage, devices, terminals, processes, kernel state, sockets — and it is made <strong>operable</strong> by presenting almost all of them through <em>one namespace</em> and <em>one interface</em>.</li>
+      <li>There is a <strong>single tree</strong> rooted at <code>/</code>; every filesystem — real disks and pseudo-filesystems alike — is <strong>mounted</strong> onto a directory in it. No drive letters; a second disk just appears at a path like <code>/data</code>.</li>
+      <li><strong>"Everything is a file"</strong> means most resources are addressable by a path and operated on through open/read/write/close — it's a uniform <em>interface</em>, not a claim that everything is bytes on a disk.</li>
+      <li>The <strong>file descriptor</strong> is the mechanism: a program reads/writes small integers, and the kernel routes each to a disk, device, socket, pipe or pseudo-file. <code>stdin</code>/<code>stdout</code>/<code>stderr</code> (fds 0/1/2) being files is why shell redirection and pipes work.</li>
+      <li>File <strong>types</strong> (from <code>ls -l</code>'s first char) are a short list: regular <code>-</code>, directory <code>d</code>, symlink <code>l</code>, char/block device <code>c</code>/<code>b</code>, socket <code>s</code>, pipe <code>p</code>.</li>
+      <li><code>/dev</code> exposes <strong>hardware as files</strong> (plus fictions like <code>/dev/null</code>, <code>/dev/zero</code>); ordinary tools therefore operate on devices for free.</li>
+      <li><code>/proc</code> and <code>/sys</code> are <strong>pseudo-filesystems</strong>: their "files" are generated live by the kernel, exposing process and kernel state (the RSS/VSZ, meminfo, drop_caches you used in Module 2) as readable — and often writable — paths.</li>
+      <li><strong>Sockets</strong> are the honest caveat: they appear in the tree and are read/written as fds once connected, but need extra setup calls; network sockets aren't in the tree at all.</li>
+      <li><strong>Hard vs symbolic links</strong>: a hard link is another name for one inode (shares data, same FS, survives deletion); a symlink stores a path (can dangle, crosses filesystems, points to directories).</li>
+      <li>The <strong>FHS</strong> makes placement predictable: config as text in <code>/etc</code>, variable data and logs in <code>/var</code>, installed programs in <code>/usr</code>, homes in <code>/home</code> — the map DevBoard's files and the rest of Module 3 rely on.</li>
+    </ul>
+
+    <!-- ============================== 14 ============================== -->
+    <h2 id="s14">14 · Recommended Resources</h2>
+    <p><small>Curated, not exhaustive. <span class="rank">start here</span> marks the one to use first in each group.</small></p>
+
+    <div class="res">
+      <h4>Official / authoritative documentation</h4>
+      <ul>
+        <li><b>Filesystem Hierarchy Standard (FHS 3.0) — the official specification</b> <span class="rank">start here</span>
+          <span class="why">The authoritative definition of every top-level directory (§6.2). Skim the per-directory sections once; you'll never wonder where things belong again.</span></li>
+        <li><b><code>man hier</code> (the filesystem-hierarchy man page) and <code>man 7 file-hierarchy</code></b>
+          <span class="why">A concise, on-the-box description of the tree — readable in 10 minutes on your VPS right now.</span></li>
+        <li><b><code>man 5 proc</code>, <code>man 8 mount</code>, <code>man 1 ln</code></b>
+          <span class="why">The precise reference for <code>/proc</code>'s fields (§6.6), how mounting works (§6.1), and hard vs symbolic links (§6.8) — exactly the mechanics the exercise uses.</span></li>
+      </ul>
+
+      <h4>Books</h4>
+      <ul>
+        <li><b><em>The Linux Command Line</em> — William Shotts (free online), early chapters on the tree, navigation and links</b> <span class="rank">start here</span>
+          <span class="why">The gentlest thorough introduction to the filesystem, paths and links, written for exactly this audience. Do its exercises alongside §15.</span></li>
+        <li><b><em>The Linux Programming Interface</em> — Michael Kerrisk (file I/O, files &amp; directories, file descriptors)</b>
+          <span class="why">The definitive account of the file-descriptor abstraction (§6.4) and how "everything is a file" is implemented — the deep version of this lesson.</span></li>
+        <li><b><em>How Linux Works</em> — Brian Ward (the filesystem and devices chapters)</b>
+          <span class="why">A practitioner's tour of the tree, <code>/dev</code>, <code>/proc</code> and mounting that pairs perfectly with §6.</span></li>
+      </ul>
+
+      <h4>Talks &amp; video</h4>
+      <ul>
+        <li><b>Any solid "Linux filesystem hierarchy explained" walkthrough that tours <code>/</code> directory by directory</b> <span class="rank">start here</span>
+          <span class="why">Seeing someone <code>cd</code> and <code>ls</code> through the real tree while narrating each directory cements §6.2 fast.</span></li>
+        <li><b>Julia Evans' zines &amp; posts on <code>/proc</code>, file descriptors and Linux debugging</b>
+          <span class="why">Short, vivid explanations of file descriptors and <code>/proc</code> (§6.4, §6.6) that make the abstractions click and preview Lesson 3.8.</span></li>
+      </ul>
+
+      <h4>Interactive labs &amp; practice</h4>
+      <ul>
+        <li><b>Your $5 VPS + <code>ls -l</code>, <code>cd</code>, <code>findmnt</code>/<code>mount</code>, <code>stat</code>, <code>ln</code>, <code>cat /proc/…</code></b> <span class="rank">start here</span>
+          <span class="why">The only lab you need: explore the real tree, read live kernel files, and make both kinds of link. The exercise is built entirely on these.</span></li>
+        <li><b><code>tree -L 1 /</code> and <code>ls -l /proc/self/fd</code></b>
+          <span class="why">One command to see the whole top level at a glance; another to watch a process's own open file descriptors (§6.4) appear as symlinks — "everything is a file," made visible.</span></li>
+      </ul>
+    </div>
+
+    <!-- ============================== 15 ============================== -->
+    <h2 id="s15">15 · Exercise</h2>
+    <p>
+      Module 3's project increment is to <strong>harden and operate your Linux server</strong>. This first
+      lesson's job is to make the machine legible: you will tour the tree, prove "everything is a file" with
+      your own eyes, and read the live kernel. All commands are safe and read-only unless noted; do them on
+      the real VPS, in a scratch directory (<code>~/fs-lab</code>) where you create files.
+    </p>
+
+    <div class="ex">
+      <div class="h"><span>E1</span>Tour the tree and confirm the single-root, mounted model</div>
+      <p>SSH into your VPS and survey the top level and the mounts:</p>
+<pre><code>ls -l /                  # the top-level FHS directories
+tree -L 1 / 2&gt;/dev/null || ls /   # one-level overview (tree if installed)
+findmnt || mount         # which device/filesystem is mounted where (§6.1)
+df -h                    # cross-check: filesystems and their mount points (L2.5)</code></pre>
+      <p>
+        Identify: the device mounted at <code>/</code>, at least one pseudo-filesystem (e.g.
+        <code>proc</code> on <code>/proc</code>), and — if you attached a data volume in Lesson 2.5 — where
+        it is mounted. Explain, using §6.1, why there are no drive letters.
+      </p>
+      <div class="out">Deliverable: the device mounted at <code>/</code>, one pseudo-filesystem you found, and one sentence on how mounting produces a single seamless tree. Adds to your Milestone&nbsp;3 inventory.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E2</span>Read the file types straight off <code>ls -l</code></div>
+      <p>Look at directories rich in different types and decode the first character (§6.3):</p>
+<pre><code>ls -l /dev | head        # devices: c (char) and b (block) — find null and sda/vda
+ls -l /dev/null /dev/zero
+ls -ld /etc /tmp         # directories (d)
+ls -l /usr/bin/python* 2&gt;/dev/null   # often a symlink (l) → a versioned binary</code></pre>
+      <p>
+        For four entries, name the type from the first character and what it is. Find <code>/dev/null</code>
+        (character device) and confirm a symlink somewhere with <code>ls -l</code> showing <code>-&gt;</code>.
+      </p>
+      <div class="out">Deliverable: four <code>ls -l</code> lines annotated with their type (<code>-</code>/<code>d</code>/<code>l</code>/<code>c</code>/<code>b</code>) and what each is.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E3</span>Prove file descriptors and redirection (streams are files)</div>
+      <p>Show that stdout, stderr and stdin are just repointable files (§6.4):</p>
+<pre><code>mkdir -p ~/fs-lab &amp;&amp; cd ~/fs-lab
+ls /etc /nope 1&gt; out.log 2&gt; err.log   # split normal output and errors into files
+cat out.log ; echo '---' ; cat err.log
+echo "hi" &gt; /dev/null                  # discard via the null device
+ls -l /proc/self/fd                    # THIS shell's open fds (0,1,2 + more) as symlinks</code></pre>
+      <p>
+        Explain why the successful listing landed in <code>out.log</code> and the error in
+        <code>err.log</code>, and what <code>/proc/self/fd</code> is showing you (its link back to §6.4/6.6).
+      </p>
+      <div class="out">Deliverable: the split <code>out.log</code>/<code>err.log</code> result and one sentence identifying fds 1 and 2 as the reason redirection works.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E4</span>Read the live kernel through <code>/proc</code> and <code>/sys</code></div>
+      <p>Confirm that these "files" are live windows, not disk files (§6.6):</p>
+<pre><code>cat /proc/uptime         # seconds up — run it twice, the number changes
+head -3 /proc/meminfo    # the MemAvailable etc. from Lesson 2.4
+cat /proc/self/status | grep -E 'Vm(RSS|Size)'   # this shell's memory
+cat /sys/block/*/queue/rotational 2&gt;/dev/null    # 1=HDD, 0=SSD (Lesson 2.5)
+ls -la /proc/meminfo     # note the size shows 0 — it isn't stored anywhere</code></pre>
+      <p>
+        Run <code>cat /proc/uptime</code> twice and note it changed. Explain, using §6.6, why a
+        <code>/proc</code> file has size 0 yet returns data, and connect <code>rotational</code> back to
+        Lesson 2.5's SSD-vs-HDD physics.
+      </p>
+      <div class="out">Deliverable: two different <code>/proc/uptime</code> readings, your machine's <code>rotational</code> value (SSD or HDD), and one sentence on why <code>/proc</code> files are generated live.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E5</span>Hard link vs symlink, hands-on</div>
+      <p>Build both kinds of link and watch them behave differently (§6.8):</p>
+<pre><code>cd ~/fs-lab
+echo "v1" &gt; app.log
+ln    app.log hardlink.log     # hard link: same inode
+ln -s app.log symlink.log      # symlink: stores the path "app.log"
+ls -li app.log hardlink.log symlink.log   # compare inode numbers &amp; link counts
+rm app.log                     # delete the ORIGINAL name
+cat hardlink.log               # still works (data survives via hard link)
+cat symlink.log                # dangles: "No such file or directory"</code></pre>
+      <p>
+        Explain, using §6.8, why <code>hardlink.log</code> still reads after deleting <code>app.log</code>
+        while <code>symlink.log</code> breaks — and what the inode numbers and link counts told you.
+      </p>
+      <div class="out">Deliverable: the <code>ls -li</code> output (same inode for the hard link, different for the symlink) and one sentence contrasting "another name for the inode" with "a stored path."</div>
+    </div>
+
+    <!-- ============================== 16 ============================== -->
+    <h2 id="s16">16 · Quiz</h2>
+    <div class="callout warn">
+      <span class="t">How to use this</span>
+      <p>
+        Answer in your own words <strong>before</strong> revealing the model answer. Two or three
+        sentences each. You're ready for Lesson 3.2 (users &amp; permissions) when you can answer Q1, Q3,
+        Q5 and Q7 cold and have completed E1–E5 on a real machine.
+      </p>
+    </div>
+
+    <div class="quiz">
+
+      <details class="q"><summary>Linux has three disks but no <code>C:</code>/<code>D:</code>/<code>E:</code>. How are they all reachable, and where?</summary>
+        <div class="ans"><p>Through <strong>mounting</strong> into a <em>single tree</em> rooted at <code>/</code>. One filesystem is mounted as the root; every other device — a data disk, a USB stick, even pseudo-filesystems — is grafted onto a directory (its <em>mount point</em>), e.g. a data disk at <code>/data</code>. After that, <code>cd /data</code> transparently enters that disk. There are no drive letters because the tree <em>absorbs</em> devices into one namespace rather than listing them as separate roots.</p></div>
+      </details>
+
+      <details class="q"><summary>State precisely what "everything is a file" means — and one thing it does not mean.</summary>
+        <div class="ans"><p>It means most system resources — regular files, directories, devices, pipes, sockets, and kernel/process state — are <em>addressable by a path</em> and <em>operated on through the same small interface</em> (open/read/write/close). It is a claim about a uniform <strong>interface</strong>. It does <em>not</em> mean everything is bytes stored on a disk: <code>/proc</code> and <code>/sys</code> are generated live by the kernel, <code>/dev/null</code> discards data, and a socket is a connection endpoint — none are disk files, yet all wear the file interface.</p></div>
+      </details>
+
+      <details class="q"><summary>Why does <code>myprog &gt; out.log 2&gt; err.log</code> work? What makes it possible?</summary>
+        <div class="ans"><p>Because <code>stdout</code> and <code>stderr</code> are just <strong>file descriptors</strong> 1 and 2 (§6.4) — handles that point at "some file," the screen by default. The shell <em>repoints</em> them before launching the program: fd 1 to <code>out.log</code>, fd 2 to <code>err.log</code>. The program does nothing special; it just writes fds 1 and 2 as always. This uniform file-descriptor abstraction is exactly what makes redirection and pipes possible across all programs.</p></div>
+      </details>
+
+      <details class="q"><summary>Where would you expect a well-behaved service's config, logs and binary to live, and why is that predictable?</summary>
+        <div class="ans"><p>Editable <strong>config</strong> as text under <code>/etc</code>; growing runtime data and <strong>logs</strong> under <code>/var</code> (e.g. <code>/var/log</code>); the installed <strong>binary</strong> under <code>/usr/bin</code>. It's predictable because the <strong>Filesystem Hierarchy Standard (FHS)</strong> defines each directory's purpose along axes like static-vs-variable and shareable-vs-host-specific, so the same map holds across Linux systems and skills/scripts transfer between machines.</p></div>
+      </details>
+
+      <details class="q"><summary>You run <code>cat /proc/meminfo</code> and <code>ls -l</code> shows its size as 0. Explain.</summary>
+        <div class="ans"><p><code>/proc</code> is a <strong>pseudo-filesystem</strong>: its entries aren't stored on any disk. When you read <code>/proc/meminfo</code>, the kernel <em>generates</em> the answer at that instant from its live internal state, so the "file" has no on-disk size (reported as 0) yet returns current data — and returns <em>different</em> data next time. It's a live window into the kernel, not a static document, which is why tools like <code>free</code> and <code>ps</code> are really just readers of <code>/proc</code>.</p></div>
+      </details>
+
+      <details class="q"><summary>Contrast a hard link and a symbolic link. What happens to each if the original name is deleted?</summary>
+        <div class="ans"><p>A <strong>hard link</strong> is another directory entry pointing at the <em>same inode</em>; it shares the actual data, works only within one filesystem, and if the original name is deleted the data <em>survives</em> (the inode's link count is still &gt; 0). A <strong>symlink</strong> is a small file storing a <em>path</em> it dereferences; it can cross filesystems and point to directories, but if the original name is deleted the link <em>dangles</em> (points at nothing). One shares the file; the other points at a name and can break.</p></div>
+      </details>
+
+      <details class="q"><summary>Sockets are cited both as an example of "everything is a file" and as its exception. Reconcile that.</summary>
+        <div class="ans"><p>A Unix-domain socket <em>appears in the tree</em> as a path (type <code>s</code>) you can list and permission, and once <strong>connected</strong> it is read and written as a <em>file descriptor</em> exactly like a file — so the abstraction holds for the <em>data</em> phase. But <em>establishing</em> the connection needs extra syscalls (<code>socket</code>/<code>bind</code>/<code>connect</code>/<code>accept</code>) that plain files don't, so you can't just <code>cat</code> it, and <em>network</em> (TCP/IP) sockets aren't in the tree at all. It bends for setup, holds for data.</p></div>
+      </details>
+
+      <details class="q"><summary>How would you list every file, socket and pipe a running process currently has open, using only the filesystem?</summary>
+        <div class="ans"><p>Read <code>/proc/&lt;pid&gt;/fd/</code> (or <code>/proc/self/fd</code> for your own shell). It contains one symlink per open <strong>file descriptor</strong>, each pointing at what that fd refers to — a regular file, a device, a socket, a pipe, etc. This is the filesystem making §6.4 visible: "everything is a file" is literally true for a process's open handles, and it's exactly what <code>lsof</code> reads under the hood.</p></div>
+      </details>
+
+      <details class="q"><summary>What is the difference between <code>/</code> and <code>/root</code>?</summary>
+        <div class="ans"><p><code>/</code> is the <strong>root of the entire filesystem tree</strong> — the single top from which every path descends. <code>/root</code> is just the <strong>home directory of the root (superuser) account</strong>, one ordinary directory located under <code>/</code>. They're easy to conflate but completely different: one is the top of everything, the other is one user's home.</p></div>
+      </details>
+
+      <details class="q"><summary>Give two concrete ways the file abstraction lets ordinary tools operate on things that aren't ordinary files.</summary>
+        <div class="ans"><p>Examples (any two): <code>cp bigfile /dev/null</code> uses the normal copy tool to measure read speed by discarding into a device; <code>cat /proc/cpuinfo</code> reads live kernel data with a text tool; <code>echo 3 &gt; /proc/sys/vm/drop_caches</code> retunes the kernel by "writing a file" (Lesson 2.5); <code>dd if=/dev/zero of=file</code> fills a file from a pseudo-device; redirecting a program's <code>stderr</code> into <code>grep</code> filters errors. All work because devices, kernel state and streams present the same open/read/write interface as files.</p></div>
+      </details>
+
+    </div>
+
+    <div class="callout good">
+      <span class="t">Next: Lesson 3.2</span>
+      <p>
+        You can now name, find and inspect anything on the machine as a path in one tree. But every one of
+        those <code>ls -l</code> lines had more on it than a type and a name — it had an <em>owner</em>, a
+        <em>group</em>, and a cluster of <em>permission bits</em> we've so far ignored. Lesson 3.2 is those
+        bits: users, groups, ownership, the read/write/execute model, <code>sudo</code> and least privilege —
+        the security layer that decides <em>who</em> may open each file in the tree you just mapped. That's
+        what turns a machine you can read into a machine you can safely operate and expose to the internet.
+      </p>
+    </div>
+
+    <hr>
+
+    <nav class="pager" aria-label="Lesson navigation">
+      <a href="../02-machines/lesson-05-storage-block-file-object.html"><em>Previous lesson</em>← 2.5 · Storage: block vs file vs object, filesystems, inodes, IOPS &amp; durability</a>
+      <span class="disabled next"><em>Next lesson</em>3.2 · Users, groups, permission bits, ownership, sudo &amp; least privilege <small>(not yet generated)</small></span>
+    </nav>
+
+    <footer class="foot">
+      <b>From Commit to Production</b> · Module 3 · Lesson 3.1 — <em>The Filesystem Hierarchy &amp; "Everything Is a File"</em><br>
+      <small>Self-contained offline document · no external assets · regenerated in full when revised.
+      Roadmap: <a href="../../index.html">course/index.html</a></small>
+    </footer>
+  </article>
+</div>
+
+<script>
+(function(){
+  var root = document.documentElement;
+
+  /* ---------- theme ---------- */
+  var KEY='ftp.theme', saved=null;
+  try { saved = localStorage.getItem(KEY); } catch(e){}
+  if (saved) root.setAttribute('data-theme', saved);
+  document.getElementById('theme').addEventListener('click', function(){
+    var cur = root.getAttribute('data-theme');
+    if (!cur) cur = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    var next = cur === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem(KEY, next); } catch(e){}
+  });
+
+  /* ---------- expand/collapse all quiz answers ---------- */
+  var btn = document.getElementById('expand');
+  btn.addEventListener('click', function(){
+    var all = document.querySelectorAll('details.q');
+    var anyClosed = Array.prototype.some.call(all, function(d){ return !d.open; });
+    Array.prototype.forEach.call(all, function(d){ d.open = anyClosed; });
+    btn.textContent = anyClosed ? '⇕ Collapse all' : '⇕ Expand all';
+  });
+
+  /* ---------- reading progress bar ---------- */
+  var barEl = document.getElementById('readbar');
+  function onScroll(){
+    var h = document.documentElement;
+    var max = h.scrollHeight - h.clientHeight;
+    barEl.style.width = (max > 0 ? (h.scrollTop / max * 100) : 0) + '%';
+  }
+  addEventListener('scroll', onScroll, {passive:true});
+  onScroll();
+
+  /* ---------- TOC scroll-spy ---------- */
+  var links = Array.prototype.slice.call(document.querySelectorAll('#tocList a'));
+  var targets = links.map(function(a){ return document.querySelector(a.getAttribute('href')); })
+                     .filter(Boolean);
+  if ('IntersectionObserver' in window && targets.length){
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if (!e.isIntersecting) return;
+        links.forEach(function(a){
+          a.classList.toggle('on', a.getAttribute('href') === '#' + e.target.id);
+        });
+      });
+    }, { rootMargin:'-80px 0px -70% 0px', threshold:0 });
+    targets.forEach(function(t){ io.observe(t); });
+  }
+})();
+</script>
+</body>
+</html>
