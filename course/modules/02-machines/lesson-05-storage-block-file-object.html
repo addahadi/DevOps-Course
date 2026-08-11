@@ -1,0 +1,1371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 2.5 · Storage: Block vs File vs Object, Filesystems, Inodes, IOPS &amp; Durability — From Commit to Production</title>
+<style>
+/* ============================================================
+   DESIGN TOKENS  (same system as the roadmap)
+   ============================================================ */
+:root{
+  color-scheme: dark light;
+  --font-sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", Consolas, "SFMono-Regular", Menlo, monospace;
+
+  --bg:#0a0e17; --bg-alt:#0e1421; --surface:#131b2b; --surface-2:#19233a;
+  --border:#243049; --border-strong:#37456a;
+  --text:#e8eefb; --text-dim:#a7b4cd; --text-faint:#78869f;
+
+  --accent:#6ea8ff;  --accent-soft:rgba(110,168,255,.14);
+  --green:#4fd39c;   --green-soft:rgba(79,211,156,.13);
+  --amber:#f2b754;   --amber-soft:rgba(242,183,84,.13);
+  --red:#ff7f76;     --red-soft:rgba(255,127,118,.13);
+  --purple:#b28cff;  --purple-soft:rgba(178,140,255,.13);
+  --teal:#4fd0d9;    --teal-soft:rgba(79,208,217,.13);
+
+  --radius:14px; --radius-sm:8px;
+  --shadow:0 1px 2px rgba(0,0,0,.45), 0 14px 34px -18px rgba(0,0,0,.75);
+  --maxw:1220px; --readw:840px;
+}
+:root[data-theme="light"]{
+  color-scheme: light;
+  --bg:#f7f9fc; --bg-alt:#eef2f8; --surface:#ffffff; --surface-2:#f2f5fa;
+  --border:#dde3ee; --border-strong:#c2ccdd;
+  --text:#131a26; --text-dim:#4b586e; --text-faint:#75839a;
+  --accent:#1f5fd0; --accent-soft:rgba(31,95,208,.09);
+  --green:#0f8a5f;  --green-soft:rgba(15,138,95,.10);
+  --amber:#9a6a06;  --amber-soft:rgba(154,106,6,.10);
+  --red:#c3352b;    --red-soft:rgba(195,53,43,.09);
+  --purple:#6d3ecb; --purple-soft:rgba(109,62,203,.09);
+  --teal:#07767e;   --teal-soft:rgba(7,118,126,.10);
+  --shadow:0 1px 2px rgba(18,28,45,.06), 0 12px 28px -18px rgba(18,28,45,.25);
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    color-scheme: light;
+    --bg:#f7f9fc; --bg-alt:#eef2f8; --surface:#ffffff; --surface-2:#f2f5fa;
+    --border:#dde3ee; --border-strong:#c2ccdd;
+    --text:#131a26; --text-dim:#4b586e; --text-faint:#75839a;
+    --accent:#1f5fd0; --accent-soft:rgba(31,95,208,.09);
+    --green:#0f8a5f;  --green-soft:rgba(15,138,95,.10);
+    --amber:#9a6a06;  --amber-soft:rgba(154,106,6,.10);
+    --red:#c3352b;    --red-soft:rgba(195,53,43,.09);
+    --purple:#6d3ecb; --purple-soft:rgba(109,62,203,.09);
+    --teal:#07767e;   --teal-soft:rgba(7,118,126,.10);
+    --shadow:0 1px 2px rgba(18,28,45,.06), 0 12px 28px -18px rgba(18,28,45,.25);
+  }
+}
+
+/* ============================================================ BASE */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth; scroll-padding-top:80px}
+body{margin:0; background:var(--bg); color:var(--text);
+  font-family:var(--font-sans); font-size:16.5px; line-height:1.72; -webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{line-height:1.28; margin:0 0 .5em; letter-spacing:-.015em; font-weight:680}
+h1{font-size:clamp(1.9rem,4vw,2.7rem)}
+h2{font-size:clamp(1.35rem,2.4vw,1.72rem); margin-top:2.6em; padding-top:.2em}
+h3{font-size:1.1rem; margin-top:2em; color:var(--text)}
+h4{font-size:.98rem; margin-top:1.5em; color:var(--text-dim)}
+p{margin:0 0 1.05em}
+a{color:var(--accent); text-decoration:none}
+a:hover{text-decoration:underline}
+strong{font-weight:660}
+em.term{font-style:normal; font-weight:680; color:var(--text)}
+code{font-family:var(--font-mono); font-size:.87em; background:var(--surface-2);
+  border:1px solid var(--border); border-radius:5px; padding:.1em .38em}
+ul,ol{padding-left:1.3em; margin:0 0 1.05em}
+li{margin:.35em 0}
+blockquote{margin:1.5em 0; padding:2px 0 2px 18px; border-left:3px solid var(--border-strong);
+  color:var(--text-dim); font-style:italic}
+blockquote footer{font-style:normal; font-size:.85rem; color:var(--text-faint); margin-top:.4em}
+hr{border:0; border-top:1px solid var(--border); margin:2.6rem 0}
+small{color:var(--text-faint)}
+sup a{font-size:.7em; padding:0 1px}
+
+/* ============================================================ BAR */
+header.bar{position:sticky; top:0; z-index:60;
+  background:color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter:blur(10px); border-bottom:1px solid var(--border)}
+.bar-in{padding:10px 22px; display:flex; align-items:center; gap:14px}
+.brand{font-weight:700; font-size:.92rem; white-space:nowrap}
+.brand a{color:var(--text)}
+.brand span{color:var(--accent)}
+.crumb{font-size:.82rem; color:var(--text-faint); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.bar .right{margin-left:auto; display:flex; gap:8px; align-items:center}
+button.ghost{font:inherit; font-size:.8rem; cursor:pointer; color:var(--text-dim);
+  background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:5px 11px}
+button.ghost:hover{border-color:var(--border-strong); color:var(--text)}
+#readbar{position:fixed; top:0; left:0; height:2px; background:var(--accent); z-index:70; width:0}
+
+/* ============================================================ LAYOUT */
+.shell{padding:0 40px;
+  display:grid; grid-template-columns:1fr; gap:36px}
+
+aside.toc{display:none}
+aside.toc .inner{position:sticky; top:74px; max-height:calc(100vh - 96px); overflow:auto;
+  padding:22px 0 40px; font-size:.86rem}
+aside.toc .lbl{font-size:.7rem; letter-spacing:.12em; text-transform:uppercase;
+  color:var(--text-faint); font-weight:700; margin:0 0 10px}
+aside.toc ol{list-style:none; padding:0; margin:0; counter-reset:t}
+aside.toc li{margin:0; counter-increment:t}
+aside.toc a{display:flex; gap:8px; padding:5px 10px 5px 8px; border-radius:6px;
+  color:var(--text-dim); border-left:2px solid transparent; line-height:1.4}
+aside.toc a:before{content:counter(t); font-family:var(--font-mono); font-size:.72rem;
+  color:var(--text-faint); flex:0 0 1.4em; text-align:right}
+aside.toc a:hover{background:var(--surface-2); color:var(--text); text-decoration:none}
+aside.toc a.on{color:var(--accent); border-left-color:var(--accent); background:var(--accent-soft)}
+article{min-width:0; padding-bottom:20px}
+
+/* ============================================================ HERO */
+.lead{padding:46px 0 26px; border-bottom:1px solid var(--border); margin-bottom:8px}
+.kicker{font-family:var(--font-mono); font-size:.74rem; letter-spacing:.16em;
+  text-transform:uppercase; color:var(--accent); margin-bottom:12px}
+.subtitle{font-size:1.1rem; color:var(--text-dim); max-width:var(--readw); margin-top:.6em}
+.meta{display:flex; flex-wrap:wrap; gap:8px; margin-top:20px}
+
+/* ============================================================ COMPONENTS */
+.pill{display:inline-block; font-family:var(--font-mono); font-size:.7rem; padding:3px 9px;
+  border-radius:999px; border:1px solid var(--border-strong); color:var(--text-dim); white-space:nowrap}
+.pill.a{color:var(--accent); border-color:var(--accent); background:var(--accent-soft)}
+.pill.g{color:var(--green); border-color:var(--green); background:var(--green-soft)}
+.pill.r{color:var(--red); border-color:var(--red); background:var(--red-soft)}
+.pill.p{color:var(--purple); border-color:var(--purple); background:var(--purple-soft)}
+
+.callout{border-left:3px solid var(--accent); background:var(--accent-soft);
+  border-radius:0 var(--radius-sm) var(--radius-sm) 0; padding:15px 19px; margin:1.7em 0}
+.callout.warn{border-color:var(--amber); background:var(--amber-soft)}
+.callout.bad{border-color:var(--red); background:var(--red-soft)}
+.callout.good{border-color:var(--green); background:var(--green-soft)}
+.callout.def{border-color:var(--purple); background:var(--purple-soft)}
+.callout .t{font-weight:700; font-size:.76rem; letter-spacing:.1em; text-transform:uppercase;
+  margin-bottom:6px; display:block; color:var(--text)}
+.callout > :last-child{margin-bottom:0}
+
+dl.terms{margin:1.4em 0; padding:0}
+dl.terms dt{font-weight:680; color:var(--text); margin-top:1em; font-size:.98rem}
+dl.terms dt:first-child{margin-top:0}
+dl.terms dd{margin:.25em 0 0; color:var(--text-dim); padding-left:0}
+
+pre{background:var(--bg-alt); border:1px solid var(--border); border-radius:var(--radius-sm);
+  padding:16px 18px; overflow-x:auto; font-family:var(--font-mono); font-size:.8rem;
+  line-height:1.5; margin:1.6em 0}
+pre code{background:none; border:0; padding:0; font-size:inherit}
+figure{margin:1.8em 0}
+figure figcaption{font-size:.82rem; color:var(--text-faint); margin-top:-.6em; padding-left:2px}
+
+.tablewrap{overflow-x:auto; margin:1.6em 0; border:1px solid var(--border); border-radius:var(--radius)}
+table{border-collapse:collapse; width:100%; font-size:.9rem; min-width:560px}
+th,td{padding:10px 14px; text-align:left; border-bottom:1px solid var(--border); vertical-align:top}
+th{background:var(--surface-2); font-size:.73rem; text-transform:uppercase; letter-spacing:.08em;
+  color:var(--text-dim); font-weight:700}
+tr:last-child td{border-bottom:0}
+td.y{color:var(--green); font-weight:600} td.n{color:var(--red); font-weight:600}
+
+.card{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+  padding:20px 22px; box-shadow:var(--shadow); margin:1.6em 0}
+.card > :first-child{margin-top:0}
+.grid2{display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; margin:1.6em 0}
+.grid2 .card{margin:0}
+
+/* misconceptions */
+.myth{border:1px solid var(--border); border-radius:var(--radius); margin:14px 0; overflow:hidden}
+.myth .m{background:var(--red-soft); border-bottom:1px solid var(--border); padding:11px 16px;
+  font-weight:660; display:flex; gap:10px}
+.myth .m:before{content:"✕"; color:var(--red); font-weight:700}
+.myth .r{padding:13px 16px}
+.myth .r:before{content:"Reality "; font-family:var(--font-mono); font-size:.68rem;
+  letter-spacing:.12em; text-transform:uppercase; color:var(--green); display:block; margin-bottom:4px}
+.myth .r > :last-child{margin-bottom:0}
+
+/* resources */
+.res{margin:1.4em 0}
+.res h4{margin:1.4em 0 .4em; color:var(--accent); font-size:.78rem;
+  letter-spacing:.1em; text-transform:uppercase}
+.res ul{list-style:none; padding:0; margin:0}
+.res li{border-bottom:1px dashed var(--border); padding:8px 0; margin:0}
+.res li:last-child{border-bottom:0}
+.res .why{display:block; font-size:.85rem; color:var(--text-dim)}
+.res .rank{font-family:var(--font-mono); font-size:.66rem; padding:1px 6px; border-radius:999px;
+  border:1px solid var(--green); color:var(--green); background:var(--green-soft); margin-left:6px}
+
+/* exercises */
+.ex{border:1px solid var(--border); border-left:3px solid var(--teal);
+  border-radius:0 var(--radius) var(--radius) 0; padding:16px 20px; margin:16px 0; background:var(--surface)}
+.ex .h{font-weight:680; margin-bottom:6px}
+.ex .h span{font-family:var(--font-mono); font-size:.72rem; color:var(--teal); margin-right:8px}
+.ex .out{font-size:.86rem; color:var(--text-faint); margin-top:8px; border-top:1px dashed var(--border); padding-top:8px}
+.ex > :last-child{margin-bottom:0}
+
+/* quiz */
+.quiz{counter-reset:q}
+.q{border:1px solid var(--border); border-radius:var(--radius); margin:12px 0;
+  background:var(--surface); overflow:hidden}
+.q > summary{cursor:pointer; list-style:none; padding:14px 18px; display:flex; gap:12px;
+  font-weight:600; align-items:flex-start}
+.q > summary::-webkit-details-marker{display:none}
+.q > summary:before{counter-increment:q; content:"Q" counter(q); font-family:var(--font-mono);
+  font-size:.72rem; color:var(--accent); background:var(--accent-soft);
+  border:1px solid var(--accent); border-radius:6px; padding:2px 7px; flex:0 0 auto; margin-top:2px}
+.q > summary::after{content:"show answer"; margin-left:auto; font-size:.7rem; font-weight:600;
+  letter-spacing:.08em; text-transform:uppercase; color:var(--text-faint); flex:0 0 auto; padding-top:4px}
+.q[open] > summary::after{content:"hide"}
+.q .ans{padding:2px 18px 16px; border-top:1px solid var(--border); margin-top:0;
+  background:var(--bg-alt); color:var(--text-dim)}
+.q .ans > :first-child{margin-top:1em}
+.q .ans > :last-child{margin-bottom:0}
+.q .ans strong{color:var(--text)}
+
+/* summary list */
+ul.takeaways{list-style:none; padding:0}
+ul.takeaways li{padding:9px 0 9px 30px; position:relative; border-bottom:1px dashed var(--border)}
+ul.takeaways li:last-child{border-bottom:0}
+ul.takeaways li:before{content:"▸"; position:absolute; left:6px; top:9px; color:var(--accent)}
+
+/* pager / footer */
+.pager{display:flex; gap:12px; margin:44px 0 30px; flex-wrap:wrap; max-width:none}
+.pager a, .pager .disabled{flex:1 1 250px; border:1px solid var(--border); border-radius:var(--radius);
+  padding:14px 18px; background:var(--surface); text-decoration:none; color:var(--text)}
+.pager a:hover{border-color:var(--accent); text-decoration:none}
+.pager .disabled{opacity:.45}
+.pager em{display:block; font-style:normal; font-size:.7rem; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--text-faint); margin-bottom:3px}
+.pager .next{text-align:right}
+footer.foot{border-top:1px solid var(--border); margin-top:20px; padding:24px 0 56px;
+  color:var(--text-faint); font-size:.85rem}
+
+@media print{
+  header.bar,aside.toc,#readbar,button.ghost,.pager{display:none}
+  body{background:#fff; color:#000; font-size:10.5pt}
+  .shell{display:block; max-width:none; padding:0}
+  .q{break-inside:avoid} .q .ans{display:block !important}
+  article > *{max-width:none}
+}
+</style>
+</head>
+<body>
+
+<div id="readbar"></div>
+<header class="bar">
+  <div class="bar-in">
+    <div class="brand"><a href="../../index.html">Commit&nbsp;<span>→</span>&nbsp;Production</a></div>
+    <div class="crumb">/ Module&nbsp;2 · Machines / Lesson&nbsp;2.5</div>
+    <div class="right">
+      <button class="ghost" id="expand">⇕ Expand all</button>
+      <button class="ghost" id="theme">◐ Theme</button>
+    </div>
+  </div>
+</header>
+
+<div class="shell">
+
+  <aside class="toc">
+    <div class="inner">
+      <p class="lbl">Lesson contents</p>
+      <ol id="tocList">
+        <li><a href="#s1">Problem Statement</a></li>
+        <li><a href="#s2">Historical Context</a></li>
+        <li><a href="#s3">Previous Solution</a></li>
+        <li><a href="#s4">Why It Failed</a></li>
+        <li><a href="#s5">New Solution</a></li>
+        <li><a href="#s6">Internal Mechanics</a></li>
+        <li><a href="#s7">Real Industry Examples</a></li>
+        <li><a href="#s8">Diagrams</a></li>
+        <li><a href="#s9">Advantages</a></li>
+        <li><a href="#s10">Limitations</a></li>
+        <li><a href="#s11">Common Misconceptions</a></li>
+        <li><a href="#s12">Practical Use Cases</a></li>
+        <li><a href="#s13">Summary</a></li>
+        <li><a href="#s14">Recommended Resources</a></li>
+        <li><a href="#s15">Exercise</a></li>
+        <li><a href="#s16">Quiz</a></li>
+      </ol>
+    </div>
+  </aside>
+
+  <article>
+    <div class="lead">
+      <div class="kicker">Module 2 · Lesson 2.5</div>
+      <h1>Storage: block vs file vs object, filesystems, inodes, IOPS and durability</h1>
+      <p class="subtitle">
+        Lesson 2.4 ended with two loose threads that both fell off the edge of RAM and landed on the
+        disk: <em>swap</em> lives on a disk, and the <em>page cache</em> is RAM standing in <em>for</em> a
+        disk. This lesson is that disk — the fourth and last of Lesson 2.1's hardware parts, and the one
+        that keeps your data alive when the power dies. We start at raw spinning platters and flash cells,
+        build up through the block device, the filesystem, and the inode, and finish at the three storage
+        models — <em>block</em>, <em>file</em> and <em>object</em> — you will actually rent from a cloud.
+        Along the way we answer the questions that decide whether DevBoard loses a customer's data: what an
+        IOPS number really buys you, why your database begs the kernel for <code>fsync</code>, and why
+        "the write returned successfully" is not the same sentence as "the data is safe."
+      </p>
+      <div class="meta">
+        <span class="pill a">~75 min read</span>
+        <span class="pill">Prerequisites: Lessons 2.1–2.4</span>
+        <span class="pill">Conceptual · hands-on at the end</span>
+        <span class="pill g">Module 2 · Milestone 2</span>
+      </div>
+    </div>
+
+    <div class="callout def">
+      <span class="t">Learning objectives</span>
+      <p>By the end of this lesson you will be able to:</p>
+      <ol style="margin-bottom:0">
+        <li>Distinguish a <em>block device</em> from a <em>filesystem</em> from a <em>file</em>, and explain what each layer adds on top of the one below it.</li>
+        <li>Explain what an <em>inode</em> is, why a filename is not a file, and how hard links, directories and "no space left" despite free bytes all fall out of that one fact.</li>
+        <li>Describe the write path from your <code>write()</code> call to durable media — the page cache, dirty pages, write-back, <code>fsync</code>, the drive's own cache, and the flush — and pinpoint exactly where data can be lost.</li>
+        <li>Define <em>durability</em> precisely, distinguish it from <em>availability</em>, and reason about what RAID, replication and backups each do and do <em>not</em> protect against.</li>
+        <li>Read a storage spec sheet: <em>IOPS</em>, <em>throughput (MB/s)</em>, <em>latency</em>, block size and queue depth — and predict which one bottlenecks your database.</li>
+        <li>Choose between <em>block</em>, <em>file</em> and <em>object</em> storage for a given job, and explain what a cloud provider is really selling under each name (EBS, EFS/NFS, S3).</li>
+      </ol>
+    </div>
+
+    <div class="callout">
+      <span class="t">Where this sits on the map</span>
+      <p>
+        This closes Module 2's tour of the four hardware resources named in Lesson 2.1: <strong>CPU</strong>
+        (2.3, shared in time), <strong>RAM</strong> (2.4, shared in space), and now
+        <strong>storage</strong> — shared, addressed and made to <em>survive</em>. It is the direct sequel
+        to 2.4: the <em>page cache</em> you met there is the same buffer that makes disk writes feel fast
+        and disk writes risky here, and every <em>major fault</em> from swap was a trip to the device this
+        lesson describes. It hands forward to Module 3 (the Linux filesystem hierarchy and
+        "everything is a file" are the inode idea made into a user interface), to Module 6 (cloud block,
+        file and object storage, and their price/IOPS trade-offs), and to Module 8, where DevBoard's
+        PostgreSQL is entrusted with real data on a real volume and <code>fsync</code> stops being trivia.
+      </p>
+    </div>
+
+    <!-- ============================== 1 ============================== -->
+    <h2 id="s1">1 · Problem Statement</h2>
+
+    <p>
+      Return one final time to the $5 box from Lesson 2.1. It has a CPU (shared in time, Lesson 2.3) and
+      RAM (shared in space, Lesson 2.4) — but RAM is <em>volatile</em>: cut the power and every byte in it
+      vanishes. DevBoard's entire reason to exist is the opposite of that. A user creates a task, closes
+      their laptop, flies across an ocean, and expects the task to still be there next week — through
+      reboots, deploys, crashes and a power outage in the data centre. That expectation is called
+      <em class="term">persistence</em>, and it is the whole job of storage: hold data on a medium that
+      keeps it without power, and keep holding it correctly for years.
+    </p>
+    <p>
+      Persistence sounds simple until you try to build it honestly. A disk is, at bottom, an enormous but
+      utterly dumb array of numbered fixed-size slots. It knows nothing of files, folders, users or your
+      customer's task; it can only "store these bytes in slot 91,442" and "give me back the bytes in slot
+      91,442." Between that brute array and DevBoard's <code>tasks.json</code> or a Postgres row sits a
+      tower of questions, none of which the hardware answers for you:
+    </p>
+    <ul>
+      <li>"A disk is millions of anonymous numbered slots. How do I turn that into <strong>named files</strong> in <strong>folders</strong>, growable and deletable, that I can find again by path?"</li>
+      <li>"My file is 10&nbsp;MB but the free space on the disk is scattered in fragments. How does one file get <strong>assembled from slots all over the disk</strong>, and how does the system remember which slots belong to it?"</li>
+      <li>"The disk is thousands of times slower than RAM (Lesson 2.1's latency ladder). If every write waited for the platter, DevBoard would crawl. How do we make it <strong>fast</strong> — and what do we <strong>risk</strong> by doing so?"</li>
+      <li>"When my code calls <code>write()</code> and it returns success, is the data actually <strong>safe on the disk</strong> — or just sitting in a buffer that a power cut would erase? Who guarantees it, and how do I <em>force</em> the guarantee when it matters?"</li>
+      <li>"Disks fail. Not 'might' — <em>will</em>. How do I keep data alive when the physical device it lives on <strong>dies</strong>, and why isn't a copy on the same machine enough?"</li>
+      <li>"The cloud sells me 'a volume', 'a shared filesystem' and 'a bucket' at wildly different prices. What am I actually <strong>renting</strong> under each, and which one fits a database vs an upload vs a log archive?"</li>
+    </ul>
+
+    <div class="callout bad">
+      <span class="t">The core problem</span>
+      <p>
+        A raw storage device is a flat array of fixed-size, anonymous, numbered blocks with two operations —
+        read a block, write a block — and one dangerous property: it is slow, and it can lie about being
+        done. From that we must build, in order, an <strong>organised</strong> system (named files and
+        directories laid out over scattered blocks), a <strong>fast</strong> one (buffered in RAM so the
+        slow device isn't on the critical path of every operation), a <strong>correct</strong> one
+        (survives crashes without corrupting itself, and lets an application <em>force</em> data to durable
+        media when correctness demands it), and a <strong>durable</strong> one (survives the physical death
+        of the device itself). Each layer we add — block device, filesystem, page cache, journal,
+        replication — buys one of those properties and imposes a cost. This lesson is that stack, bottom to
+        top, and the vocabulary to reason about every storage decision DevBoard will ever face.
+      </p>
+    </div>
+
+    <p>
+      The promise of this lesson: by the end, "I saved the file" will stop being one act and resolve into a
+      precise pipeline — application, page cache, dirty page, write-back, filesystem, block layer, device
+      cache, media — and you will be able to point at the exact link in that chain where a power cut costs
+      you data, the exact spec number that caps your database's throughput, and the exact reason a
+      single-machine copy is not a backup.
+    </p>
+
+    <!-- ============================== 2 ============================== -->
+    <h2 id="s2">2 · Historical Context</h2>
+
+    <p>
+      Storage abstractions, like memory ones, were assembled by adding one layer at a time, each hiding a
+      pain the previous layer exposed. The through-line is a steady retreat from physical geometry: early
+      programmers addressed storage by its <em>shape</em>; today you address a URL and a provider hides an
+      ocean of disks behind it.
+    </p>
+
+    <h3>1950s–1960s · Addressing storage by its physical geometry</h3>
+    <p>
+      The first disks were addressed the way they were built: by <em class="term">cylinder, head and
+      sector</em> (CHS) — literally "which track, which platter surface, which slice." A program had to know
+      the drive's physical dimensions to find its data. There was no filesystem; a program owned raw
+      regions of the disk and remembered their locations itself. Storage <em>was</em> geometry, and every
+      program re-invented its own bookkeeping.
+    </p>
+
+    <h3>1960s–1970s · The filesystem: names instead of numbers</h3>
+    <p>
+      Operating systems introduced the <em class="term">filesystem</em>: a layer that let programs refer to
+      <em>named files</em> and gave the OS the job of tracking which physical blocks held each one. Unix
+      (1969 onward) crystallised the model that still rules today — the <em class="term">inode</em>
+      (a small record describing one file: its size, owner, permissions and the list of blocks holding its
+      data), directories as just files that map names to inode numbers, and the radical simplification
+      "everything is a file," so that devices, pipes and terminals all wore the same read/write interface.
+      This is the layer you meet in Module 3, and its inode is the heart of §6.
+    </p>
+
+    <h3>1970s–1980s · The block device abstraction</h3>
+    <p>
+      The kernel grew a clean internal boundary: the <em class="term">block device</em>. Above it, the
+      filesystem thinks in fixed-size numbered blocks and never touches hardware; below it, a driver
+      translates "read block N" into whatever the specific disk requires. This decoupling is why the same
+      ext4 filesystem runs unchanged on a 1980s spinning disk, a modern SSD, a USB stick, a RAID array, or a
+      cloud volume that is really software pretending to be a disk. The filesystem stopped caring what the
+      storage physically was — the same decoupling move virtual memory made for RAM in Lesson 2.4.
+    </p>
+
+    <h3>1980s–1990s · RAID and the durability problem</h3>
+    <p>
+      As businesses put critical data on disks that failed regularly, the 1987 Berkeley RAID
+      (<em>Redundant Array of Inexpensive Disks</em>) paper formalised combining many cheap disks into one
+      logical device that <em>survives</em> a disk death — by mirroring or by parity. This is the moment
+      the field separated two ideas that beginners still conflate: making storage <em>fast/big</em> and
+      making it <em>survive failure</em>. RAID is §6's durability story in hardware.
+    </p>
+
+    <h3>2000s · Flash and the end of "disk = spinning platter"</h3>
+    <p>
+      Solid-state drives (SSDs) replaced spinning platters with flash memory, collapsing random-access
+      latency by orders of magnitude and destroying the old intuition that random I/O is catastrophically
+      slower than sequential. But flash brought its own quirks — it wears out, it can't overwrite in place,
+      it needs garbage collection — which is why the <em>IOPS</em> and <em>write-endurance</em> numbers in
+      §6 exist and why cloud disks are priced the way they are.
+    </p>
+
+    <h3>2006 · Object storage and the cloud</h3>
+    <p>
+      Amazon S3 (2006) introduced <em class="term">object storage</em> at planetary scale: not files on a
+      filesystem you mount, but named <em>objects</em> in flat <em>buckets</em>, reached over HTTP, with
+      durability quoted in eleven nines and effectively unlimited capacity. It abandoned the filesystem
+      interface entirely to win scale and durability. Today your storage decision is usually a choice among
+      three cloud products — a block volume, a shared file service, and an object store — each descended
+      from one of the layers above, and §5–6 give you the model to choose correctly.
+    </p>
+
+    <!-- ============================== 3 ============================== -->
+    <h2 id="s3">3 · The Previous Solution (in detail)</h2>
+
+    <p>
+      To feel what the filesystem-and-page-cache stack buys you, look hard at the honest alternative:
+      an application talking <em>directly</em> to a raw block device, managing its own on-disk layout, with
+      no filesystem and no caching underneath. This is not a straw man — high-end databases genuinely run
+      on "raw devices" for exactly this control, and understanding it shows you precisely which jobs the
+      filesystem is doing on your behalf.
+    </p>
+
+    <p>The model, stated plainly:</p>
+<pre><code>RAW-BLOCK-DEVICE MODEL  (application owns the disk, no filesystem)
+
+  A block device = a flat array of fixed-size blocks (say 512 B or 4 KB):
+
+    block:  0      1      2      3      4      5     ...   N
+          ┌──────┬──────┬──────┬──────┬──────┬──────┬─────┐
+          │      │      │      │      │      │      │ ... │
+          └──────┴──────┴──────┴──────┴──────┴──────┴─────┘
+    ops:  read_block(n) -> bytes      write_block(n, bytes)
+
+  · No names. No folders. No "grow this file." Just numbered slots.
+  · The APPLICATION must remember: my data lives in blocks 40..87,
+    my index in 88..91, and free space is 92..N.
+  · Every write goes straight to the slow device — no buffering.</code></pre>
+
+    <p>The assumptions this model bakes in:</p>
+    <dl class="terms">
+      <dt>The application is the bookkeeper</dt>
+      <dd>There is no OS-provided map from a name to a set of blocks. The program itself must track which blocks hold which data, which are free, and how to grow a region — reinventing a filesystem, badly, inside every application.</dd>
+      <dt>No sharing between programs</dt>
+      <dd>Two programs on the same disk have no common notion of "files," so they cannot coordinate. One program's blocks are invisible to another except by out-of-band agreement. The disk is owned, not shared.</dd>
+      <dt>Every access hits the device</dt>
+      <dd>With no cache in the middle, every read and every write pays the full device latency (Lesson 2.1's ladder), even when the same block is touched a thousand times a second.</dd>
+      <dt>Durability is all-or-nothing and manual</dt>
+      <dd>The application alone decides ordering and gets no crash-consistency help: a power cut mid-update can leave its private on-disk structures in a state only it knows how to (or fails to) repair.</dd>
+    </dl>
+
+    <p>
+      And it genuinely works — a database that wants total control over layout and caching (it has its own
+      buffer pool and its own crash-recovery log) can run faster on a raw device precisely <em>because</em>
+      the filesystem isn't second-guessing it. Its virtue is control. But that virtue is only affordable to
+      a team that will build the filesystem's services themselves. For everyone else — every ordinary
+      program that just wants to open <code>tasks.json</code> and read it — this model is a catastrophe: it
+      forces every application to become a storage engine. The next section is exactly why that fails.
+    </p>
+
+    <!-- ============================== 4 ============================== -->
+    <h2 id="s4">4 · Why It Failed</h2>
+
+    <p>
+      Push the raw-block model onto ordinary software sharing one machine and each of its assumptions turns
+      into a concrete failure. These are the pains the filesystem, the page cache and the journal were
+      invented to erase.
+    </p>
+
+    <h3>4.1 Every program must reinvent a filesystem</h3>
+    <p>
+      Without a shared naming-and-layout layer, each program has to track its own blocks, free lists and
+      growth by hand. This is enormous, subtle, security-critical code — allocation, fragmentation,
+      corruption recovery — that has nothing to do with the program's actual job. Multiply it across every
+      application on the machine and you have thousands of buggy, incompatible mini-filesystems. The waste
+      and the bug surface are both intolerable.
+    </p>
+
+    <h3>4.2 Programs can't share, and humans can't navigate</h3>
+    <p>
+      With only numbered blocks, there is no way for two programs to agree on "the file at
+      <code>/etc/nginx/nginx.conf</code>," and no way for a human to list, find, move or reason about what
+      is on the disk. There are no directories, no paths, no permissions. Collaboration between programs and
+      administration by people both become impossible. A shared machine needs a shared namespace, and raw
+      blocks provide none.
+    </p>
+
+    <h3>4.3 Raw device speed is unusable for real workloads</h3>
+    <p>
+      A disk is thousands of times slower than RAM. A program that reads the same configuration block, or
+      appends to the same log, or re-reads a hot index, would pay full device latency every single time.
+      Interactive software would be unbearable. The obvious fix — keep recently-used blocks in RAM — is
+      itself a whole caching subsystem no application should have to build, and if every application built
+      its own, they would fight over RAM and cache the same blocks many times.
+    </p>
+
+    <h3>4.4 Crashes corrupt structure, silently</h3>
+    <p>
+      Updating any on-disk structure usually means writing several blocks. A power cut between them leaves
+      the structure half-updated — a directory pointing at a block that was never written, a free list that
+      thinks a used block is free. With no crash-consistency mechanism, the disk comes back <em>corrupt</em>,
+      and the only recovery is a full scan-and-guess (the historical <code>fsck</code>) that can take hours
+      and still lose data. Correctness under crash is not something an application should have to solve
+      alone.
+    </p>
+
+    <div class="callout warn">
+      <span class="t">The pattern behind all four failures</span>
+      <p>
+        Every failure traces to one root cause: <strong>the raw device offers no shared abstraction between
+        the dumb block array and the program's need for named, safe, fast, shareable storage.</strong> The
+        fix is to insert exactly such a layer into the kernel — one, built once, correct once, used by
+        everyone — that maps <em>names</em> to <em>blocks</em> (the filesystem, so no program reinvents
+        layout and humans get paths), buffers blocks in <em>RAM</em> (the page cache, so the slow device
+        leaves the critical path), and makes updates <em>crash-consistent</em> (the journal, so a power cut
+        can't corrupt structure). That layered stack — block device → filesystem → page cache → application
+        — is the whole of §5.
+      </p>
+    </div>
+
+    <!-- ============================== 5 ============================== -->
+    <h2 id="s5">5 · The New Solution</h2>
+
+    <p>
+      The solution is a layered stack, each layer hiding the one below and adding exactly one capability.
+      Definitions first — these are the working vocabulary for the rest of the lesson, for Module 3's Linux
+      filesystem, and for Module 6's cloud storage.
+    </p>
+
+    <h3>5.1 The core vocabulary</h3>
+    <dl class="terms">
+      <dt>Block / sector</dt>
+      <dd>The smallest unit the storage device reads or writes at once — historically a 512-byte <em>sector</em>, now typically 4&nbsp;KB. You cannot read or write half a block; it is atomic at the hardware level. Everything above is built out of blocks.</dd>
+      <dt>Block device</dt>
+      <dd>The kernel's abstraction of "a thing you can read and write in fixed-size blocks, addressed by block number." A hard disk, an SSD, a partition, a USB stick and a cloud volume all present as block devices (<code>/dev/sda</code>, <code>/dev/nvme0n1</code> on Linux). The layer that lets one filesystem run on any medium.</dd>
+      <dt>Filesystem</dt>
+      <dd>The software layer (ext4, XFS, Btrfs, ZFS, NTFS, APFS…) that turns a block device's flat block array into named files and directories — deciding which blocks hold which file, tracking free space, and enforcing permissions. It is <em>formatted onto</em> a block device (<code>mkfs</code>) and <em>mounted</em> at a path to become usable.</dd>
+      <dt>Inode</dt>
+      <dd>The filesystem's record for <em>one file</em>: its metadata (size, owner, permissions, timestamps) and the pointers to the data blocks that hold its contents. Crucially, the inode does <em>not</em> contain the filename. The number of inodes is usually fixed when the filesystem is created.</dd>
+      <dt>Directory</dt>
+      <dd>Just a special file whose contents are a list mapping <em>names</em> to <em>inode numbers</em>. "A folder" is a table of (name → inode). This is why a filename is a label pointing at a file, not the file itself.</dd>
+      <dt>Page cache</dt>
+      <dd>The same RAM cache from Lesson 2.4: the kernel keeps recently-read and about-to-be-written file blocks in memory, so repeated access is served at RAM speed and writes can be batched. It sits between the application and the block device and is why disk I/O usually feels fast.</dd>
+      <dt>Dirty page &amp; write-back</dt>
+      <dd>A page in the cache that has been written to but not yet saved to the device is <em>dirty</em>. The kernel flushes dirty pages to storage later, in the background — <em>write-back</em>. This is the speed win and the durability risk of §6.</dd>
+      <dt>fsync</dt>
+      <dd>The system call an application makes to say "do not return until this file's data is actually on durable media." It forces the write-back the kernel would otherwise defer, and is how a database guarantees a committed transaction survives a crash.</dd>
+      <dt>Journal</dt>
+      <dd>A reserved area where the filesystem first records <em>what it is about to do</em> before doing it, so that after a crash it can replay or discard partial operations and come back consistent — instead of scanning the whole disk. The crash-consistency mechanism that killed the multi-hour <code>fsck</code>.</dd>
+    </dl>
+
+    <div class="callout def">
+      <span class="t">The one sentence to hold onto</span>
+      <p>
+        <strong>Storage is a stack: a dumb <em>block device</em> exposes numbered fixed-size blocks; a
+        <em>filesystem</em> maps human <em>names</em> to sets of those blocks via <em>inodes</em>; the
+        <em>page cache</em> buffers blocks in RAM so the slow device leaves the critical path; and
+        <em>fsync</em> plus the <em>journal</em> let you trade that speed back for the guarantee that data
+        is durable and structure is consistent after a crash.</strong> Almost every storage behaviour in
+        this lesson — fast writes, lost writes on power failure, "no space left" with free bytes, the
+        block/file/object split — is a consequence of that stack.
+      </p>
+    </div>
+
+    <h3>5.2 The shape of the solution</h3>
+    <p>
+      Each layer speaks only to its neighbours. Your application says "write these bytes to this file"; it
+      never names a block. The filesystem translates the file and offset into block numbers. The page cache
+      answers from RAM when it can and defers writes. The block layer schedules the actual device I/O. The
+      device stores bytes on media:
+    </p>
+<pre><code>THE STORAGE STACK  ("each layer adds one capability")
+
+  ┌─────────────────────────────────────────────────────────────┐
+  │  APPLICATION      open("/data/tasks.json"); write(fd, buf)   │  names + bytes
+  ├─────────────────────────────────────────────────────────────┤
+  │  FILESYSTEM       name → inode → which blocks; permissions;  │  organisation
+  │  (ext4 / XFS …)   free-space tracking; journal for crashes    │  + consistency
+  ├─────────────────────────────────────────────────────────────┤
+  │  PAGE CACHE       recently used blocks kept in RAM;           │  speed
+  │  (kernel)         writes buffered as "dirty" pages            │  (+ durability risk)
+  ├─────────────────────────────────────────────────────────────┤
+  │  BLOCK LAYER      schedules/queues read/write of block N      │  device-independence
+  ├─────────────────────────────────────────────────────────────┤
+  │  DEVICE DRIVER    turns "block N" into this hardware's cmds   │
+  ├─────────────────────────────────────────────────────────────┤
+  │  MEDIA            SSD flash cells / HDD platters (+ own cache)│  persistence
+  └─────────────────────────────────────────────────────────────┘
+
+  Read: often answered by the page cache (RAM) — never reaches media.
+  Write: lands in the page cache (fast return); reaches media LATER,
+         unless the app calls fsync() to force it NOW.</code></pre>
+    <p>
+      Now re-answer §1's questions, one line each. Numbered slots into named files? The filesystem maps a
+      path through a directory to an <em>inode</em> to a set of blocks — <strong>organisation</strong>. A
+      10&nbsp;MB file from scattered slots? The inode holds a list of block pointers that can point
+      anywhere on the device — <strong>no contiguity needed</strong>. Slow disk made fast? The page cache
+      serves reads from RAM and buffers writes — <strong>speed</strong>. Is a returned <code>write()</code>
+      safe? Not until it leaves the page cache; <code>fsync</code> forces it — <strong>durability on
+      demand</strong>. Surviving a dead device, and what the cloud sells, are §6.6 and §6.8. The layered
+      stack answers nearly all of them, and each answer names the exact place a failure can hide.
+    </p>
+
+    <!-- ============================== 6 ============================== -->
+    <h2 id="s6">6 · Internal Mechanics</h2>
+
+    <p>
+      Now the machine in motion. We will (6.1) look inside the media — HDD vs SSD — because the physics sets
+      the numbers; (6.2) dissect the inode and see filenames, links and directories fall out of it; (6.3)
+      watch a path resolve to data blocks; (6.4) walk the write path from <code>write()</code> to media and
+      find where data dies; (6.5) explain <code>fsync</code>, journals and crash consistency; (6.6) define
+      durability and how RAID and replication provide it; (6.7) decode the performance numbers — IOPS,
+      throughput, latency; and (6.8) split storage into block, file and object.
+    </p>
+
+    <h3>6.1 What the media actually is: HDD vs SSD</h3>
+    <p>
+      Storage physics sets every number you will later pay for, so start at the media. A
+      <em class="term">hard disk drive (HDD)</em> stores bits as magnetic regions on spinning platters, read
+      by a head on a moving arm. To reach a given block, the arm must <em>seek</em> to the right track and
+      then wait for the platter to <em>rotate</em> the block under the head — mechanical motions measured in
+      milliseconds. This is why HDDs are savage at <em>random</em> access (each access pays a seek) but
+      decent at <em>sequential</em> access (one seek, then stream). A <em class="term">solid-state drive
+      (SSD)</em> stores bits in flash cells with no moving parts; any block is reachable in microseconds, so
+      random access is only modestly slower than sequential. That single difference — moving arm vs
+      electronics — is why an SSD can do tens of thousands of random operations per second and an HDD only
+      a couple hundred, and why the old rule "sequential is far faster than random" is decisive on HDDs and
+      merely a nudge on SSDs. Flash has its own catch: a cell must be <em>erased</em> (in large blocks)
+      before it can be rewritten, and it wears out after many writes, so SSDs constantly shuffle data
+      (<em>wear levelling</em>, garbage collection) behind the scenes — the reason write-endurance appears
+      on their spec sheets.
+    </p>
+
+    <h3>6.2 The inode: why a filename is not a file</h3>
+    <p>
+      The inode is the hinge of the whole filesystem, and the single idea that explains a dozen puzzling
+      behaviours. An inode is a small fixed record describing exactly one file's <em>contents and
+      metadata</em> — everything except its name:
+    </p>
+<pre><code>  INODE #4412 (one file)                 DIRECTORY /data (itself a file)
+  ┌───────────────────────────┐          ┌──────────────────────┬────────┐
+  │ type: regular file         │          │ name                 │ inode  │
+  │ permissions: rw-r--r--     │          ├──────────────────────┼────────┤
+  │ owner / group: deploy      │          │ tasks.json           │ 4412   │
+  │ size: 10 MB                │◀─────────│ tasks.bak            │ 4412   │ ← hard link!
+  │ timestamps: atime/mtime…   │          │ notes.txt            │ 5001   │
+  │ link count: 2              │          └──────────────────────┴────────┘
+  │ block pointers ─────────┐  │
+  └─────────────────────────┼──┘   the NAME lives in the directory,
+        ▼   ▼   ▼   ▼        ▼      the FILE lives in the inode.
+     [blk 91][blk 4][blk 77][blk 200] ... (data, scattered across the device)</code></pre>
+    <p>
+      Read the diagram and the puzzles dissolve. A <strong>filename lives in a directory</strong>, not in
+      the file — a directory is just a table of (name → inode number). So a <em class="term">hard link</em>
+      is simply a second directory entry pointing at the <em>same</em> inode: two names, one file, one copy
+      of the data; the inode's <em>link count</em> tracks how many names point at it, and the data blocks
+      are freed only when that count hits zero. This is why "deleting" a file is really <code>unlink</code>
+      — you remove a name, and the data survives if another name still references it, or if a running
+      process still holds the file open (the classic "I deleted the huge log but the disk is still full"
+      from Lesson 2.4's neighbourhood). It is also why <strong>renaming or moving a huge file within one
+      filesystem is instant</strong>: you only rewrite a directory entry, never the data. And it is why a
+      filesystem can run out of <strong>inodes</strong> while gigabytes of space remain — millions of tiny
+      files exhaust the fixed inode table even though the data blocks are mostly empty, producing the
+      infamous "No space left on device" with <code>df</code> showing free bytes but <code>df -i</code>
+      showing 100% inodes used.
+    </p>
+
+    <h3>6.3 Resolving a path to data</h3>
+    <p>
+      Opening <code>/data/tasks.json</code> is a walk down the inode/directory structure, one component at a
+      time, starting from a known fixed inode for the root:
+    </p>
+<pre><code>  open("/data/tasks.json")
+    │
+    ├─ start at ROOT inode (a directory; its inode number is fixed, e.g. 2)
+    ├─ read root's data → find entry "data" → inode 300
+    ├─ read inode 300 (a directory) → find entry "tasks.json" → inode 4412
+    ├─ read inode 4412 (a regular file) → check permissions for this user
+    └─ now reads/writes use inode 4412's block pointers to find the bytes
+          read(offset 0..4096) → block pointer[0] → block 91 → (page cache or device)</code></pre>
+    <p>
+      Every component of the path is a directory lookup; every lookup is itself a small file read (usually
+      already cached). This is what "everything is a file" buys you in Module 3, and why deep paths and huge
+      directories have a measurable cost. Once the file is open, the kernel hands your program a small
+      integer — a <em class="term">file descriptor</em> — that indexes into the block pointers, so
+      subsequent reads and writes skip the path walk entirely.
+    </p>
+
+    <h3>6.4 The write path: where your data actually goes (and dies)</h3>
+    <p>
+      This is the most consequential mechanism in the lesson. When your code calls <code>write(fd, buf,
+      n)</code>, the bytes do <em>not</em> go to the disk. They are copied into the <strong>page cache</strong>
+      in RAM, the page is marked <em>dirty</em>, and <code>write()</code> returns success almost immediately —
+      at RAM speed. The data is now safe against your program crashing (it lives in the kernel, not your
+      process) but <strong>not</strong> against the power failing, because it is still only in volatile RAM.
+      Some time later — seconds, by default — the kernel's write-back flushes the dirty page to the block
+      device. And even then, many devices have their <em>own</em> volatile write cache, so the bytes may sit
+      in the drive's buffer before finally reaching durable flash or platter:
+    </p>
+<pre><code>  write(fd, buf, n)
+     │  copy bytes into RAM
+     ▼
+  [ PAGE CACHE ]  page marked DIRTY   ── write() RETURNS here (fast!) ──▶ your code continues
+     │            (safe from process crash · NOT safe from power loss)
+     │  kernel write-back, later (or on fsync now)
+     ▼
+  [ BLOCK LAYER → DEVICE ]
+     │
+     ▼
+  [ DRIVE'S OWN CACHE ]  (often volatile too!)  ── power loss here still loses data ──┐
+     │  drive flush / FUA                                                              │
+     ▼                                                                                 ▼
+  [ DURABLE MEDIA ]  now, and only now, is the data truly safe        ✗ pull the plug
+                                                                         anywhere above
+                                                                         this line = data
+                                                                         gone, even though
+                                                                         write() said "ok"</code></pre>
+    <div class="callout bad">
+      <span class="t">The sentence that ruins careers</span>
+      <p>
+        <strong>"<code>write()</code> returned successfully" means "the kernel accepted your bytes into
+        RAM," not "the data is on the disk."</strong> Between that return and durable media sit the page
+        cache and often the drive's own cache — both volatile. A power cut in that window loses data your
+        program was told it had saved. This is not a bug; it is the deliberate trade that makes storage
+        fast. The only way to close the window is to ask for it explicitly — <code>fsync</code>.
+      </p>
+    </div>
+
+    <h3>6.5 fsync, journals and crash consistency</h3>
+    <p>
+      Two different things can break in a crash, and they need two different fixes. The first is
+      <em>your data</em> being lost in the cache — fixed by <code>fsync(fd)</code>, which blocks until the
+      file's dirty pages (and, on a correct system, the drive cache) have reached durable media, then
+      returns. A database calls <code>fsync</code> (or <code>O_DSYNC</code>, <code>fdatasync</code>, and
+      friends) at every transaction commit: that is precisely the moment it promises the user "your task is
+      saved," so it must pay the full durable-write latency there and cannot defer it. The cost is real —
+      an <code>fsync</code> can be milliseconds, thousands of times slower than the cached write — which is
+      why database write throughput is often <em>fsync-bound</em> and why storage with fast durable-write
+      latency is worth paying for.
+    </p>
+    <p>
+      The second thing that breaks is the <em>filesystem's own structure</em>. Creating a file touches
+      several blocks — a new inode, updated free-space maps, a new directory entry — and a crash between
+      them would leave the filesystem inconsistent (§4.4). The fix is the <em class="term">journal</em>: the
+      filesystem writes a description of the intended change to a reserved log <em>first</em>, and only then
+      applies it. After a crash, the filesystem replays the journal (finish committed operations) or
+      discards incomplete ones, returning to a consistent state in seconds instead of an hours-long
+      <code>fsck</code>. Note the crucial distinction: the journal, by default, protects the filesystem's
+      <em>metadata</em> (its structure), <em>not</em> necessarily your file's <em>data</em> — keeping the
+      structure consistent is a separate guarantee from keeping your bytes, and only <code>fsync</code>
+      gives you the latter.
+    </p>
+
+    <h3>6.6 Durability: surviving the death of the device</h3>
+    <p>
+      <code>fsync</code> gets your data onto <em>one</em> device. But devices die — an SSD wears out, a
+      platter fails, a controller fries. <em class="term">Durability</em> is the probability that data,
+      once stored, is not lost over time, and it is a different axis from everything above: you can have
+      perfect crash-consistency on a single disk and still lose everything when that disk dies. Surviving
+      device death means keeping <em>more than one copy on more than one device</em>:
+    </p>
+    <dl class="terms">
+      <dt>RAID (redundancy within one machine)</dt>
+      <dd>Combines several disks into one logical device that survives a disk failure. <em>RAID&nbsp;1</em> mirrors every byte onto two disks; <em>RAID&nbsp;5/6</em> spread data plus parity across many, so any one (or two) can die and be rebuilt. RAID buys <em>availability</em> through a disk failure — but it is <strong>not a backup</strong>: it faithfully replicates your <code>rm -rf</code>, a corrupting bug, or ransomware to every mirror instantly.</dd>
+      <dt>Replication (redundancy across machines)</dt>
+      <dd>Copies data to other <em>machines</em>, often in other racks, data centres or regions, so the loss of a whole server or site doesn't lose data. This is how cloud object stores reach "eleven nines" — every object is stored on many devices across many failure domains automatically.</dd>
+      <dt>Backups (redundancy across time)</dt>
+      <dd>Point-in-time copies kept <em>separately</em>, so you can recover from events that redundancy happily propagates: accidental deletion, corruption, a bad migration, a compromise. RAID and live replication protect against <em>hardware</em> failure; only backups protect against <em>you</em> and against logical damage. A copy that updates in lockstep with the original is not a backup.</dd>
+    </dl>
+    <div class="callout warn">
+      <span class="t">Durability is not availability, and RAID is not backup</span>
+      <p>
+        Keep three axes distinct. <strong>Availability</strong> is "can I reach the data right now" (a dead
+        disk in a RAID array doesn't take you offline). <strong>Durability</strong> is "will the data still
+        exist later" (survives device death via extra copies). <strong>Backups</strong> are the only thing
+        that survives <em>logical</em> loss — deletion, corruption, attack — because redundancy replicates
+        those faithfully. DevBoard needs all three, and Module 11 makes you run a real restore drill,
+        because a backup you have never restored is a hope, not a backup.
+      </p>
+    </div>
+
+    <h3>6.7 The performance numbers: IOPS, throughput, latency</h3>
+    <p>
+      Storage performance is not one number, and confusing the numbers is how people buy the wrong disk.
+      Three measurements matter, and different workloads are bounded by different ones:
+    </p>
+    <dl class="terms">
+      <dt>IOPS (I/O operations per second)</dt>
+      <dd>How many <em>separate</em> read/write operations the device can complete per second. This is the number that matters for <em>small, random</em> I/O — exactly what a database doing many little row reads/writes does. An HDD does ~75–200 random IOPS (bounded by seek time); an SSD does tens of thousands to millions.</dd>
+      <dt>Throughput / bandwidth (MB/s)</dt>
+      <dd>How many <em>bytes</em> per second the device can move for <em>large, sequential</em> I/O — copying a big file, streaming a backup, a video. A workload can be nowhere near the IOPS limit yet saturate throughput, or vice versa.</dd>
+      <dt>Latency</dt>
+      <dd>How long a <em>single</em> operation takes to complete. This is what an <code>fsync</code>-per-commit database feels directly: even at high IOPS, if each durable write has high latency, transaction rate suffers. Sub-millisecond on good SSDs; milliseconds on HDDs and network storage.</dd>
+    </dl>
+    <p>
+      The trap: <strong>IOPS and throughput trade off against block size</strong>. IOPS × block size ≈
+      throughput, so a device rated for huge sequential throughput can still choke on a database's tiny
+      random operations, and a device with plenty of IOPS can still be slow for one latency-sensitive
+      <code>fsync</code>. There is also <em class="term">queue depth</em> — how many operations you keep
+      in flight at once; devices (especially SSDs and network volumes) hit their rated IOPS only when fed
+      many concurrent requests, so a single-threaded synchronous workload may see a fraction of the spec.
+      When Module 6 quotes you a cloud volume at "3,000 IOPS, 125&nbsp;MB/s," you will know that the first
+      number caps your database's small random operations, the second caps your backups and log streaming,
+      and neither tells you the per-operation latency your commits will feel.
+    </p>
+
+    <h3>6.8 Three storage models: block, file, object</h3>
+    <p>
+      Finally, the split that governs your cloud bill. The same underlying media is sold under three
+      interfaces, each exposing a different layer of §5's stack:
+    </p>
+    <dl class="terms">
+      <dt>Block storage</dt>
+      <dd>You rent a raw <em>block device</em> — a virtual disk. It has no filesystem until you put one on it; it attaches to <em>one</em> machine at a time; you get the lowest latency and full control. This is what a database's data directory lives on. Cloud examples: AWS EBS, GCP Persistent Disk, a DigitalOcean Volume. It is §5's block-device layer, sold directly.</dd>
+      <dt>File storage</dt>
+      <dd>You rent a ready-made <em>filesystem</em> you mount over the network, shared by <em>many</em> machines at once, with familiar paths and permissions (the NFS protocol underneath). Convenient for shared files across several servers; higher latency than block because it is network-hopped. Cloud examples: AWS EFS, GCP Filestore, plain NFS. It is §5's filesystem layer, sold as a shared service.</dd>
+      <dt>Object storage</dt>
+      <dd>You store whole <em>objects</em> (a blob of bytes + metadata) under a key in a flat <em>bucket</em>, reached over HTTP, not mounted as a disk. No filesystem, no partial in-place edits (you replace whole objects), effectively unlimited capacity, extreme durability via automatic cross-device replication, and low cost per gigabyte — at the price of higher per-request latency. Perfect for uploads, backups, static assets, logs. Cloud examples: AWS S3, GCP Cloud Storage, Cloudflare R2. It is the layer §2 said abandoned the filesystem entirely to win scale.</dd>
+    </dl>
+    <p>
+      DevBoard uses all three, and correctly: PostgreSQL's data on a <em>block</em> volume (needs low
+      latency and one owner); user-uploaded avatars and attachments in <em>object</em> storage (cheap,
+      durable, served directly); and — if several app servers ever needed to share a directory — a
+      <em>file</em> service, though good architecture avoids that by pushing shared state into the database
+      and object store instead. Choosing the wrong model is a classic, expensive mistake: putting a
+      database on network file storage makes it slow and fragile; trying to run a database on object storage
+      is impossible; storing millions of uploads on a block volume is needlessly costly and caps you at one
+      machine.
+    </p>
+
+    <!-- ============================== 7 ============================== -->
+    <h2 id="s7">7 · Real Industry Examples</h2>
+
+    <h3>"The database was fast, then a deploy made it 50× slower"</h3>
+    <p>
+      A team moves PostgreSQL from a local SSD to a network file mount (or a cheap cloud volume with low
+      IOPS) to "make storage shared and easy." Throughput on big reads looks fine, so the volume seems
+      healthy — but every transaction commit is an <code>fsync</code> (§6.5), and each now pays network +
+      low-IOPS latency instead of local-SSD microseconds. Write throughput collapses because it is
+      <em>fsync-latency-bound</em>, not bandwidth-bound. The lesson tells you exactly which number to check
+      (per-operation durable-write latency and IOPS, §6.7) and why the "shared and easy" file model (§6.8)
+      is the wrong layer for a database.
+    </p>
+
+    <h3>"df says there's space, but writes fail with 'No space left on device'"</h3>
+    <p>
+      An application that creates millions of tiny files (a cache, a mail spool, session files) suddenly
+      can't write, yet <code>df -h</code> shows plenty of free gigabytes. The culprit is inode exhaustion
+      (§6.2): the fixed inode table is full even though data blocks are free. <code>df -i</code> shows 100%
+      inodes used. Knowing the inode is a fixed-count resource separate from bytes turns a baffling outage
+      into a one-command diagnosis.
+    </p>
+
+    <h3>"We had RAID, so we didn't need backups" — the sentence before the disaster</h3>
+    <p>
+      A team runs RAID&nbsp;1 and feels safe. Then a bad migration (or an <code>rm -rf</code>, or a bug)
+      corrupts the data — and RAID faithfully mirrors the corruption to both disks instantly (§6.6). RAID
+      protected them from a <em>disk</em> dying; it did nothing against <em>logical</em> loss, which only
+      backups (redundancy across time) survive. This exact conflation of availability, durability and
+      backup causes real, permanent data loss, and it is why Module 11 makes a tested restore mandatory.
+    </p>
+
+    <h3>The "eleven nines" of object storage, and where the number comes from</h3>
+    <p>
+      When AWS S3 advertises 99.999999999% durability, that number is manufactured by exactly §6.6's
+      mechanism at scale: every object is automatically replicated across many devices in multiple physical
+      facilities, so the simultaneous loss of enough independent devices to destroy an object is
+      astronomically unlikely. It is not magic hardware; it is redundancy across failure domains, priced so
+      cheaply per gigabyte that it is almost always the right home for uploads, backups and logs — the
+      object model of §6.8 doing what a single block volume never could.
+    </p>
+
+    <!-- ============================== 8 ============================== -->
+    <h2 id="s8">8 · Diagrams</h2>
+
+    <h3>8.1 One file, assembled from scattered blocks via its inode</h3>
+    <figure>
+<pre><code>   DIRECTORY /data              INODE 4412 (the file "tasks.json")
+   ┌──────────────┬───────┐     ┌────────────────────────────────┐
+   │ tasks.json   │ 4412 ─┼────▶│ size, perms, owner, link count  │
+   │ notes.txt    │ 5001  │     │ block pointers ┐                │
+   └──────────────┴───────┘     └────────────────┼────────────────┘
+                        ┌───────────┬─────────────┼──────────┐
+                        ▼           ▼             ▼          ▼
+   BLOCK DEVICE:  [blk 4]  [blk 77] ...  [blk 91] ...  [blk 200]
+                   ^data    ^data          ^data        ^data
+   The file's bytes are scattered anywhere on the device; the inode's
+   pointer list is what stitches them back into one ordered stream.
+   The NAME "tasks.json" is only a label in the directory → inode table.</code></pre>
+      <figcaption>A file is an inode plus the blocks its pointers reference; the name lives elsewhere, in a directory. Contiguity is unnecessary — the pointer list can gather blocks from anywhere, exactly as page tables gather frames in Lesson 2.4.</figcaption>
+    </figure>
+
+    <h3>8.2 The write path and the durability cliff</h3>
+    <figure>
+<pre><code>   your code            kernel                         hardware
+   ─────────            ──────                         ────────
+   write(fd,buf) ─▶ [ page cache ]  page = DIRTY
+                        │  ▲  returns "ok" to you HERE (RAM speed)
+                        │  └── safe from PROCESS crash
+                        │      NOT safe from POWER loss  ✗
+      fsync(fd) ───────▶│  force flush now (blocks until durable)
+                        ▼
+                   [ block layer ] ─▶ [ drive cache ]  (often volatile ✗)
+                                            │  flush / FUA
+                                            ▼
+                                     [ DURABLE MEDIA ]  ✓ safe at last
+   ────────────────────────────────────────────────────────────────
+   Everything above "DURABLE MEDIA" is lost on power failure.
+   fsync is the ONLY call that drags your bytes across that line on demand.</code></pre>
+      <figcaption>"Saved" is a pipeline, not an event. A successful <code>write()</code> reaches only the volatile page cache; only <code>fsync</code> (and a drive that honours flushes) pushes data across the durability line.</figcaption>
+    </figure>
+
+    <h3>8.3 The three cloud storage models at a glance</h3>
+    <figure>
+<pre><code>   BLOCK                 FILE                    OBJECT
+   ┌─────────────┐       ┌─────────────┐         ┌──────────────────┐
+   │ raw disk    │       │ shared FS    │         │ bucket (HTTP)    │
+   │ /dev/xvdf   │       │ mount /shared│         │ PUT/GET key      │
+   │ 1 machine   │       │ many machines│         │ any client, web  │
+   │ you format  │       │ ready paths  │         │ no filesystem    │
+   │ lowest lat. │       │ net latency  │         │ whole-object I/O │
+   │ EBS, PD     │       │ EFS, NFS     │         │ S3, GCS, R2      │
+   └─────────────┘       └─────────────┘         └──────────────────┘
+   for: a DATABASE       for: shared files       for: uploads,
+        (Postgres data)       across servers          backups, assets, logs
+
+   Lower in §5's stack  ──────────────────────────▶  higher / no stack at all
+   Lower latency, one owner  ─────────────────────▶  more scale, more durability, more latency</code></pre>
+      <figcaption>The same media, three interfaces — each exposing a different layer of the storage stack. Match the model to the job: block for databases, object for blobs, file only when servers must genuinely share a directory.</figcaption>
+    </figure>
+
+    <!-- ============================== 9 ============================== -->
+    <h2 id="s9">9 · Advantages</h2>
+    <p>What the layered storage stack buys you, mapped back to the failures of §4:</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Capability</th><th>Because…</th><th>Fixes which §4 failure</th></tr></thead>
+        <tbody>
+          <tr><td><b>Named files &amp; directories</b></td><td>the filesystem maps paths through directories and inodes to blocks, once, for every program</td><td>4.1 (each app reinvents layout) &amp; 4.2 (no navigation)</td></tr>
+          <tr><td><b>Non-contiguous files</b></td><td>an inode's block-pointer list can gather blocks from anywhere, so files grow and free space is fully usable</td><td>4.1 (layout/fragmentation)</td></tr>
+          <tr><td><b>Sharing &amp; permissions</b></td><td>a common namespace with owners and permission bits lets programs and people coordinate safely</td><td>4.2 (no sharing)</td></tr>
+          <tr><td><b>Fast I/O by default</b></td><td>the page cache serves reads from RAM and buffers writes, so the slow device leaves the critical path</td><td>4.3 (raw device too slow)</td></tr>
+          <tr><td><b>Durability on demand</b></td><td><code>fsync</code> lets an app force data to durable media exactly when correctness needs it, and pay the cost only then</td><td>4.3/4.4 (speed vs safety trade-off, made explicit)</td></tr>
+          <tr><td><b>Crash consistency</b></td><td>the journal records intended changes first, so a crash replays or discards them instead of corrupting structure</td><td>4.4 (silent corruption)</td></tr>
+          <tr><td><b>Device independence</b></td><td>the block-device abstraction lets one filesystem run on HDD, SSD, USB, RAID or a cloud volume unchanged</td><td>bonus: portability</td></tr>
+          <tr><td><b>Survive device death</b></td><td>RAID/replication keep copies across devices and sites; backups keep copies across time</td><td>bonus: durability beyond one disk</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ============================== 10 ============================== -->
+    <h2 id="s10">10 · Limitations</h2>
+    <p>The storage stack is not free, and its edges are where production surprises live.</p>
+    <dl class="terms">
+      <dt>The page cache makes writes a lie by default</dt>
+      <dd>The very buffering that makes I/O fast means a returned <code>write()</code> is not durable. Any code that must not lose data has to call <code>fsync</code> and accept the latency — and code that forgets will pass every test and lose data only during a real power failure, the worst time to learn this.</dd>
+      <dt>fsync is expensive and unavoidable where it matters</dt>
+      <dd>Durable writes cost milliseconds; a database that commits often is throughput-limited by <code>fsync</code> latency, no matter how much bandwidth the device has. You cannot cache your way out of a durability requirement.</dd>
+      <dt>The journal protects structure, not necessarily your data</dt>
+      <dd>Default filesystem journaling keeps metadata consistent after a crash but does not guarantee your file's <em>contents</em> survived — a subtlety that lulls people into thinking "journaled = safe." Only <code>fsync</code> protects your bytes.</dd>
+      <dt>RAID and replication are not backups</dt>
+      <dd>Redundancy across devices/sites survives hardware failure but faithfully propagates deletion, corruption and attacks. Confusing durability/availability with backup is a recurring cause of permanent data loss.</dd>
+      <dt>Spec numbers describe ideal conditions</dt>
+      <dd>Rated IOPS often require high queue depth and a specific block size; your real, latency-sensitive, single-threaded workload may see a fraction of it. And cloud volumes throttle or "burst" — sustained performance can be far below the headline number.</dd>
+      <dt>This is a simplified model</dt>
+      <dd>Real systems add copy-on-write filesystems (ZFS/Btrfs) with checksums and snapshots, LVM, encryption at rest, tiered/burst storage, SSD write amplification and TRIM, and distributed filesystems. The block→filesystem→cache picture is a true, load-bearing map — not the entire territory.</dd>
+    </dl>
+
+    <!-- ============================== 11 ============================== -->
+    <h2 id="s11">11 · Common Misconceptions</h2>
+
+    <div class="myth">
+      <div class="m">"If <code>write()</code> returned success, my data is safely on the disk."</div>
+      <div class="r"><p>No. The bytes are in the volatile <em>page cache</em> in RAM (§6.4); <code>write()</code> returns before they reach durable media. A power cut in that window loses data your program was told it saved. Only <code>fsync</code> (and a drive that honours flushes) guarantees durability — which is exactly why databases call it at every commit.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"A filename <em>is</em> the file."</div>
+      <div class="r"><p>A filename is a label in a directory pointing at an <em>inode</em>, which is the actual file (metadata + data-block pointers). That's why two names can point at one file (hard links), why "deleting" is <code>unlink</code>-ing a name, and why moving a huge file within a filesystem is instant — you only rewrite a directory entry, never the data.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"<code>df</code> shows free space, so I can always write more files."</div>
+      <div class="r"><p>Not if you're out of <em>inodes</em> (§6.2). The inode table is a fixed-count resource separate from data blocks; millions of tiny files can exhaust it while gigabytes of space remain, giving "No space left on device" despite free bytes. Check <code>df -i</code>, not just <code>df -h</code>.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"We have RAID (or a live replica), so our data is backed up."</div>
+      <div class="r"><p>RAID and replication protect against <em>hardware</em> failure by keeping copies in sync — and therefore instantly propagate deletion, corruption and ransomware to every copy. A <em>backup</em> is a separate point-in-time copy that survives logical loss. Availability, durability and backup are three different guarantees (§6.6); you need all three.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"More IOPS means my database will be faster."</div>
+      <div class="r"><p>Only if IOPS is your bottleneck. A commit-heavy database is often bound by <em>per-operation <code>fsync</code> latency</em>, not operation <em>count</em>; and a backup job is bound by <em>throughput</em>, not IOPS. IOPS, throughput and latency are distinct numbers (§6.7) — buying more of the wrong one changes nothing.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"Random and sequential access are basically the same speed now."</div>
+      <div class="r"><p>On SSDs the gap is small; on HDDs it is enormous, because each random access pays a mechanical seek (§6.1). Even on SSDs, tiny random I/O at low queue depth can fall well short of the rated throughput. The workload's access pattern still decides which spec number you actually hit.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"Object storage (like S3) is just a network drive I can mount and edit files on."</div>
+      <div class="r"><p>No. Object storage has no filesystem, no partial in-place edits, and higher per-request latency — you PUT and GET whole objects by key over HTTP (§6.8). It's ideal for uploads, backups and assets, and wrong for a database or anything needing a mounted filesystem with in-place updates. That's what block and file storage are for.</p></div>
+    </div>
+
+    <!-- ============================== 12 ============================== -->
+    <h2 id="s12">12 · Practical Use Cases</h2>
+
+    <h3>Choosing where each part of DevBoard's data lives</h3>
+    <p>
+      This lesson turns storage placement from guesswork into a decision. PostgreSQL's data directory goes
+      on <em>block</em> storage (low latency, one owner, <code>fsync</code> honoured); user-uploaded
+      attachments and avatars go in <em>object</em> storage (cheap, durable, served directly, unbounded);
+      shared files across app servers — if ever truly needed — go on <em>file</em> storage, though you'll
+      usually design that need away. Getting this right (§6.8) is the difference between a fast, cheap,
+      durable system and a slow, fragile, expensive one.
+    </p>
+
+    <h3>Diagnosing a "full disk" that has free space</h3>
+    <p>
+      When writes fail with "No space left on device" but <code>df -h</code> shows room, you now check
+      <code>df -i</code> for inode exhaustion (§6.2), and check for a deleted-but-still-open huge file
+      (space not reclaimed until the last file descriptor closes). Two commands replace an afternoon of
+      confusion.
+    </p>
+
+    <h3>Making a database's writes actually safe and fast enough</h3>
+    <p>
+      Understanding the write path lets you reason about the real levers: is the volume's durable-write
+      latency low enough for your commit rate (§6.7)? Is the drive/volume honouring flushes so
+      <code>fsync</code> means what it says? Should you batch commits to amortise <code>fsync</code>? These
+      are the storage-side of Module 8's PostgreSQL work and Module 11's reliability work, and they all
+      start from §6.4–6.5.
+    </p>
+
+    <h3>Designing a backup and restore strategy you can defend</h3>
+    <p>
+      Because you can now separate availability, durability and backup (§6.6), you can design deliberately:
+      redundancy (RAID/replication) for hardware failure, off-box backups (ideally in object storage) for
+      logical loss, and — the part everyone skips — a <em>tested restore</em>, because an unverified backup
+      is a guess. This is exactly the restore drill Module 11 will make you run on DevBoard.
+    </p>
+
+    <!-- ============================== 13 ============================== -->
+    <h2 id="s13">13 · Summary</h2>
+    <ul class="takeaways">
+      <li>Storage's job is <strong>persistence</strong>: hold data on media that survives power loss, correctly, for years. A raw device is only a flat array of numbered, fixed-size <strong>blocks</strong> with read-block/write-block — everything else is built on top.</li>
+      <li>Talking to the raw device directly forces every program to reinvent layout, blocks sharing and navigation, pays full device latency on every access, and corrupts silently on crashes (§4). The fix is a layered stack built once in the kernel.</li>
+      <li>The <strong>filesystem</strong> maps human <em>names</em> to sets of blocks via <strong>inodes</strong>. A filename is a directory entry pointing at an inode, not the file itself — which explains hard links, instant renames, <code>unlink</code>-style deletion, and inode exhaustion (<code>df -i</code>) despite free bytes.</li>
+      <li>The <strong>page cache</strong> buffers file blocks in RAM (the same cache from Lesson 2.4), serving reads at memory speed and letting writes return immediately as <strong>dirty pages</strong> flushed later. This is the speed win — and the durability risk.</li>
+      <li>A successful <code>write()</code> means "the kernel took your bytes into RAM," <em>not</em> "the data is on disk." Between it and durable media sit the page cache and often the drive's own volatile cache — a power cut there loses acknowledged data.</li>
+      <li><strong><code>fsync</code></strong> is the only call that forces your bytes to durable media on demand; databases call it at every commit and are often <em>fsync-latency-bound</em>. The <strong>journal</strong> keeps the filesystem's <em>structure</em> crash-consistent — but protects metadata, not necessarily your data.</li>
+      <li><strong>Durability</strong> (data survives device death) is a different axis from <strong>availability</strong> (reachable now). Extra copies across devices (<strong>RAID</strong>) and machines (<strong>replication</strong>) give both — but neither is a <strong>backup</strong>: only point-in-time copies survive deletion, corruption and attack.</li>
+      <li>Performance is three numbers, not one: <strong>IOPS</strong> (small random ops — databases), <strong>throughput MB/s</strong> (large sequential — backups/streaming), and <strong>latency</strong> (a single op — felt by every <code>fsync</code>). Queue depth and block size decide which you actually hit.</li>
+      <li>The cloud sells the same media as three models: <strong>block</strong> (a raw disk, one machine, lowest latency — for databases), <strong>file</strong> (a shared network filesystem — for genuinely shared directories), and <strong>object</strong> (HTTP buckets, huge scale and durability — for uploads, backups, assets).</li>
+      <li>This closes Module 2's four resources: CPU (2.3), RAM (2.4), and storage (2.5). Every one of these — inodes, the write path, <code>fsync</code>, block/file/object — returns in Module 3 (Linux), Module 6 (cloud), Module 8 (PostgreSQL) and Module 11 (reliability).</li>
+    </ul>
+
+    <!-- ============================== 14 ============================== -->
+    <h2 id="s14">14 · Recommended Resources</h2>
+    <p><small>Curated, not exhaustive. <span class="rank">start here</span> marks the one to use first in each group.</small></p>
+
+    <div class="res">
+      <h4>Official / authoritative documentation</h4>
+      <ul>
+        <li><b>Linux <code>man</code> pages: <code>man 2 open</code>, <code>man 2 write</code>, <code>man 2 fsync</code>, <code>man 5 ext4</code></b> <span class="rank">start here</span>
+          <span class="why">The authoritative account of the write/durability contract (§6.4–6.5) and the on-disk structures of a real filesystem — read <code>fsync</code>'s "RETURN VALUE"/"NOTES" carefully.</span></li>
+        <li><b><code>man 1 df</code> / <code>man 1 du</code> / <code>man 8 mkfs</code> / <code>man 8 mount</code></b>
+          <span class="why">How space and inodes are reported (<code>df -i</code>, §6.2), and how a filesystem is created on and attached to a block device (§5) — the exact commands the exercise uses.</span></li>
+        <li><b>PostgreSQL docs — "Reliability" and "WAL Configuration" (<code>fsync</code>, <code>wal_sync_method</code>)</b>
+          <span class="why">A production database explaining, in its own words, why it calls <code>fsync</code> and what it assumes about your storage — §6.4–6.5 seen from the application that lives or dies by it.</span></li>
+      </ul>
+
+      <h4>Books</h4>
+      <ul>
+        <li><b><em>Operating Systems: Three Easy Pieces</em> (OSTEP) — the "Persistence" chapters (I/O devices, HDDs, files &amp; directories, FSFS, journaling)</b> <span class="rank">start here</span>
+          <span class="why">The best free treatment of everything in this lesson — inodes, the write path, journaling and durability — at full depth and genuinely readable. Read these chapters and this lesson clicks permanently.</span></li>
+        <li><b><em>The Linux Programming Interface</em> — Michael Kerrisk (file I/O, files &amp; directories, buffering chapters)</b>
+          <span class="why">The definitive programmer's-seat account of file descriptors, the inode, links, and kernel/user buffering with <code>fsync</code>. A lifelong reference.</span></li>
+        <li><b><em>Designing Data-Intensive Applications</em> — Martin Kleppmann (storage &amp; retrieval, replication chapters)</b>
+          <span class="why">Where durability, replication and the storage models meet real systems — the bridge from this lesson to Module 6 and Module 11.</span></li>
+      </ul>
+
+      <h4>Talks &amp; video</h4>
+      <ul>
+        <li><b>Any solid "how a filesystem works / what is an inode" walkthrough that animates path → inode → blocks</b> <span class="rank">start here</span>
+          <span class="why">Seeing a path resolve into an inode and its scattered blocks (§6.2–6.3) cements the model far faster than prose.</span></li>
+        <li><b>Brendan Gregg on Linux disk I/O analysis (site &amp; talks)</b>
+          <span class="why">The practitioner's guide to measuring IOPS, throughput and latency on real Linux (<code>iostat</code>, <code>biolatency</code>) — a preview of Module 12 and the natural sequel to §6.7.</span></li>
+      </ul>
+
+      <h4>Interactive labs &amp; practice</h4>
+      <ul>
+        <li><b>Your $5 VPS + <code>df -h</code>, <code>df -i</code>, <code>lsblk</code>, <code>stat</code>, <code>ln</code>, <code>ls -i</code></b> <span class="rank">start here</span>
+          <span class="why">The commands that make this lesson concrete: block devices, inodes, hard links and the free-space vs free-inode split. The exercise is built on them.</span></li>
+        <li><b><code>fio</code> (flexible I/O tester) and <code>iostat -x 1</code></b>
+          <span class="why">Deliberately measure random vs sequential IOPS, throughput and latency on a disposable disk, and watch device utilisation live — the safest way to <em>see</em> §6.7 numbers on real hardware.</span></li>
+      </ul>
+    </div>
+
+    <!-- ============================== 15 ============================== -->
+    <h2 id="s15">15 · Exercise</h2>
+    <p>
+      Module 2's project increment is to <strong>provision your first Linux server and inventory it</strong>.
+      Lesson 2.4 inventoried its memory; here you inventory and probe its <em>storage</em> and watch the
+      mechanisms of §6 with your own eyes. Do at least E1–E4 on the real VPS. Everything here is safe to run,
+      but work in a scratch directory (e.g. <code>~/storage-lab</code>) you can delete afterwards.
+    </p>
+
+    <div class="ex">
+      <div class="h"><span>E1</span>See the block device → filesystem → free space stack</div>
+      <p>SSH into your VPS and map its storage stack:</p>
+<pre><code>lsblk                    # block devices and partitions (the raw disks, §5)
+df -h                    # filesystems, mount points, free SPACE (bytes)
+df -i                    # the SAME filesystems, free INODES (count)</code></pre>
+      <p>
+        Identify your root filesystem's block device, its total size, and — separately — its total and used
+        <em>inodes</em>. Explain, using §6.2, why space and inodes are two different resources and how a disk
+        could be "full" on one but not the other.
+      </p>
+      <div class="out">Deliverable: your root device name and size, plus the free-bytes and free-inodes figures, and one sentence on why they are independent. Adds to your Milestone&nbsp;2 inventory.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E2</span>Prove a filename is not a file (inodes &amp; hard links)</div>
+      <p>In a scratch directory, watch two names share one inode:</p>
+<pre><code>mkdir ~/storage-lab &amp;&amp; cd ~/storage-lab
+echo "hello devboard" &gt; a.txt
+ls -i a.txt              # note the inode number
+ln a.txt b.txt           # hard link: a SECOND name for the SAME inode
+ls -li a.txt b.txt       # same inode number, link count = 2
+stat a.txt               # inode, links, size, timestamps
+rm a.txt                 # remove ONE name...
+cat b.txt                # ...data survives via the other name</code></pre>
+      <p>
+        Explain, using §6.2, why <code>a.txt</code> and <code>b.txt</code> show the same inode number, why
+        the link count is 2, and why deleting one name doesn't destroy the data.
+      </p>
+      <div class="out">Deliverable: the two <code>ls -li</code> lines (same inode, link count 2) and one sentence on why the name and the file are different things.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E3</span>Feel the page cache: the second read is free</div>
+      <p>Create a file large enough to notice, drop caches if you can, and time two reads:</p>
+<pre><code># make a ~500MB file
+dd if=/dev/zero of=big.bin bs=1M count=500
+# (optional, needs root) drop caches so the first read is cold:
+sync; echo 3 | sudo tee /proc/sys/vm/drop_caches
+time cat big.bin &gt; /dev/null    # COLD: reads from the device
+time cat big.bin &gt; /dev/null    # WARM: served from the page cache (RAM)</code></pre>
+      <p>
+        Compare the two times. Explain, using §6.4 and Lesson 2.4's page cache, why the second read is
+        dramatically faster and where the data was served from.
+      </p>
+      <div class="out">Deliverable: the two <code>time</code> results and one sentence identifying the page cache as the reason the warm read is fast.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E4</span>Watch the write path: buffered vs durable (fsync)</div>
+      <p>See the difference between a returned write and a durable one:</p>
+<pre><code># buffered write returns almost instantly (lands in page cache):
+time dd if=/dev/zero of=buffered.bin bs=1M count=200
+# force every write to durable media (fsync at the end):
+time dd if=/dev/zero of=synced.bin bs=1M count=200 conv=fdatasync
+# or oflag=sync to sync every block — even slower</code></pre>
+      <p>
+        Compare the times. Explain, using §6.4–6.5, why the plain <code>dd</code> returns faster (data is in
+        the volatile page cache) and why the <code>fdatasync</code>/<code>sync</code> version is slower but
+        actually durable — and what this implies for a database calling <code>fsync</code> at every commit.
+      </p>
+      <div class="out">Deliverable: the two timings and two sentences: what a bare <code>write()</code> guarantees vs what <code>fsync</code> guarantees, and why databases pay for the latter.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E5</span>Optional: measure IOPS vs throughput vs latency</div>
+      <p>
+        If <code>fio</code> is available (<code>sudo apt install fio</code>), measure the three numbers of
+        §6.7 on a scratch file, then delete it:
+      </p>
+<pre><code># small random reads → IOPS-bound
+fio --name=rand --filename=fio.tmp --size=256M --rw=randread \
+    --bs=4k --iodepth=16 --runtime=15 --time_based
+# large sequential reads → throughput-bound
+fio --name=seq --filename=fio.tmp --size=256M --rw=read \
+    --bs=1M --iodepth=16 --runtime=15 --time_based
+rm fio.tmp big.bin buffered.bin synced.bin   # clean up the lab</code></pre>
+      <p>
+        Note the IOPS number from the 4k random run and the MB/s from the 1M sequential run. Explain, using
+        §6.7, why the same disk reports very different "performance" depending on block size and access
+        pattern, and which number a database vs a backup job cares about.
+      </p>
+      <div class="out">Deliverable: the random-read IOPS and sequential-read MB/s, and one sentence mapping each to a workload (small random ⇒ database; large sequential ⇒ backup/streaming).</div>
+    </div>
+
+    <!-- ============================== 16 ============================== -->
+    <h2 id="s16">16 · Quiz</h2>
+    <div class="callout warn">
+      <span class="t">How to use this</span>
+      <p>
+        Answer in your own words <strong>before</strong> revealing the model answer. Two or three
+        sentences each. You've finished Module&nbsp;2 when you can answer Q1, Q3, Q4 and Q7 cold and have
+        completed E1–E4 on a real machine.
+      </p>
+    </div>
+
+    <div class="quiz">
+
+      <details class="q"><summary>Distinguish a block device, a filesystem and a file. What does each layer add?</summary>
+        <div class="ans"><p>A <strong>block device</strong> is the raw abstraction of storage: a flat array of numbered, fixed-size blocks with read-block/write-block, and nothing else — no names, no folders. A <strong>filesystem</strong> is the software layer formatted onto a block device that maps human <em>names</em> (paths, via directories and inodes) to sets of blocks, tracks free space, and enforces permissions. A <strong>file</strong> is one named unit within that filesystem — really an <em>inode</em> (metadata + block pointers) that the filesystem assembles from scattered blocks. Each layer adds one thing: organisation/naming, then a specific stream of bytes.</p></div>
+      </details>
+
+      <details class="q"><summary>What is an inode, and why is a filename not the same thing as a file?</summary>
+        <div class="ans"><p>An <strong>inode</strong> is the filesystem's record for one file: its metadata (size, owner, permissions, timestamps, link count) and the pointers to the data blocks holding its contents — everything <em>except</em> the name. The <strong>name</strong> lives in a <em>directory</em>, which is just a table mapping names to inode numbers. So a filename is a label pointing at an inode; two names can point at one inode (a hard link), "deleting" removes a name (<code>unlink</code>) and frees data only when the link count hits zero, and renaming within a filesystem is instant because only the directory entry changes, never the data.</p></div>
+      </details>
+
+      <details class="q"><summary>Your code calls <code>write()</code> and it returns success. Is the data on the disk? Explain the write path.</summary>
+        <div class="ans"><p>No. A successful <code>write()</code> means the kernel copied your bytes into the volatile <strong>page cache</strong> in RAM and marked the page <em>dirty</em>; it returns before touching the device. The kernel flushes dirty pages to storage <em>later</em> (write-back), and even then the data may sit in the drive's own volatile cache before reaching durable media. So the data is safe against your <em>process</em> crashing but not against <em>power loss</em> until it crosses the durability line — which only <code>fsync</code> (and a drive that honours flushes) forces on demand.</p></div>
+      </details>
+
+      <details class="q"><summary>What does <code>fsync</code> do, and why does a database call it at every commit?</summary>
+        <div class="ans"><p><code>fsync(fd)</code> forces a file's dirty pages (and, correctly configured, the drive cache) out to durable media and blocks until that's done — turning "in RAM" into "on disk." A database calls it at each transaction commit because commit is the exact moment it promises the user "your data is saved," so it must guarantee the data survives a crash <em>then</em>, not eventually. The cost is real (an <code>fsync</code> is milliseconds, far slower than a cached write), which is why database write throughput is often bound by <code>fsync</code> latency rather than bandwidth.</p></div>
+      </details>
+
+      <details class="q"><summary>What does a filesystem journal protect against, and what does it <em>not</em> protect?</summary>
+        <div class="ans"><p>The <strong>journal</strong> records an intended change in a reserved log <em>before</em> applying it, so after a crash the filesystem can replay committed operations or discard incomplete ones and come back <em>structurally consistent</em> in seconds — instead of a multi-hour <code>fsck</code>. But by default it protects the filesystem's <strong>metadata</strong> (its structure), not necessarily your file's <strong>data</strong>: your bytes can still be lost in the page cache on a crash. Structural consistency and data durability are separate guarantees; only <code>fsync</code> gives you the second.</p></div>
+      </details>
+
+      <details class="q"><summary><code>df -h</code> shows free space but writes fail with "No space left on device." What's going on?</summary>
+        <div class="ans"><p>You've almost certainly run out of <strong>inodes</strong>, not bytes. The inode table is a fixed-count resource created with the filesystem, separate from data blocks; millions of tiny files can exhaust it while gigabytes of data space remain free. <code>df -h</code> reports free <em>bytes</em>; <code>df -i</code> reports free <em>inodes</em> — check the latter. (A second cause is a large file that was deleted but is still held open by a process, so its space isn't reclaimed until the file descriptor closes.)</p></div>
+      </details>
+
+      <details class="q"><summary>Distinguish availability, durability and backup. Why isn't RAID a backup?</summary>
+        <div class="ans"><p><strong>Availability</strong> is "can I reach the data right now" — RAID keeps you online through a disk death. <strong>Durability</strong> is "will the data still exist later" — achieved by keeping copies across devices (RAID) and machines/sites (replication). A <strong>backup</strong> is a separate point-in-time copy that survives <em>logical</em> loss: deletion, corruption, bad migrations, ransomware. RAID/replication keep copies <em>in sync</em>, so they faithfully and instantly propagate those events to every copy — which is exactly why they can't stand in for a backup. You need all three.</p></div>
+      </details>
+
+      <details class="q"><summary>What are IOPS, throughput and latency, and which matters for a database vs a backup job?</summary>
+        <div class="ans"><p><strong>IOPS</strong> is how many separate operations/second the device completes — the number that matters for <em>small, random</em> I/O, which is what a database does (many little row reads/writes). <strong>Throughput (MB/s)</strong> is bytes/second for <em>large, sequential</em> I/O — what a backup or log stream cares about. <strong>Latency</strong> is how long one operation takes — felt directly by an <code>fsync</code>-per-commit database. So a database is usually IOPS- and latency-sensitive, a backup is throughput-sensitive, and buying more of the wrong number (they trade off via block size and queue depth) changes nothing.</p></div>
+      </details>
+
+      <details class="q"><summary>Compare block, file and object storage, and give the right job for each.</summary>
+        <div class="ans"><p><strong>Block</strong> storage is a raw virtual disk you format yourself, attached to one machine, with the lowest latency — right for a <em>database's data directory</em> (EBS, Persistent Disk). <strong>File</strong> storage is a ready-made filesystem you mount over the network, shared by many machines with normal paths (NFS/EFS) — for genuinely <em>shared directories across servers</em>, at higher latency. <strong>Object</strong> storage keeps whole objects under keys in flat buckets over HTTP, with no filesystem, huge scale and extreme durability — right for <em>uploads, backups, static assets and logs</em> (S3, GCS, R2). Match the model to the job; putting a database on file or object storage is a classic, painful mistake.</p></div>
+      </details>
+
+      <details class="q"><summary>Why is random access so much slower than sequential on an HDD but not on an SSD?</summary>
+        <div class="ans"><p>An <strong>HDD</strong> reaches a block by mechanically <em>seeking</em> the head to a track and waiting for the platter to <em>rotate</em> the block under it — milliseconds per access, paid on <em>every</em> random jump, while sequential access pays one seek then streams. An <strong>SSD</strong> has no moving parts; any block is reachable in microseconds via electronics, so random access is only modestly slower than sequential. That single physical difference is why HDDs do only a couple hundred random IOPS while SSDs do tens of thousands, and why the "sequential ≫ random" rule is decisive on HDDs but a minor effect on SSDs.</p></div>
+      </details>
+
+    </div>
+
+    <div class="callout good">
+      <span class="t">Next: Module 3 — Linux Fundamentals</span>
+      <p>
+        That's Module&nbsp;2 complete: you can now account for every process, port and gigabyte on a
+        machine, and you understand the four hardware resources — CPU, RAM, and storage — from first
+        principles. Module&nbsp;3 turns that understanding into <em>operation</em>: the Linux filesystem
+        hierarchy (where "everything is a file" and the inode become a daily interface), users and
+        permissions, the shell, <code>systemd</code>, SSH, and diagnosing a sick box under pressure. The
+        inode, the write path and the block device you just learned are about to become the tools you reach
+        for every time DevBoard's server misbehaves. Keep your <code>lsblk</code>/<code>df -i</code> output
+        handy — Module 3 lives on it.
+      </p>
+    </div>
+
+    <hr>
+
+    <nav class="pager" aria-label="Lesson navigation">
+      <a href="lesson-04-memory-and-the-oom-killer.html"><em>Previous lesson</em>← 2.4 · Memory: virtual address spaces, paging, swap &amp; the OOM killer</a>
+      <span class="disabled next"><em>Next lesson</em>3.1 · The filesystem hierarchy &amp; "everything is a file" <small>(not yet generated)</small></span>
+    </nav>
+
+    <footer class="foot">
+      <b>From Commit to Production</b> · Module 2 · Lesson 2.5 — <em>Storage: Block vs File vs Object, Filesystems, Inodes, IOPS &amp; Durability</em><br>
+      <small>Self-contained offline document · no external assets · regenerated in full when revised.
+      Roadmap: <a href="../../index.html">course/index.html</a></small>
+    </footer>
+  </article>
+</div>
+
+<script>
+(function(){
+  var root = document.documentElement;
+
+  /* ---------- theme ---------- */
+  var KEY='ftp.theme', saved=null;
+  try { saved = localStorage.getItem(KEY); } catch(e){}
+  if (saved) root.setAttribute('data-theme', saved);
+  document.getElementById('theme').addEventListener('click', function(){
+    var cur = root.getAttribute('data-theme');
+    if (!cur) cur = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    var next = cur === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem(KEY, next); } catch(e){}
+  });
+
+  /* ---------- expand/collapse all quiz answers ---------- */
+  var btn = document.getElementById('expand');
+  btn.addEventListener('click', function(){
+    var all = document.querySelectorAll('details.q');
+    var anyClosed = Array.prototype.some.call(all, function(d){ return !d.open; });
+    Array.prototype.forEach.call(all, function(d){ d.open = anyClosed; });
+    btn.textContent = anyClosed ? '⇕ Collapse all' : '⇕ Expand all';
+  });
+
+  /* ---------- reading progress bar ---------- */
+  var barEl = document.getElementById('readbar');
+  function onScroll(){
+    var h = document.documentElement;
+    var max = h.scrollHeight - h.clientHeight;
+    barEl.style.width = (max > 0 ? (h.scrollTop / max * 100) : 0) + '%';
+  }
+  addEventListener('scroll', onScroll, {passive:true});
+  onScroll();
+
+  /* ---------- TOC scroll-spy ---------- */
+  var links = Array.prototype.slice.call(document.querySelectorAll('#tocList a'));
+  var targets = links.map(function(a){ return document.querySelector(a.getAttribute('href')); })
+                     .filter(Boolean);
+  if ('IntersectionObserver' in window && targets.length){
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if (!e.isIntersecting) return;
+        links.forEach(function(a){
+          a.classList.toggle('on', a.getAttribute('href') === '#' + e.target.id);
+        });
+      });
+    }, { rootMargin:'-80px 0px -70% 0px', threshold:0 });
+    targets.forEach(function(t){ io.observe(t); });
+  }
+})();
+</script>
+</body>
+</html>
