@@ -1,0 +1,1347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 3.2 · Users, Groups, Permissions, sudo &amp; Least Privilege — From Commit to Production</title>
+<style>
+/* ============================================================
+   DESIGN TOKENS  (same system as the roadmap)
+   ============================================================ */
+:root{
+  color-scheme: dark light;
+  --font-sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", Consolas, "SFMono-Regular", Menlo, monospace;
+
+  --bg:#0a0e17; --bg-alt:#0e1421; --surface:#131b2b; --surface-2:#19233a;
+  --border:#243049; --border-strong:#37456a;
+  --text:#e8eefb; --text-dim:#a7b4cd; --text-faint:#78869f;
+
+  --accent:#6ea8ff;  --accent-soft:rgba(110,168,255,.14);
+  --green:#4fd39c;   --green-soft:rgba(79,211,156,.13);
+  --amber:#f2b754;   --amber-soft:rgba(242,183,84,.13);
+  --red:#ff7f76;     --red-soft:rgba(255,127,118,.13);
+  --purple:#b28cff;  --purple-soft:rgba(178,140,255,.13);
+  --teal:#4fd0d9;    --teal-soft:rgba(79,208,217,.13);
+
+  --radius:14px; --radius-sm:8px;
+  --shadow:0 1px 2px rgba(0,0,0,.45), 0 14px 34px -18px rgba(0,0,0,.75);
+  --maxw:1220px; --readw:840px;
+}
+:root[data-theme="light"]{
+  color-scheme: light;
+  --bg:#f7f9fc; --bg-alt:#eef2f8; --surface:#ffffff; --surface-2:#f2f5fa;
+  --border:#dde3ee; --border-strong:#c2ccdd;
+  --text:#131a26; --text-dim:#4b586e; --text-faint:#75839a;
+  --accent:#1f5fd0; --accent-soft:rgba(31,95,208,.09);
+  --green:#0f8a5f;  --green-soft:rgba(15,138,95,.10);
+  --amber:#9a6a06;  --amber-soft:rgba(154,106,6,.10);
+  --red:#c3352b;    --red-soft:rgba(195,53,43,.09);
+  --purple:#6d3ecb; --purple-soft:rgba(109,62,203,.09);
+  --teal:#07767e;   --teal-soft:rgba(7,118,126,.10);
+  --shadow:0 1px 2px rgba(18,28,45,.06), 0 12px 28px -18px rgba(18,28,45,.25);
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    color-scheme: light;
+    --bg:#f7f9fc; --bg-alt:#eef2f8; --surface:#ffffff; --surface-2:#f2f5fa;
+    --border:#dde3ee; --border-strong:#c2ccdd;
+    --text:#131a26; --text-dim:#4b586e; --text-faint:#75839a;
+    --accent:#1f5fd0; --accent-soft:rgba(31,95,208,.09);
+    --green:#0f8a5f;  --green-soft:rgba(15,138,95,.10);
+    --amber:#9a6a06;  --amber-soft:rgba(154,106,6,.10);
+    --red:#c3352b;    --red-soft:rgba(195,53,43,.09);
+    --purple:#6d3ecb; --purple-soft:rgba(109,62,203,.09);
+    --teal:#07767e;   --teal-soft:rgba(7,118,126,.10);
+    --shadow:0 1px 2px rgba(18,28,45,.06), 0 12px 28px -18px rgba(18,28,45,.25);
+  }
+}
+
+/* ============================================================ BASE */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth; scroll-padding-top:80px}
+body{margin:0; background:var(--bg); color:var(--text);
+  font-family:var(--font-sans); font-size:16.5px; line-height:1.72; -webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{line-height:1.28; margin:0 0 .5em; letter-spacing:-.015em; font-weight:680}
+h1{font-size:clamp(1.9rem,4vw,2.7rem)}
+h2{font-size:clamp(1.35rem,2.4vw,1.72rem); margin-top:2.6em; padding-top:.2em}
+h3{font-size:1.1rem; margin-top:2em; color:var(--text)}
+h4{font-size:.98rem; margin-top:1.5em; color:var(--text-dim)}
+p{margin:0 0 1.05em}
+a{color:var(--accent); text-decoration:none}
+a:hover{text-decoration:underline}
+strong{font-weight:660}
+em.term{font-style:normal; font-weight:680; color:var(--text)}
+code{font-family:var(--font-mono); font-size:.87em; background:var(--surface-2);
+  border:1px solid var(--border); border-radius:5px; padding:.1em .38em}
+ul,ol{padding-left:1.3em; margin:0 0 1.05em}
+li{margin:.35em 0}
+blockquote{margin:1.5em 0; padding:2px 0 2px 18px; border-left:3px solid var(--border-strong);
+  color:var(--text-dim); font-style:italic}
+blockquote footer{font-style:normal; font-size:.85rem; color:var(--text-faint); margin-top:.4em}
+hr{border:0; border-top:1px solid var(--border); margin:2.6rem 0}
+small{color:var(--text-faint)}
+sup a{font-size:.7em; padding:0 1px}
+
+/* ============================================================ BAR */
+header.bar{position:sticky; top:0; z-index:60;
+  background:color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter:blur(10px); border-bottom:1px solid var(--border)}
+.bar-in{padding:10px 22px; display:flex; align-items:center; gap:14px}
+.brand{font-weight:700; font-size:.92rem; white-space:nowrap}
+.brand a{color:var(--text)}
+.brand span{color:var(--accent)}
+.crumb{font-size:.82rem; color:var(--text-faint); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.bar .right{margin-left:auto; display:flex; gap:8px; align-items:center}
+button.ghost{font:inherit; font-size:.8rem; cursor:pointer; color:var(--text-dim);
+  background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:5px 11px}
+button.ghost:hover{border-color:var(--border-strong); color:var(--text)}
+#readbar{position:fixed; top:0; left:0; height:2px; background:var(--accent); z-index:70; width:0}
+
+/* ============================================================ LAYOUT */
+.shell{padding:0 40px;
+  display:grid; grid-template-columns:1fr; gap:36px}
+
+aside.toc{display:none}
+aside.toc .inner{position:sticky; top:74px; max-height:calc(100vh - 96px); overflow:auto;
+  padding:22px 0 40px; font-size:.86rem}
+aside.toc .lbl{font-size:.7rem; letter-spacing:.12em; text-transform:uppercase;
+  color:var(--text-faint); font-weight:700; margin:0 0 10px}
+aside.toc ol{list-style:none; padding:0; margin:0; counter-reset:t}
+aside.toc li{margin:0; counter-increment:t}
+aside.toc a{display:flex; gap:8px; padding:5px 10px 5px 8px; border-radius:6px;
+  color:var(--text-dim); border-left:2px solid transparent; line-height:1.4}
+aside.toc a:before{content:counter(t); font-family:var(--font-mono); font-size:.72rem;
+  color:var(--text-faint); flex:0 0 1.4em; text-align:right}
+aside.toc a:hover{background:var(--surface-2); color:var(--text); text-decoration:none}
+aside.toc a.on{color:var(--accent); border-left-color:var(--accent); background:var(--accent-soft)}
+article{min-width:0; padding-bottom:20px}
+
+/* ============================================================ HERO */
+.lead{padding:46px 0 26px; border-bottom:1px solid var(--border); margin-bottom:8px}
+.kicker{font-family:var(--font-mono); font-size:.74rem; letter-spacing:.16em;
+  text-transform:uppercase; color:var(--accent); margin-bottom:12px}
+.subtitle{font-size:1.1rem; color:var(--text-dim); max-width:var(--readw); margin-top:.6em}
+.meta{display:flex; flex-wrap:wrap; gap:8px; margin-top:20px}
+
+/* ============================================================ COMPONENTS */
+.pill{display:inline-block; font-family:var(--font-mono); font-size:.7rem; padding:3px 9px;
+  border-radius:999px; border:1px solid var(--border-strong); color:var(--text-dim); white-space:nowrap}
+.pill.a{color:var(--accent); border-color:var(--accent); background:var(--accent-soft)}
+.pill.g{color:var(--green); border-color:var(--green); background:var(--green-soft)}
+.pill.r{color:var(--red); border-color:var(--red); background:var(--red-soft)}
+.pill.p{color:var(--purple); border-color:var(--purple); background:var(--purple-soft)}
+
+.callout{border-left:3px solid var(--accent); background:var(--accent-soft);
+  border-radius:0 var(--radius-sm) var(--radius-sm) 0; padding:15px 19px; margin:1.7em 0}
+.callout.warn{border-color:var(--amber); background:var(--amber-soft)}
+.callout.bad{border-color:var(--red); background:var(--red-soft)}
+.callout.good{border-color:var(--green); background:var(--green-soft)}
+.callout.def{border-color:var(--purple); background:var(--purple-soft)}
+.callout .t{font-weight:700; font-size:.76rem; letter-spacing:.1em; text-transform:uppercase;
+  margin-bottom:6px; display:block; color:var(--text)}
+.callout > :last-child{margin-bottom:0}
+
+dl.terms{margin:1.4em 0; padding:0}
+dl.terms dt{font-weight:680; color:var(--text); margin-top:1em; font-size:.98rem}
+dl.terms dt:first-child{margin-top:0}
+dl.terms dd{margin:.25em 0 0; color:var(--text-dim); padding-left:0}
+
+pre{background:var(--bg-alt); border:1px solid var(--border); border-radius:var(--radius-sm);
+  padding:16px 18px; overflow-x:auto; font-family:var(--font-mono); font-size:.8rem;
+  line-height:1.5; margin:1.6em 0}
+pre code{background:none; border:0; padding:0; font-size:inherit}
+figure{margin:1.8em 0}
+figure figcaption{font-size:.82rem; color:var(--text-faint); margin-top:-.6em; padding-left:2px}
+
+.tablewrap{overflow-x:auto; margin:1.6em 0; border:1px solid var(--border); border-radius:var(--radius)}
+table{border-collapse:collapse; width:100%; font-size:.9rem; min-width:560px}
+th,td{padding:10px 14px; text-align:left; border-bottom:1px solid var(--border); vertical-align:top}
+th{background:var(--surface-2); font-size:.73rem; text-transform:uppercase; letter-spacing:.08em;
+  color:var(--text-dim); font-weight:700}
+tr:last-child td{border-bottom:0}
+td.y{color:var(--green); font-weight:600} td.n{color:var(--red); font-weight:600}
+
+.card{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+  padding:20px 22px; box-shadow:var(--shadow); margin:1.6em 0}
+.card > :first-child{margin-top:0}
+.grid2{display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; margin:1.6em 0}
+.grid2 .card{margin:0}
+
+/* misconceptions */
+.myth{border:1px solid var(--border); border-radius:var(--radius); margin:14px 0; overflow:hidden}
+.myth .m{background:var(--red-soft); border-bottom:1px solid var(--border); padding:11px 16px;
+  font-weight:660; display:flex; gap:10px}
+.myth .m:before{content:"✕"; color:var(--red); font-weight:700}
+.myth .r{padding:13px 16px}
+.myth .r:before{content:"Reality "; font-family:var(--font-mono); font-size:.68rem;
+  letter-spacing:.12em; text-transform:uppercase; color:var(--green); display:block; margin-bottom:4px}
+.myth .r > :last-child{margin-bottom:0}
+
+/* resources */
+.res{margin:1.4em 0}
+.res h4{margin:1.4em 0 .4em; color:var(--accent); font-size:.78rem;
+  letter-spacing:.1em; text-transform:uppercase}
+.res ul{list-style:none; padding:0; margin:0}
+.res li{border-bottom:1px dashed var(--border); padding:8px 0; margin:0}
+.res li:last-child{border-bottom:0}
+.res .why{display:block; font-size:.85rem; color:var(--text-dim)}
+.res .rank{font-family:var(--font-mono); font-size:.66rem; padding:1px 6px; border-radius:999px;
+  border:1px solid var(--green); color:var(--green); background:var(--green-soft); margin-left:6px}
+
+/* exercises */
+.ex{border:1px solid var(--border); border-left:3px solid var(--teal);
+  border-radius:0 var(--radius) var(--radius) 0; padding:16px 20px; margin:16px 0; background:var(--surface)}
+.ex .h{font-weight:680; margin-bottom:6px}
+.ex .h span{font-family:var(--font-mono); font-size:.72rem; color:var(--teal); margin-right:8px}
+.ex .out{font-size:.86rem; color:var(--text-faint); margin-top:8px; border-top:1px dashed var(--border); padding-top:8px}
+.ex > :last-child{margin-bottom:0}
+
+/* quiz */
+.quiz{counter-reset:q}
+.q{border:1px solid var(--border); border-radius:var(--radius); margin:12px 0;
+  background:var(--surface); overflow:hidden}
+.q > summary{cursor:pointer; list-style:none; padding:14px 18px; display:flex; gap:12px;
+  font-weight:600; align-items:flex-start}
+.q > summary::-webkit-details-marker{display:none}
+.q > summary:before{counter-increment:q; content:"Q" counter(q); font-family:var(--font-mono);
+  font-size:.72rem; color:var(--accent); background:var(--accent-soft);
+  border:1px solid var(--accent); border-radius:6px; padding:2px 7px; flex:0 0 auto; margin-top:2px}
+.q > summary::after{content:"show answer"; margin-left:auto; font-size:.7rem; font-weight:600;
+  letter-spacing:.08em; text-transform:uppercase; color:var(--text-faint); flex:0 0 auto; padding-top:4px}
+.q[open] > summary::after{content:"hide"}
+.q .ans{padding:2px 18px 16px; border-top:1px solid var(--border); margin-top:0;
+  background:var(--bg-alt); color:var(--text-dim)}
+.q .ans > :first-child{margin-top:1em}
+.q .ans > :last-child{margin-bottom:0}
+.q .ans strong{color:var(--text)}
+
+/* summary list */
+ul.takeaways{list-style:none; padding:0}
+ul.takeaways li{padding:9px 0 9px 30px; position:relative; border-bottom:1px dashed var(--border)}
+ul.takeaways li:last-child{border-bottom:0}
+ul.takeaways li:before{content:"▸"; position:absolute; left:6px; top:9px; color:var(--accent)}
+
+/* pager / footer */
+.pager{display:flex; gap:12px; margin:44px 0 30px; flex-wrap:wrap; max-width:none}
+.pager a, .pager .disabled{flex:1 1 250px; border:1px solid var(--border); border-radius:var(--radius);
+  padding:14px 18px; background:var(--surface); text-decoration:none; color:var(--text)}
+.pager a:hover{border-color:var(--accent); text-decoration:none}
+.pager .disabled{opacity:.45}
+.pager em{display:block; font-style:normal; font-size:.7rem; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--text-faint); margin-bottom:3px}
+.pager .next{text-align:right}
+footer.foot{border-top:1px solid var(--border); margin-top:20px; padding:24px 0 56px;
+  color:var(--text-faint); font-size:.85rem}
+
+@media print{
+  header.bar,aside.toc,#readbar,button.ghost,.pager{display:none}
+  body{background:#fff; color:#000; font-size:10.5pt}
+  .shell{display:block; max-width:none; padding:0}
+  .q{break-inside:avoid} .q .ans{display:block !important}
+  article > *{max-width:none}
+}
+</style>
+</head>
+<body>
+
+<div id="readbar"></div>
+<header class="bar">
+  <div class="bar-in">
+    <div class="brand"><a href="../../index.html">Commit&nbsp;<span>→</span>&nbsp;Production</a></div>
+    <div class="crumb">/ Module&nbsp;3 · Linux / Lesson&nbsp;3.2</div>
+    <div class="right">
+      <button class="ghost" id="expand">⇕ Expand all</button>
+      <button class="ghost" id="theme">◐ Theme</button>
+    </div>
+  </div>
+</header>
+
+<div class="shell">
+
+  <aside class="toc">
+    <div class="inner">
+      <p class="lbl">Lesson contents</p>
+      <ol id="tocList">
+        <li><a href="#s1">Problem Statement</a></li>
+        <li><a href="#s2">Historical Context</a></li>
+        <li><a href="#s3">Previous Solution</a></li>
+        <li><a href="#s4">Why It Failed</a></li>
+        <li><a href="#s5">New Solution</a></li>
+        <li><a href="#s6">Internal Mechanics</a></li>
+        <li><a href="#s7">Real Industry Examples</a></li>
+        <li><a href="#s8">Diagrams</a></li>
+        <li><a href="#s9">Advantages</a></li>
+        <li><a href="#s10">Limitations</a></li>
+        <li><a href="#s11">Common Misconceptions</a></li>
+        <li><a href="#s12">Practical Use Cases</a></li>
+        <li><a href="#s13">Summary</a></li>
+        <li><a href="#s14">Recommended Resources</a></li>
+        <li><a href="#s15">Exercise</a></li>
+        <li><a href="#s16">Quiz</a></li>
+      </ol>
+    </div>
+  </aside>
+
+  <article>
+    <div class="lead">
+      <div class="kicker">Module 3 · Lesson 3.2</div>
+      <h1>Users, groups, permission bits, ownership, <code>sudo</code> and least privilege</h1>
+      <p class="subtitle">
+        In Lesson 3.1 you learned to name and read anything on the machine as a path in one tree. But every
+        <code>ls -l</code> line carried three things we deliberately ignored: an <em>owner</em>, a
+        <em>group</em>, and a cluster of <em>permission bits</em>. Those fields are the entire access-control
+        system of a Unix machine — the answer to "<em>who</em> is allowed to read, change or run each file,"
+        and therefore the answer to "what can an attacker who breaks into my web app actually touch." This
+        lesson takes the tree you can now navigate and adds the security layer that decides who may open each
+        node in it. It is the difference between a machine you can read and a machine you can safely
+        <em>expose to the public internet</em> — and it is the foundation of the single most important
+        operational habit in this course: <strong>least privilege</strong>.
+      </p>
+      <div class="meta">
+        <span class="pill a">~70 min read</span>
+        <span class="pill">Prerequisites: Module 2, Lesson 3.1</span>
+        <span class="pill">Conceptual · hands-on at the end</span>
+        <span class="pill g">Module 3 · Milestone 3</span>
+      </div>
+    </div>
+
+    <div class="callout def">
+      <span class="t">Learning objectives</span>
+      <p>By the end of this lesson you will be able to:</p>
+      <ol style="margin-bottom:0">
+        <li>Explain that every process runs <em>as a user</em> (a <em>UID</em>) in one or more <em>groups</em> (<em>GIDs</em>), and read a process's and a file's identity from the system.</li>
+        <li>Decode and set the <em>owner / group / other × read / write / execute</em> permission model — both the <code>rwx</code> symbolic form and the <em>octal</em> form (<code>644</code>, <code>755</code>, <code>600</code>).</li>
+        <li>State precisely what <em>read</em>, <em>write</em> and <em>execute</em> mean on a <strong>file</strong> versus a <strong>directory</strong> — the source of most permission surprises.</li>
+        <li>Change ownership and permissions with <code>chown</code>, <code>chgrp</code> and <code>chmod</code>, and predict what new files get, via the <em>umask</em>.</li>
+        <li>Explain the three special bits — <em>setuid</em>, <em>setgid</em>, <em>sticky</em> — and why <code>/usr/bin/passwd</code> and <code>/tmp</code> need them.</li>
+        <li>Describe what makes <em>root</em> special, how <code>sudo</code> grants <em>scoped, audited</em> escalation, and why "just run everything as root" is the cardinal sin.</li>
+        <li>Apply <em>least privilege</em>: give each human and each service its own account with the minimum rights it needs — the exact hardening you'll do to DevBoard's server.</li>
+      </ol>
+    </div>
+
+    <div class="callout">
+      <span class="t">Where this sits on the map</span>
+      <p>
+        This lesson attaches meaning to the owner/group/mode columns of Lesson 3.1's <code>ls -l</code>. It is
+        the security spine of the rest of Module 3: Lesson 3.3 (the shell) runs commands <em>as your user</em>,
+        subject to these bits; 3.5 (packages) installs software as root into root-owned directories; 3.6
+        (<code>systemd</code>) runs DevBoard as an <em>unprivileged service user</em> defined here; 3.7 (SSH)
+        is entirely about <em>who</em> may log in and as whom, and refuses keys whose permission bits are too
+        loose. The project increment for the whole module — a dedicated <code>deploy</code> user, key-only
+        access, DevBoard running without root — is <em>this lesson applied</em>. Get least privilege into your
+        hands now and every later hardening step becomes obvious rather than magic.
+      </p>
+    </div>
+
+    <!-- ============================== 1 ============================== -->
+    <h2 id="s1">1 · Problem Statement</h2>
+
+    <p>
+      Your server is about to face the public internet. The moment DevBoard is reachable, so is your machine:
+      bots will try your SSH port within minutes, and your own application code — parsing untrusted input from
+      strangers — is one bug away from running an attacker's commands. On a single box you now have several
+      distinct <em>parties</em> whose powers must differ: <strong>you</strong> (an administrator who
+      occasionally needs to install software), a <strong>deploy</strong> account that ships new versions,
+      DevBoard's <strong>web process</strong> (which touches untrusted data all day), <strong>PostgreSQL</strong>
+      (which owns the database files and nothing else), and the <strong>system itself</strong> (whose config
+      and binaries no ordinary process should be able to rewrite). The problem this lesson solves is the one
+      that decides whether a single bug is an <em>inconvenience</em> or a <em>total compromise</em>:
+    </p>
+    <ul>
+      <li>"Many parties share this one machine — me, a deploy account, the web app, the database, the OS. How do I make sure each can touch <strong>only what it must</strong>, so a mistake or a break-in is <em>contained</em> rather than catastrophic?"</li>
+      <li>"An attacker exploits a bug in my Express handler. If that process could read <code>/etc/shadow</code>, rewrite the SSH config and delete the database files, I've lost everything. How do I ensure that process runs with <strong>almost no power</strong> in the first place?"</li>
+      <li>"I need to install a package or restart a service <em>sometimes</em> — genuine admin work. Do I have to log in as an all-powerful account <strong>full-time</strong> (and risk one fat-fingered command wrecking the box), or can I borrow that power <em>briefly, deliberately, and on the record</em>?"</li>
+      <li>"Three teammates deploy this app. If they share one login, and something gets deleted at 3&nbsp;a.m., <strong>who did it</strong>? Can the system even tell me?"</li>
+      <li>"SSH refuses to use my private key, complaining it is <strong>'too open.'</strong> Why does the <em>permission bits on a file</em> decide whether I can log in at all?"</li>
+    </ul>
+
+    <div class="callout bad">
+      <span class="t">The core problem</span>
+      <p>
+        A server is a shared machine touched by multiple humans and multiple programs, some of them handling
+        hostile input from the entire internet. If every party has full power, then <strong>any</strong>
+        mistake or <strong>any</strong> compromise is unbounded: a single bug in one web request can read every
+        secret, rewrite every config, and destroy every file on the box. What we need is a way to give each
+        <em>identity</em> — human or program — a <em>precisely bounded</em> set of rights: the ability to open,
+        modify, or run exactly the things it legitimately needs and nothing more, plus a controlled, recorded
+        way to <em>temporarily</em> exceed those bounds for genuine administration. That containment — small
+        blast radius by default, deliberate escalation by exception — is the whole of this lesson, and its
+        governing principle has a name: <strong>least privilege</strong>.
+      </p>
+    </div>
+
+    <p>
+      The promise: by the end, every <code>ls -l</code> line will read like a sentence — "this file is owned by
+      <em>this</em> user, in <em>this</em> group, and <em>these</em> parties may read/write/run it" — you will
+      be able to run DevBoard as a near-powerless service account, and you will understand exactly why a broken
+      web request on a well-configured box is a bad afternoon rather than a company-ending breach.
+    </p>
+
+    <!-- ============================== 2 ============================== -->
+    <h2 id="s2">2 · Historical Context</h2>
+
+    <p>
+      Unix permissions are not a bolt-on security product; they were baked into the system from its earliest
+      days because Unix was, from birth, a machine <em>many people shared at once</em>. Each step below added
+      one more piece of the model you use today.
+    </p>
+
+    <h3>1960s · Time-sharing forces the question</h3>
+    <p>
+      Before time-sharing, a computer ran one program for one person at a time, and access control was a lock
+      on the machine-room door. Systems like MIT's <em>CTSS</em> (Compatible Time-Sharing System, 1961) let
+      many users log in <em>simultaneously</em> to one expensive mainframe — and immediately raised a new
+      question no single-user machine had: how do you stop one user reading or clobbering another's files? CTSS
+      introduced per-user accounts and even the first passwords. The shared computer <em>created</em> the need
+      for permissions.
+    </p>
+
+    <h3>1969–1971 · Unix bakes identity into every file and process</h3>
+    <p>
+      Thompson and Ritchie's Unix made the model wonderfully small. Every user got a numeric <em>user ID</em>
+      (UID); every running process carried the UID of whoever started it; and every file recorded an
+      <em>owner</em> plus a compact set of permission bits. Access was checked by the kernel on every
+      <code>open</code>. There was no separate "security system" to configure — identity and permission were
+      properties of the same files and processes Lesson 3.1 taught you to read.
+    </p>
+
+    <h3>1970s · Groups, and the <code>rwx</code> triad</h3>
+    <p>
+      Real organisations aren't just "me" and "everyone." Unix added <em>groups</em> so a set of users could
+      share access to a set of files (the classic example: a "staff" group that can all edit a shared
+      project). The permission model settled into its enduring shape — three classes (<em>owner</em>,
+      <em>group</em>, <em>other</em>) each with three bits (<em>read</em>, <em>write</em>, <em>execute</em>) —
+      nine bits total, the model in §6.2 that has survived essentially unchanged for fifty years.
+    </p>
+
+    <h3>1973 · setuid — controlled, temporary privilege</h3>
+    <p>
+      Dennis Ritchie invented the <em>setuid bit</em> (patented 1979): a program marked setuid runs with the
+      privileges of its <em>owner</em>, not its caller. This solved a real puzzle — how can an ordinary user
+      change their own password, when the password file must stay unwritable to ordinary users?
+      <code>/usr/bin/passwd</code> is owned by root and setuid, so running it briefly grants exactly the power
+      to update <em>your own</em> line in the file, and nothing else. It is the first "borrow power for a
+      narrow purpose" mechanism, and the ancestor of <code>sudo</code>.
+    </p>
+
+    <h3>Late 1970s–80s · The superuser, and then <code>sudo</code></h3>
+    <p>
+      Unix designated UID&nbsp;0 — <em>root</em>, the <em>superuser</em> — as the identity for which the kernel
+      simply <em>skips</em> permission checks: root can do anything. That is powerful and dangerous, so in 1980
+      Bob Coggeshall and Cliff Spencer wrote <em>sudo</em> ("superuser do") at SUNY/Buffalo. Instead of logging
+      in as root all day, an administrator runs a <em>single</em> command as root, authenticated by their
+      <em>own</em> password, governed by a policy file, and <em>logged</em>. Least privilege for humans became
+      practical.
+    </p>
+
+    <h3>1990s–2000s · Beyond all-or-nothing: capabilities, PAM, ACLs, MAC</h3>
+    <p>
+      The coarseness of "ordinary user vs all-powerful root" prompted refinements Linux still carries.
+      <em>POSIX capabilities</em> (Linux 2.2, 1999) split root's monolithic power into ~40 discrete privileges
+      (e.g. <code>CAP_NET_BIND_SERVICE</code> — bind a port below 1024 without being root). <em>PAM</em>
+      (Pluggable Authentication Modules) made "how do we verify a user" configurable. <em>POSIX ACLs</em> added
+      finer per-user grants beyond the nine bits. And <em>mandatory access control</em> — SELinux, AppArmor —
+      added a policy layer <em>above</em> the discretionary model, confining even root. These are the topic of
+      §10's limitations; the nine-bit model plus root plus sudo is the durable core you must master first.
+    </p>
+
+    <!-- ============================== 3 ============================== -->
+    <h2 id="s3">3 · The Previous Solution (in detail)</h2>
+
+    <p>
+      The instructive "before" here isn't an old operating system — it's the model a working engineer defaults
+      to when they haven't yet internalised least privilege, and it is depressingly common on real servers:
+      <em>one powerful account, used for everything</em>. Provision a VPS and most providers still drop you in
+      as <code>root</code>; the path of least resistance is to just stay there.
+    </p>
+
+    <p>The model, stated plainly:</p>
+<pre><code>THE "EVERYTHING AS ROOT / ONE SHARED ACCOUNT" MODEL
+
+  Login:      ssh root@server          (or one shared "admin" login for the team)
+  Run the app:  node server.js         ← as root, so it "just works," no permission fights
+  Deploy:       git pull &amp;&amp; restart    ← as root
+  Install:      apt install ...         ← as root (fine, this genuinely needs it)
+  Teammates:    all share the same password / same key
+
+  Files created: owned by root, often rw for everyone to avoid "permission denied"
+  Mindset:       permissions are an OBSTACLE to be silenced with chmod 777, not a tool</code></pre>
+
+    <p>The assumptions this model bakes in:</p>
+    <dl class="terms">
+      <dt>Privilege is binary and permanent</dt>
+      <dd>You are either "the admin" (all power, all the time) or locked out. There is no notion of holding minimal power by default and borrowing more briefly.</dd>
+      <dt>One identity serves all purposes</dt>
+      <dd>The same account edits system config, runs the internet-facing app, and owns the data. The web process's power equals the administrator's power.</dd>
+      <dt>Permissions are friction, not a feature</dt>
+      <dd>Because everything runs as root (which bypasses checks) or is made world-writable (<code>chmod 777</code>) to stop "permission denied," the bits are treated as noise to be silenced rather than a boundary to be designed.</dd>
+      <dt>Accountability is optional</dt>
+      <dd>A shared login means the machine cannot attribute an action to a person. "Who ran that?" has no technical answer.</dd>
+    </dl>
+
+    <p>
+      And — crucially — this model <em>works</em>, which is exactly why it persists. The app starts, deploys
+      succeed, nobody fights permissions, and on a private hobby box with one trusted operator the risk may
+      genuinely be acceptable. Its appeal is real: zero friction, nothing to configure, no "permission denied"
+      to debug at 2&nbsp;a.m. The trouble is that every one of its conveniences is also the removal of a
+      safety boundary — and the bill comes due the instant the machine faces untrusted input or more than one
+      person. The next section is that bill.
+    </p>
+
+    <!-- ============================== 4 ============================== -->
+    <h2 id="s4">4 · Why It Failed (for real servers)</h2>
+
+    <p>
+      "Failed" is scoped precisely: the all-root model is not <em>wrong to exist</em> — root has to exist, and
+      some tasks truly need it — it fails as a <em>default operating posture</em> for an internet-exposed,
+      multi-person machine. Each assumption becomes a concrete, well-known way to lose a server.
+    </p>
+
+    <h3>4.1 The blast radius equals the privilege</h3>
+    <p>
+      When the internet-facing process runs as root, a single exploited bug in your request handling grants the
+      attacker <em>root</em>. They can read every secret (<code>/etc/shadow</code>, your <code>.env</code>,
+      TLS private keys), install a backdoor, rewrite the SSH config to lock you out, encrypt the disk for
+      ransom, and pivot to other machines. The <em>same</em> bug, in a process running as a powerless service
+      user, lets them read only what that user could — often just the app's own files. The privilege you grant
+      by default <em>is</em> the damage a compromise can do. This is the single most important sentence in the
+      lesson.
+    </p>
+
+    <h3>4.2 Mistakes are as unbounded as attacks</h3>
+    <p>
+      Root doesn't only amplify attackers — it amplifies <em>you</em>. The infamous <code>rm -rf /</code>
+      (or, more realistically, <code>rm -rf $VAR/</code> where <code>$VAR</code> was empty) is annihilating as
+      root and merely annoying as an unprivileged user, because the kernel refuses the unprivileged user
+      permission to delete most of it. Running everyday work as root removes the guard rail that turns a typo
+      into a shrug instead of a catastrophe.
+    </p>
+
+    <h3>4.3 <code>chmod 777</code> as a way of life poisons the whole box</h3>
+    <p>
+      When permissions are treated as friction, the reflex fix for any "permission denied" is to make the file
+      world-writable (<code>chmod 777</code>). But a world-writable file or directory means <em>any</em>
+      process — including the compromised web app — can rewrite it. Make a script world-writable and you've
+      handed code execution to anyone on the box; make a config world-writable and an attacker rewrites it to
+      their advantage. The convenience directly manufactures vulnerabilities.
+    </p>
+
+    <h3>4.4 A shared account destroys accountability</h3>
+    <p>
+      If three people log in as the same <code>root</code>, the system genuinely cannot tell you who did what.
+      Audit logs attribute every action to one indistinguishable identity, so post-incident review, revoking
+      one person's access, and even honest "was that me?" questions become impossible. Security and operations
+      both depend on the machine being able to say <em>which human</em> took an action.
+    </p>
+
+    <div class="callout warn">
+      <span class="t">The pattern behind all four failures</span>
+      <p>
+        Every failure traces to one root cause: <strong>power is granted broadly and permanently by default,
+        so the consequence of any bug, typo or break-in is unbounded.</strong> The fix is a single principle
+        applied everywhere — <em>least privilege</em>: give each identity the <em>minimum</em> rights it needs,
+        make privilege <em>the exception you request deliberately</em> rather than the state you live in, give
+        every human and every service its <em>own</em> identity, and treat the permission bits as a
+        <em>boundary to design</em> rather than noise to silence. That is precisely the model §5 builds: per-user
+        and per-service identities, the owner/group/other × rwx bits as a real fence, and <code>sudo</code> as
+        the controlled, audited gate for the rare moments you genuinely need more.
+      </p>
+    </div>
+
+    <!-- ============================== 5 ============================== -->
+    <h2 id="s5">5 · The New Solution</h2>
+
+    <p>
+      The solution is one principle — <strong>least privilege</strong> — realised by four mechanisms that
+      compose: <strong>distinct identities</strong> (users &amp; groups) for every human and service;
+      <strong>the nine permission bits</strong> (owner/group/other × read/write/execute) as the per-file fence;
+      <strong>root</strong> as a tightly-guarded superuser; and <strong>sudo</strong> as the audited gate for
+      borrowing root briefly. Vocabulary first — the terms the rest of the module leans on.
+    </p>
+
+    <h3>5.1 The core vocabulary</h3>
+    <dl class="terms">
+      <dt>User &amp; UID</dt>
+      <dd>An <em>identity</em> the system recognises, named for humans but represented internally by a numeric <em>user ID</em>. Every process runs <em>as</em> some user. Regular users start at UID&nbsp;1000+; system/service users get low UIDs; UID&nbsp;0 is root.</dd>
+      <dt>Group &amp; GID</dt>
+      <dd>A named set of users, represented by a numeric <em>group ID</em>, used to grant shared access. Each user has one <em>primary</em> group and may belong to many <em>supplementary</em> groups (e.g. <code>sudo</code>, <code>docker</code>).</dd>
+      <dt>Ownership</dt>
+      <dd>Every file records an <em>owning user</em> and an <em>owning group</em>. These, plus the mode bits, decide who may do what to it.</dd>
+      <dt>Permission bits / mode</dt>
+      <dd>Nine bits attached to every file: <em>read (r)</em>, <em>write (w)</em>, <em>execute (x)</em> — one triad each for <em>owner</em>, <em>group</em>, and <em>other</em> (everyone else). Written symbolically (<code>rwxr-xr-x</code>) or as an octal number (<code>755</code>).</dd>
+      <dt>root / superuser (UID 0)</dt>
+      <dd>The identity for which the kernel <em>skips</em> permission checks. Root can read, write and execute anything, change any ownership, and bind privileged ports. Necessary, and dangerous — hence least privilege.</dd>
+      <dt><code>sudo</code></dt>
+      <dd>A program that lets an authorised user run <em>one</em> command as root (or another user), authenticated by their <em>own</em> password, governed by <code>/etc/sudoers</code>, and <em>logged</em>. Escalation on demand, not by default.</dd>
+      <dt>Least privilege</dt>
+      <dd>The governing principle: every identity should hold the <em>minimum</em> rights required for its job, and no more — so the damage from any bug or breach is bounded to that minimum.</dd>
+      <dt>Discretionary Access Control (DAC)</dt>
+      <dd>The name for this whole model: access is decided by the <em>owner's</em> discretion via ownership and the mode bits. (Contrast: <em>mandatory</em> access control like SELinux in §10, imposed by system policy.)</dd>
+    </dl>
+
+    <div class="callout def">
+      <span class="t">The one sentence to hold onto</span>
+      <p>
+        <strong>Every process on a Linux machine runs as a numeric <em>user</em> (in one or more
+        <em>groups</em>), and the kernel checks, on every access, the target file's <em>owner/group/other ×
+        read/write/execute</em> bits against that identity — except for <em>root</em> (UID&nbsp;0), which
+        bypasses the checks; the whole craft of operating a server safely is <em>least privilege</em>: give
+        each identity the minimum rights it needs and use <code>sudo</code> to borrow more only briefly and on
+        the record.</strong> Nearly every hardening step in this course — a deploy user, a service account,
+        <code>chmod 600</code> on a key, running DevBoard without root — is a direct application of that
+        sentence.
+      </p>
+    </div>
+
+    <h3>5.2 The shape of the solution</h3>
+    <p>
+      Picture DevBoard's server the way it <em>should</em> look: several small identities, each fenced to its
+      own job, and root sitting behind a gate you open only on purpose.
+    </p>
+<pre><code>LEAST PRIVILEGE ON DEVBOARD'S SERVER  ("many small identities, one guarded root")
+
+  IDENTITY            RUNS / OWNS                 CAN TOUCH                     POWER
+  ─────────────────   ─────────────────────────   ──────────────────────────   ───────────
+  you  (uid 1000)     interactive admin login     your files; sudo when asked  low + gate
+    └─ in group sudo  ── may borrow root via sudo, with YOUR password, logged ──▶ root (brief)
+  deploy (uid 1001)   pulls &amp; restarts releases   /srv/devboard, its releases  low
+  devboard (uid 998)  the Express web process      only the app's own files     very low ◀ faces internet
+  postgres (uid 111)  the database                 only /var/lib/postgresql     low
+  root  (uid 0)       nothing runs here by default installs, service control    TOTAL (guarded)
+
+  A bug in the internet-facing "devboard" process gets the attacker "devboard" —
+  which can touch almost nothing. THAT is the blast radius you designed on purpose.</code></pre>
+    <p>
+      Now re-answer §1's questions in one line each. Contain each party? Yes — separate users, each fenced by
+      ownership and mode bits. A web-app bug becomes root? No — the web process runs as the near-powerless
+      <code>devboard</code> user, so the break-in inherits <em>its</em> tiny rights. Admin work without living
+      as root? Yes — <code>sudo</code>, per-command, per-person, logged. Who deleted it at 3&nbsp;a.m.? The
+      audit log, because each human has their own account. Why does SSH reject a loose key? Because a private
+      key readable by others is a private key you must assume is compromised — the bits <em>are</em> the
+      policy. One principle, four mechanisms, a small blast radius by design.
+    </p>
+
+    <!-- ============================== 6 ============================== -->
+    <h2 id="s6">6 · Internal Mechanics</h2>
+
+    <p>
+      Now the machine in detail. We will (6.1) locate identity — UIDs, GIDs and the files that define them;
+      (6.2) decode the nine permission bits from <code>ls -l</code>; (6.3) master the octal shorthand; (6.4)
+      pin down the crucial file-vs-directory meaning of <code>rwx</code>; (6.5) change ownership and mode, and
+      predict new files via the <em>umask</em>; (6.6) explain the three special bits; (6.7) dissect root and
+      <code>sudo</code>; and (6.8) turn it all into a least-privilege playbook for DevBoard.
+    </p>
+
+    <h3>6.1 Identity: who a process is, and where users are defined</h3>
+    <p>
+      Every process carries a user identity, and the kernel makes decisions against it. You can read your own
+      and inspect the definitions:
+    </p>
+<pre><code>$ id
+uid=1000(deploy) gid=1000(deploy) groups=1000(deploy),27(sudo),999(docker)
+   │              │                └─ SUPPLEMENTARY groups (extra memberships)
+   │              └─ primary group (GID) — the group new files you create get
+   └─ your user ID (UID) — the identity your processes run as
+
+$ whoami            # just the username
+$ ps -o user,pid,cmd -C nginx    # what USER a given process runs as</code></pre>
+    <p>
+      Where do these identities live? In three plain text files under <code>/etc</code> (Lesson 3.1's FHS
+      home for config) — themselves subject to the permissions this lesson teaches:
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>File</th><th>Holds</th><th>Readable by</th></tr></thead>
+        <tbody>
+          <tr><td><code>/etc/passwd</code></td><td>One line per user: name, UID, primary GID, home dir, login shell. (Despite the name, <em>no passwords</em> anymore.)</td><td>Everyone (world-readable) — it's just the name↔UID map.</td></tr>
+          <tr><td><code>/etc/group</code></td><td>One line per group: name, GID, and its supplementary members.</td><td>Everyone.</td></tr>
+          <tr><td><code>/etc/shadow</code></td><td>The actual <em>hashed passwords</em> and password-aging policy.</td><td class="n">root only (mode <code>640</code>, group <code>shadow</code>) — the crown jewels.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      A single <code>/etc/passwd</code> line reads like a record: <code>deploy:x:1000:1000:Deploy
+      User:/home/deploy:/bin/bash</code> — username, an <code>x</code> placeholder (the hash lives in
+      <code>shadow</code>), UID, GID, a comment, the home directory, and the <em>login shell</em>. A subtle but
+      vital detail: giving a <em>service</em> account the shell <code>/usr/sbin/nologin</code> means <em>nobody
+      can log in as it interactively</em> — exactly what you want for the <code>devboard</code> and
+      <code>postgres</code> users, which should run a program, never a session. That the kernel identifies
+      users by <em>number</em> (not name) matters later: inside a container (Module 7) UID&nbsp;0 is still root
+      even though the name mapping differs, which is why a container running as root is a genuine host concern.
+    </p>
+
+    <h3>6.2 Reading the nine bits from <code>ls -l</code></h3>
+    <p>
+      Return to Lesson 3.1's <code>ls -l</code> line, and now read the part we skipped — the ten leading
+      characters and the two names:
+    </p>
+<pre><code>-rwxr-x---  1  deploy  devs   8402  server.js
+│└┬┘└┬┘└┬┘     └──┬──┘ └─┬─┘
+│ │  │  │         │      └─ owning GROUP:  members of "devs"
+│ │  │  │         └──────── owning USER:   "deploy"
+│ │  │  └─ OTHER  (everyone else):  --- = no access at all
+│ │  └──── GROUP  (the "devs" group): r-x = read + execute, not write
+│ └─────── OWNER  (deploy):           rwx = read + write + execute
+└───────── file TYPE (Lesson 3.1): - regular, d dir, l symlink, …
+
+  The kernel picks ONE triad and stops:
+     are you the owner?  → use the owner triad, done.
+     else in the group?  → use the group triad, done.
+     else                → use the other triad.</code></pre>
+    <p>
+      That last rule surprises people: the classes are checked <em>owner, then group, then other</em>, and the
+      <em>first</em> matching class wins — the kernel does not "add up" permissions across classes. A
+      consequence that feels backwards: a file with mode <code>r--rw----</code> (<code>owner=r</code>,
+      <code>group=rw</code>) means the owner can <em>only read</em> it even though group members can write —
+      because once you match as the owner, that triad is final. You rarely write such a mode, but knowing the
+      algorithm explains every "why can't the owner…?" puzzle.
+    </p>
+
+    <h3>6.3 The octal shorthand: <code>644</code>, <code>755</code>, <code>600</code></h3>
+    <p>
+      Typing <code>rwxr-xr-x</code> is tedious, so each triad is written as one octal digit: read=4, write=2,
+      execute=1, summed. This is the notation you will actually use with <code>chmod</code> every day:
+    </p>
+<pre><code>   r w x   value            THREE digits = owner, group, other
+   4 2 1                       ┌── owner
+   ───────                     │ ┌── group
+   r w x = 4+2+1 = 7           │ │ ┌── other
+   r - x = 4+0+1 = 5           ▼ ▼ ▼
+   r - - = 4+0+0 = 4           7 5 5   →  rwxr-xr-x   (a program / a directory)
+   - - - = 0                   6 4 4   →  rw-r--r--   (an ordinary file)
+                               6 0 0   →  rw-------   (a private file: SSH key, .env)
+                               7 0 0   →  rwx------   (a private directory: ~/.ssh)</code></pre>
+    <div class="callout">
+      <span class="t">The four you must know cold</span>
+      <p>
+        <strong><code>644</code></strong> — normal file (owner edits, everyone reads).
+        <strong><code>755</code></strong> — program or directory (owner edits, everyone may run/enter).
+        <strong><code>600</code></strong> — private file, owner-only (SSH <em>private</em> keys,
+        <code>.env</code> secrets). <strong><code>700</code></strong> — private directory, owner-only
+        (<code>~/.ssh</code>). Almost everything you set by hand is one of these four; <code>777</code>
+        (world-writable, world-executable) should make you flinch — it is the §4.3 anti-pattern.
+      </p>
+    </div>
+
+    <h3>6.4 What <code>rwx</code> means on a <em>file</em> vs a <em>directory</em></h3>
+    <p>
+      This is the highest-value paragraph in the lesson, because the meaning of the three bits <em>changes</em>
+      between files and directories, and the difference is the source of most real-world permission confusion.
+      Recall from Lesson 3.1 that a directory is itself a file — one whose contents map names to inodes — and
+      the bits suddenly make sense:
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Bit</th><th>On a regular file</th><th>On a directory</th></tr></thead>
+        <tbody>
+          <tr><td><b>r (read)</b></td><td>read the file's contents</td><td><em>list the names</em> inside (<code>ls</code>) — but not necessarily use them</td></tr>
+          <tr><td><b>w (write)</b></td><td>modify the file's contents</td><td><em>create, rename or delete entries</em> inside — note: deleting a file needs write on its <em>directory</em>, not the file!</td></tr>
+          <tr><td><b>x (execute)</b></td><td>run it as a program</td><td><em>enter / traverse</em> it (<code>cd</code>, and access anything <em>inside</em> by name)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      Two consequences trip up nearly everyone. <strong>First:</strong> to reach <code>/a/b/c.txt</code> you
+      need <em>execute</em> on <code>/</code>, <code>/a</code> and <code>/a/b</code> — execute on a directory is
+      "permission to pass through." A directory can be <code>r</code> without <code>x</code> (you can
+      <code>ls</code> the names but can't open any of them) or <code>x</code> without <code>r</code> (you can
+      open a file if you already <em>know</em> its exact name, but can't list what's there — a common trick for
+      "reachable but not browsable" directories). <strong>Second:</strong> whether you can <em>delete</em> a
+      file has nothing to do with the file's own bits — it depends on <em>write permission on the containing
+      directory</em>, because deleting is editing the directory's name→inode table. This is why you can delete
+      a read-only file you own the directory of, and why the sticky bit (§6.6) exists to <em>stop</em> that in
+      shared directories like <code>/tmp</code>.
+    </p>
+
+    <h3>6.5 Changing ownership and mode — and predicting new files (umask)</h3>
+    <p>
+      Three commands cover almost everything. Note that <em>changing ownership</em> generally requires root
+      (only root may give a file away), while <em>changing mode</em> is the owner's prerogative:
+    </p>
+<pre><code>chmod 640 secrets.env          # set exact octal mode  → rw-r-----
+chmod u+x deploy.sh            # SYMBOLIC: add execute for the owner (u=user,g,o,a)
+chmod g-w,o-r report.txt       # remove group-write and other-read
+chmod -R 755 /srv/www          # recurse into a tree (careful: applies x to files too)
+
+chown deploy:devs server.js    # set owner=deploy, group=devs   (needs root)
+chgrp devs shared.log          # change only the group
+chown -R devboard: /srv/devboard   # give a whole tree to the service user</code></pre>
+    <p>
+      But what mode do <em>new</em> files get, when you never set one? Every process has a <em>umask</em> — a
+      set of bits to <em>subtract</em> from the default. Programs create files with a base mode of
+      <code>666</code> (files) or <code>777</code> (directories), then the umask <em>masks off</em> the bits it
+      names. The near-universal default umask is <code>022</code>, which removes write from group and other:
+    </p>
+<pre><code>  new FILE:  base 666  minus umask 022  →  644  (rw-r--r--)
+  new DIR:   base 777  minus umask 022  →  755  (rwxr-xr-x)
+
+  A tighter umask 077 (remove ALL rights from group+other) gives:
+  new FILE:  666 - 077 →  600            new DIR:  777 - 077 → 700
+  → use umask 077 for accounts that handle secrets, so files are private by default.</code></pre>
+    <p>
+      The umask is <em>why</em> a file you just created is readable by others without you asking — the default
+      <code>022</code> chose that. Understanding it turns "why is this world-readable?" from a mystery into a
+      one-line answer, and setting a service account's umask to <code>077</code> is a quiet but real hardening
+      step.
+    </p>
+
+    <h3>6.6 The three special bits: setuid, setgid, sticky</h3>
+    <p>
+      Beyond the nine, three more bits handle cases the basic model can't. They occupy the "missing" high octal
+      digit (a fourth digit, e.g. <code>chmod 4755</code>) and appear <em>in place of</em> an <code>x</code> in
+      <code>ls -l</code>:
+    </p>
+    <dl class="terms">
+      <dt>setuid (<code>u+s</code>, octal 4000) — on an executable</dt>
+      <dd>The program runs with the privileges of its <em>owner</em>, not its caller (§2's Ritchie invention). <code>ls -l /usr/bin/passwd</code> shows <code>-rw<strong>s</strong>r-xr-x</code> owned by root: an ordinary user running it briefly gains root's power <em>for that program only</em>, so they can update their line in <code>/etc/shadow</code>. Powerful and risky — a bug in a setuid-root binary is a privilege-escalation hole, which is why they are audited and minimised.</dd>
+      <dt>setgid (<code>g+s</code>, octal 2000) — on an executable <em>or a directory</em></dt>
+      <dd>On a program: run with the owning <em>group's</em> rights. On a <em>directory</em>, far more useful: new files created inside <em>inherit the directory's group</em> instead of the creator's primary group — the standard trick for a shared project folder where everything must stay group-<code>devs</code> readable.</dd>
+      <dt>sticky bit (<code>+t</code>, octal 1000) — on a directory</dt>
+      <dd>In a directory with the sticky bit, a user may only delete <em>their own</em> files, even if the directory is world-writable. This is exactly why <code>/tmp</code> (mode <code>1777</code>, <code>ls -l</code> shows <code>drwxrwxrw<strong>t</strong></code>) lets everyone create scratch files but stops one user deleting another's — fixing the §6.4 "delete depends on directory write" hazard for shared spaces.</dd>
+    </dl>
+
+    <h3>6.7 root and <code>sudo</code>: the guarded gate</h3>
+    <p>
+      Root (UID&nbsp;0) is special by a single rule: the kernel's permission check <em>returns "allowed"
+      immediately</em> for it, without consulting the mode bits. That's the whole magic — root isn't listed in
+      every file's permissions; it simply skips the test. Which is why the goal is never to <em>remove</em>
+      root (impossible and pointless) but to ensure <em>almost nothing runs as it</em>, and that reaching it is
+      deliberate. <code>sudo</code> is that gate:
+    </p>
+<pre><code>$ apt install nginx
+E: Could not open lock file ... - open (13: Permission denied)   ← you're not root
+
+$ sudo apt install nginx
+[sudo] password for deploy:  ____        ← YOUR password, not root's
+   → sudo checks /etc/sudoers: is "deploy" allowed to run this?
+   → if yes: runs the ONE command as root, then drops back to you
+   → and writes a line to the auth log: who, when, which command</code></pre>
+    <p>
+      Four properties make <code>sudo</code> the least-privilege tool for humans. It is
+      <strong>per-command</strong> (you return to your ordinary self immediately after — you are not "in a root
+      session"). It authenticates with <strong>your own</strong> password, so there is no shared root password
+      to leak. It is <strong>policy-controlled</strong> by <code>/etc/sudoers</code> (edited <em>only</em> with
+      <code>visudo</code>, which validates syntax so a typo can't lock everyone out) — and that policy can be
+      narrow: "user <code>deploy</code> may run <em>only</em> <code>systemctl restart devboard</code>, without a
+      password" is a legitimate, tightly-scoped grant. And it is <strong>logged</strong>, restoring the
+      accountability §4.4 lost. Membership in the <code>sudo</code> group (Debian/Ubuntu) or <code>wheel</code>
+      (RHEL) is what marks a user as allowed to sudo at all.
+    </p>
+    <div class="callout warn">
+      <span class="t"><code>sudo su</code> and <code>sudo -i</code>: the habit to break</span>
+      <p>
+        <code>sudo -i</code> (or <code>sudo su -</code>) opens a full <em>interactive root shell</em> — and now
+        you are living as root again, every command unlogged in its specifics and every typo catastrophic. It
+        is occasionally justified for a long maintenance session, but reaching for it reflexively throws away
+        most of what sudo bought you. Prefer <code>sudo &lt;one command&gt;</code>. If you find yourself wanting
+        a root shell "to save typing sudo," that is usually a sign a command should be added to your sudoers
+        policy instead.
+      </p>
+    </div>
+
+    <h3>6.8 Least privilege in practice: the DevBoard playbook</h3>
+    <p>
+      Everything above assembles into the module's project increment — hardening the server. The moves, and
+      the reasoning behind each:
+    </p>
+    <ul>
+      <li><strong>A human account per person, not shared root.</strong> Create <code>deploy</code> (or one per teammate), add it to the <code>sudo</code> group, and stop using the root login. Now actions are attributable and everyday work has guard rails.</li>
+      <li><strong>A dedicated, no-login <em>service</em> user for the app.</strong> DevBoard's Express process runs as <code>devboard</code> (shell <code>/usr/sbin/nologin</code>, owning only its own files under <code>/srv/devboard</code>). A break-in through a web request inherits <em>this</em> user's near-zero power — the §4.1 blast radius, shrunk on purpose. Postgres already ships this way (the <code>postgres</code> user owns only its data dir).</li>
+      <li><strong>Secrets are <code>600</code>, owned by the account that needs them.</strong> The <code>.env</code>, TLS private keys and SSH keys are readable by exactly one user. This is not paranoia: it is the reason a leaked read-only bug can't necessarily read your database password.</li>
+      <li><strong>The app never needs root to serve traffic.</strong> "But it must bind port 80/443!" — that is the one classic reason people run web apps as root, and the correct fix is <em>not</em> root: either put Nginx in front (Module 5) and let the app listen on a high port, or grant just <code>CAP_NET_BIND_SERVICE</code> (§2's capabilities). Never trade the whole machine's safety for one port number.</li>
+      <li><strong>Narrow sudoers grants for automation.</strong> The deploy pipeline (Module 10) may be allowed to run <em>only</em> the exact restart command, passwordless — power scoped to a single verb, not a blank cheque.</li>
+    </ul>
+
+    <!-- ============================== 7 ============================== -->
+    <h2 id="s7">7 · Real Industry Examples</h2>
+
+    <h3>SSH refuses your key because its permissions are too open</h3>
+    <p>
+      You try to log in and SSH prints <code>Permissions 0644 for 'id_ed25519' are too open ... this private
+      key will be ignored</code>. This isn't pedantry: a private key readable by other users on the machine
+      must be treated as compromised, so <code>ssh</code> <em>refuses to use it</em> until it is
+      <code>chmod 600</code> and its <code>~/.ssh</code> directory is <code>700</code> (§6.3). It is the purest
+      demonstration in daily life that <em>the permission bits are the security policy</em> — the tool enforces
+      least privilege on your behalf. You will meet this exact message in Lesson 3.7.
+    </p>
+
+    <h3>A compromised web app that couldn't do much — because of the service user</h3>
+    <p>
+      The recurring good-news story of production security: an application server is exploited through an
+      unpatched dependency, but because the process ran as an unprivileged, no-login service user owning only
+      its own directory, the attacker landed in a near-empty sandbox — no access to other apps' data, system
+      config, or secrets outside that user's reach. The breach is contained to what that user could touch
+      (§4.1). The <em>same</em> exploit against an app running as root is a full server takeover. The single
+      decision "run it as a dedicated low-privilege user" is what separated the two outcomes.
+    </p>
+
+    <h3>The <code>chmod -R 777</code> that opened a hole</h3>
+    <p>
+      An engineer hits "permission denied" on an upload directory and fixes it with <code>chmod -R 777
+      /var/www</code>. Now the web application's <em>own scripts</em> are world-writable — and the same web
+      process, once it has any file-write bug, can overwrite its own code and achieve remote code execution.
+      The "fix" manufactured the vulnerability (§4.3). The correct fix was to <code>chown</code> the upload
+      directory to the service user and grant only the write it needed — least privilege, not maximum
+      permission.
+    </p>
+
+    <h3>Scoped, passwordless sudo for a deploy robot</h3>
+    <p>
+      DevBoard's CI/CD (Module 10) needs to restart the service after a deploy, but must not have a shell or
+      broad root. The sudoers policy grants the deploy identity exactly one line —
+      <code>deploy ALL=(root) NOPASSWD: /usr/bin/systemctl restart devboard</code> — so automation can perform
+      that <em>one</em> privileged verb without a password and <em>nothing else</em>. This is least privilege
+      applied to a machine actor, and it is standard practice in real deployment pipelines.
+    </p>
+
+    <!-- ============================== 8 ============================== -->
+    <h2 id="s8">8 · Diagrams</h2>
+
+    <h3>8.1 Anatomy of a permission line</h3>
+    <figure>
+<pre><code>   -   rwx   r-x   ---     deploy   devs      ← from `ls -l`
+   │   └┬┘   └┬┘   └┬┘     └──┬──┘  └─┬─┘
+   │    │     │     │        │       └─ owning GROUP
+   │    │     │     │        └───────── owning USER
+   │    │     │     └─ OTHER: --- (nothing)      octal 0
+   │    │     └─────── GROUP: r-x (read+enter)   octal 5
+   │    └───────────── OWNER: rwx (all)          octal 7
+   └─ TYPE (Lesson 3.1)                       →  mode = 750
+
+   KERNEL CHECK on access:  am I the owner? ─yes→ use OWNER triad, STOP.
+                            else in group?  ─yes→ use GROUP triad, STOP.
+                            else ───────────────→ use OTHER triad.
+   (root skips this whole check and is always allowed.)</code></pre>
+      <figcaption>The ten characters and two names encode the entire access policy for a file: which identities may read, write and execute it. The kernel matches the first applicable class and stops.</figcaption>
+    </figure>
+
+    <h3>8.2 <code>rwx</code> means different things on files and directories</h3>
+    <figure>
+<pre><code>            r (read)             w (write)              x (execute)
+   FILE  ┌ see contents      ┌ change contents      ┌ run as a program
+         └ `cat file`        └ edit file            └ `./file`
+
+   DIR   ┌ LIST the names    ┌ add/rename/DELETE    ┌ ENTER / pass through
+         └ `ls dir/`         │  entries inside      └ `cd dir`, open items
+                             └ (delete needs w on      by name
+                                the DIR, not the file!)
+
+   To open /a/b/c.txt you need  x on /  +  x on /a  +  x on /a/b  + r on c.txt
+   ("execute" on each directory = permission to traverse into it)</code></pre>
+      <figcaption>The same three bits carry different meanings for directories, because a directory is a name→inode table. Traversal needs execute; deletion depends on the parent directory's write bit.</figcaption>
+    </figure>
+
+    <h3>8.3 sudo: borrowing root through a guarded gate</h3>
+    <figure>
+<pre><code>   you (uid 1000, in group `sudo`)
+        │  $ sudo systemctl restart devboard
+        ▼
+   ┌───────────────── sudo ─────────────────┐
+   │ 1. authenticate: YOUR password         │
+   │ 2. authorize:   check /etc/sudoers      │──✗ not allowed → deny + log
+   │ 3. run:         the ONE command as root │
+   │ 4. audit:       log who/when/what       │
+   └────────────────────┬────────────────────┘
+                        ▼  runs as uid 0, then you DROP back to uid 1000
+                 (you were never "living as root")
+
+   vs.  ssh root@host …  →  every command is root, unattributed, no guard rails</code></pre>
+      <figcaption>sudo turns root from a place you live into a power you borrow: per-command, authenticated by your own password, checked against policy, and logged.</figcaption>
+    </figure>
+
+    <!-- ============================== 9 ============================== -->
+    <h2 id="s9">9 · Advantages</h2>
+    <p>What identities + the nine bits + root/sudo + least privilege buys you, mapped back to §4:</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Capability</th><th>Because…</th><th>Fixes which §4 failure</th></tr></thead>
+        <tbody>
+          <tr><td><b>Bounded blast radius</b></td><td>the internet-facing process runs as a near-powerless user, so a compromise inherits only that user's tiny rights</td><td>4.1 (blast radius = privilege)</td></tr>
+          <tr><td><b>Guard rails on mistakes</b></td><td>everyday work as an unprivileged user; the kernel refuses destructive actions you didn't deliberately escalate for</td><td>4.2 (unbounded typos)</td></tr>
+          <tr><td><b>Permissions as a real fence</b></td><td>ownership + mode bits actually stop unauthorised access — when used as a boundary, not silenced with <code>777</code></td><td>4.3 (chmod 777 as a habit)</td></tr>
+          <tr><td><b>Accountability</b></td><td>each human has their own account and sudo logs every escalation — the machine can say <em>who</em> did what</td><td>4.4 (shared account)</td></tr>
+          <tr><td><b>Escalation on demand</b></td><td><code>sudo</code> grants root per-command, per-person, per-policy, instead of full-time superuser</td><td>bonus: no root session to hijack</td></tr>
+          <tr><td><b>Skills transfer &amp; automation</b></td><td>the same model governs humans, service accounts and CI robots — one mental model, scoped grants everywhere</td><td>bonus: safe automation (Module 10)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ============================== 10 ============================== -->
+    <h2 id="s10">10 · Limitations</h2>
+    <p>The classic Unix model is durable, but it is coarse, and its edges are worth knowing.</p>
+    <dl class="terms">
+      <dt>Root is all-or-nothing</dt>
+      <dd>The base model has only "ordinary" and "god." A process that needs <em>one</em> privileged thing (bind port 80) traditionally had to be full root. <em>POSIX capabilities</em> (§2) split root into ~40 pieces to fix this, but the default mental model is still binary.</dd>
+      <dt>Only three classes — owner, group, other</dt>
+      <dd>You cannot express "these two specific users may write, that one may only read" with the nine bits alone; you get one owner, one group, and everyone else. <em>POSIX ACLs</em> (<code>setfacl</code>/<code>getfacl</code>) add per-user/per-group grants, at the cost of complexity that's easy to overlook.</dd>
+      <dt>It's <em>discretionary</em> — the owner can always widen access</dt>
+      <dd>DAC lets a file's owner grant it to the world at will, and root can override anything. For environments needing enforced, un-overridable policy (even against root), <em>mandatory access control</em> — SELinux, AppArmor — layers a system-imposed policy on top. That's a whole discipline beyond this course's core.</dd>
+      <dt>Misconfiguration is silent and common</dt>
+      <dd>Nothing warns you that a secret is world-readable or a script world-writable until it's exploited. The model enforces the bits faithfully — including the wrong ones you set. Auditing (§15) is a real, ongoing task.</dd>
+      <dt>Numeric UIDs cross boundaries in surprising ways</dt>
+      <dd>UID&nbsp;0 in a container is UID&nbsp;0 to the host kernel unless remapped (user namespaces, Module 7). "It's just a container" is not, by itself, a privilege boundary — a lesson that bites teams who run containers as root.</dd>
+    </dl>
+
+    <!-- ============================== 11 ============================== -->
+    <h2 id="s11">11 · Common Misconceptions</h2>
+
+    <div class="myth">
+      <div class="m">"<code>chmod 777</code> fixes 'permission denied' — it's the safe universal solution."</div>
+      <div class="r"><p>It "fixes" the error by removing the boundary entirely: <code>777</code> means <em>every</em> user and process — including a compromised web app — can read, write <em>and execute</em> the file (§4.3). The real fix is to set the correct <em>owner</em> (<code>chown</code>) and the minimum bits the legitimate user needs (usually <code>644</code>, <code>600</code>, or <code>755</code>). <code>777</code> should trigger suspicion, not relief.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"To delete a file you need write permission <em>on the file</em>."</div>
+      <div class="r"><p>You need write permission on the file's <strong>directory</strong>, not the file (§6.4) — because deleting is editing the directory's name→inode table. That's why you can delete a read-only file in a directory you can write, and why <code>/tmp</code> uses the <em>sticky bit</em> to stop users deleting each other's files despite the directory being world-writable.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"Running the app as root is fine — it's my server and root is convenient."</div>
+      <div class="r"><p>Convenience is exactly the trap. The privilege the process holds <em>is</em> the damage a single bug or exploit can do (§4.1). As root, one vulnerability in your request handling hands an attacker the whole machine — secrets, SSH config, other services. As a dedicated low-privilege user, the same bug is contained to almost nothing. Least privilege is not ceremony; it is the difference between an incident and a catastrophe.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"<code>/etc/passwd</code> stores passwords, so it must be secret."</div>
+      <div class="r"><p>Despite the name, <code>/etc/passwd</code> holds <em>no</em> passwords — just the name↔UID map, home dirs and shells — and is deliberately world-readable so the system can translate UIDs to names. The actual hashed passwords live in <code>/etc/shadow</code>, which is root-only (mode <code>640</code>, §6.1). Confusing the two leads people to either over-protect a harmless file or misjudge where the real secret is.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"<code>sudo</code> and logging in as root are basically the same thing."</div>
+      <div class="r"><p>They differ in every way that matters (§6.7). <code>sudo</code> is <em>per-command</em> (you drop back to yourself immediately), authenticated by <em>your own</em> password, <em>governed by policy</em> (which can be scoped to specific commands), and <em>logged</em> against your identity. A root login is a full unbounded session, unattributed, with no guard rails — everything sudo was built to avoid. Reflexive <code>sudo -i</code> throws the benefits away.</p></div>
+    </div>
+    <div class="myth">
+      <div class="m">"Group and other permissions don't matter if I'm the only user."</div>
+      <div class="r"><p>They matter enormously, because a server is never really "one user" — it runs many <em>service</em> accounts and, once exposed, hostile code running as some of them. "Other" is precisely the class a compromised process falls into for files it doesn't own. A world-readable <code>.env</code> is readable by the very web process an attacker might hijack. On a networked machine, the group/other bits <em>are</em> your defence against lateral movement.</p></div>
+    </div>
+
+    <!-- ============================== 12 ============================== -->
+    <h2 id="s12">12 · Practical Use Cases</h2>
+
+    <h3>Locking down secrets and keys</h3>
+    <p>
+      DevBoard's <code>.env</code> (database password, session secret), its TLS private key, and your SSH
+      private key are each set to <code>600</code> and owned by exactly the account that uses them (§6.3). This
+      one habit means that even a process that can read files it shouldn't is stopped at the boundary — and it
+      is what makes <code>ssh</code> willing to use your key at all (§7).
+    </p>
+
+    <h3>Running every service as its own unprivileged user</h3>
+    <p>
+      The web app runs as <code>devboard</code>, the database as <code>postgres</code>, each a no-login account
+      owning only its own data (§6.8). Compromise of one service can't reach another's files, and none can
+      touch system config. This is the pattern Lesson 3.6's <code>systemd</code> units make declarative
+      (<code>User=devboard</code>), and the whole reason a breach stays small.
+    </p>
+
+    <h3>A shared project directory that "just works" for a team</h3>
+    <p>
+      Give a directory to group <code>devs</code>, set it <code>2775</code> (group-writable + <em>setgid</em>),
+      and every file created inside automatically belongs to <code>devs</code> (§6.6) — so teammates can all
+      read and edit shared files without anyone running <code>chgrp</code> by hand or resorting to
+      <code>777</code>. Least privilege that is also convenient.
+    </p>
+
+    <h3>Granting automation exactly one privileged action</h3>
+    <p>
+      The deploy pipeline is allowed, via a single <code>NOPASSWD</code> sudoers line, to run <em>only</em>
+      <code>systemctl restart devboard</code> (§7). CI can ship and restart the service without a password and
+      without any other root power — the least-privilege pattern for machine actors that Module 10 relies on.
+    </p>
+
+    <!-- ============================== 13 ============================== -->
+    <h2 id="s13">13 · Summary</h2>
+    <ul class="takeaways">
+      <li>Every process runs <strong>as a user</strong> (a numeric <em>UID</em>) belonging to one or more <strong>groups</strong> (<em>GIDs</em>); the kernel checks each access against the target's ownership and permission bits. Identities are defined in <code>/etc/passwd</code>, <code>/etc/group</code> and (hashes only) the root-only <code>/etc/shadow</code>.</li>
+      <li>Every file has an <strong>owning user</strong>, an <strong>owning group</strong>, and <strong>nine permission bits</strong> — <em>read/write/execute</em> for <em>owner</em>, <em>group</em>, <em>other</em>. The kernel uses the <em>first</em> matching class and stops; it does not add rights across classes.</li>
+      <li>The <strong>octal shorthand</strong> (r=4, w=2, x=1) gives the four modes to know cold: <code>644</code> (normal file), <code>755</code> (program/dir), <code>600</code> (private file), <code>700</code> (private dir). <code>777</code> is a red flag.</li>
+      <li><strong><code>rwx</code> means different things on directories:</strong> read = list names, write = add/rename/<em>delete</em> entries, execute = enter/traverse. Deleting a file depends on write to its <em>directory</em>, not the file — the reason the <em>sticky bit</em> exists for <code>/tmp</code>.</li>
+      <li><strong><code>chown</code>/<code>chgrp</code></strong> set ownership (usually root-only); <strong><code>chmod</code></strong> sets mode (owner's right). New files' default mode comes from the process's <strong>umask</strong> (default <code>022</code> → <code>644</code>/<code>755</code>; use <code>077</code> for secret-handling accounts).</li>
+      <li>Three <strong>special bits</strong>: <em>setuid</em> (run as file's owner — how <code>passwd</code> works), <em>setgid</em> (run as group, or make a directory's new files inherit its group), and the <em>sticky bit</em> (only delete your own files in a shared, world-writable dir).</li>
+      <li><strong>root (UID 0)</strong> is special because the kernel <em>skips</em> permission checks for it. The goal is not to remove root but to ensure almost nothing runs as it and that reaching it is deliberate.</li>
+      <li><strong><code>sudo</code></strong> grants root <em>per-command</em>, authenticated by your <em>own</em> password, <em>governed by <code>/etc/sudoers</code></em> (edit only with <code>visudo</code>; grants can be narrowly scoped), and <em>logged</em> — restoring accountability. Prefer <code>sudo &lt;command&gt;</code> over a root shell.</li>
+      <li><strong>Least privilege</strong> is the governing principle: each human and each service gets its own identity with the minimum rights it needs, so any bug or breach is contained. It is the whole of Module 3's project increment.</li>
+      <li>The model is durable but <strong>coarse</strong>: root is all-or-nothing (→ capabilities), only three classes (→ ACLs), discretionary (→ SELinux/AppArmor for mandatory policy), and silently misconfigurable (→ audit your bits).</li>
+    </ul>
+
+    <!-- ============================== 14 ============================== -->
+    <h2 id="s14">14 · Recommended Resources</h2>
+    <p><small>Curated, not exhaustive. <span class="rank">start here</span> marks the one to use first in each group.</small></p>
+
+    <div class="res">
+      <h4>Official / authoritative documentation</h4>
+      <ul>
+        <li><b><code>man 1 chmod</code>, <code>man 1 chown</code>, <code>man 2 chmod</code> and the coreutils manual on file permissions</b> <span class="rank">start here</span>
+          <span class="why">The precise reference for symbolic vs octal modes, the special bits, and exactly what each command touches (§6.3–6.6). On your VPS right now.</span></li>
+        <li><b><code>man 5 passwd</code>, <code>man 5 shadow</code>, <code>man 5 group</code></b>
+          <span class="why">The field-by-field definition of the identity files (§6.1) — read these once and every line in <code>/etc/passwd</code> becomes legible.</span></li>
+        <li><b><code>man 8 sudo</code> and <code>man 5 sudoers</code></b>
+          <span class="why">The authoritative account of escalation and policy syntax (§6.7). The sudoers page is essential before you ever edit that file with <code>visudo</code>.</span></li>
+      </ul>
+
+      <h4>Books</h4>
+      <ul>
+        <li><b><em>The Linux Command Line</em> — William Shotts (free online), the "Permissions" chapter</b> <span class="rank">start here</span>
+          <span class="why">The gentlest thorough treatment of users, <code>chmod</code>, <code>sudo</code> and identity, aimed at exactly this audience. Do its exercises alongside §15.</span></li>
+        <li><b><em>How Linux Works</em> — Brian Ward (users, permissions and the boot-time identity chapters)</b>
+          <span class="why">A practitioner's explanation of UIDs, the permission model and how processes acquire identity that pairs directly with §6.</span></li>
+        <li><b><em>The Linux Programming Interface</em> — Michael Kerrisk (process credentials; file permissions and ownership)</b>
+          <span class="why">The definitive, kernel-level account of real/effective UIDs, setuid and how the permission check actually runs — the deep version of this lesson.</span></li>
+      </ul>
+
+      <h4>Talks &amp; articles</h4>
+      <ul>
+        <li><b>Any solid "Linux file permissions explained" walkthrough that decodes <code>ls -l</code> and demonstrates <code>chmod</code> in octal and symbolic form</b> <span class="rank">start here</span>
+          <span class="why">Watching someone change bits and immediately re-run <code>ls -l</code> cements §6.2–6.3 far faster than reading alone.</span></li>
+        <li><b>Julia Evans' zines/posts on permissions, users and <code>sudo</code></b>
+          <span class="why">Short, vivid explanations of the permission bits and the file/directory distinction (§6.4) that make the model click.</span></li>
+        <li><b>OWASP &amp; CIS guidance on the principle of least privilege and Linux server hardening</b>
+          <span class="why">Connects this lesson's mechanics to the security discipline it serves, and previews the hardening checklist behind Milestone 3.</span></li>
+      </ul>
+
+      <h4>Interactive labs &amp; practice</h4>
+      <ul>
+        <li><b>Your $5 VPS + <code>id</code>, <code>ls -l</code>, <code>chmod</code>, <code>chown</code>, <code>sudo</code>, <code>umask</code>, <code>stat</code></b> <span class="rank">start here</span>
+          <span class="why">The only lab you need: create users, set modes, escalate with sudo, and watch the kernel enforce it. The exercise is built entirely on these.</span></li>
+        <li><b><code>stat &lt;file&gt;</code> and <code>namei -l /path/to/file</code></b>
+          <span class="why"><code>stat</code> shows owner, group and octal mode explicitly; <code>namei -l</code> walks a path showing the permissions on every directory you must traverse (§6.4) — the fastest way to debug a "permission denied" deep in a tree.</span></li>
+      </ul>
+    </div>
+
+    <!-- ============================== 15 ============================== -->
+    <h2 id="s15">15 · Exercise</h2>
+    <p>
+      Module 3's project increment is to <strong>harden and operate your Linux server</strong>. This lesson's
+      job is to make the machine <em>safe to expose</em>: you will read identities, decode and set permission
+      bits, watch the kernel enforce them, escalate deliberately with <code>sudo</code>, and take the first
+      real least-privilege steps on DevBoard's box. Do these on the real VPS, in a scratch directory
+      (<code>~/perm-lab</code>) where you create files. Steps that change the system are marked
+      <span class="pill r">needs sudo</span>; read the command before you run it.
+    </p>
+
+    <div class="ex">
+      <div class="h"><span>E1</span>Read your identity and the identity files</div>
+      <p>See who you are and where users are defined (§6.1):</p>
+<pre><code>id                         # your UID, primary GID, and supplementary groups
+whoami
+getent passwd $(whoami)    # your line from /etc/passwd — decode every field
+ls -l /etc/passwd /etc/shadow   # note: passwd is world-readable, shadow is NOT
+sudo -l                    # what commands (if any) you're allowed to sudo</code></pre>
+      <p>
+        Decode your <code>/etc/passwd</code> line field by field (name, UID, GID, comment, home, shell), and
+        explain from §6.1 why <code>/etc/passwd</code> is world-readable while <code>/etc/shadow</code> is
+        <code>640</code> root-only.
+      </p>
+      <div class="out">Deliverable: your UID/GID and groups, your decoded passwd line, and one sentence on the passwd-vs-shadow split.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E2</span>Decode and set modes in octal and symbolic form</div>
+      <p>Create files and translate between <code>ls -l</code> and octal (§6.2–6.3):</p>
+<pre><code>mkdir -p ~/perm-lab &amp;&amp; cd ~/perm-lab
+echo "secret=42" &gt; app.env
+echo 'echo hi'   &gt; run.sh
+ls -l                       # read the current modes (set by your umask)
+umask                        # see WHY they came out that way (§6.5)
+chmod 600 app.env            # lock the secret to owner-only
+chmod u+x run.sh             # make the script executable for you (symbolic)
+stat -c '%A %a %U:%G %n' app.env run.sh   # confirm: symbolic mode, octal, owner:group</code></pre>
+      <p>
+        For each file, write its final permission string, its octal, and one sentence on <em>who</em> can now
+        do <em>what</em>. Explain, using your <code>umask</code>, why <code>app.env</code> was
+        <em>not</em> already <code>600</code> when created.
+      </p>
+      <div class="out">Deliverable: the <code>stat</code> output for both files and one sentence connecting your umask to the default mode new files received.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E3</span>Watch the kernel enforce the bits — file vs directory</div>
+      <p>Prove the §6.4 file-vs-directory distinction, including the delete surprise:</p>
+<pre><code>cd ~/perm-lab
+mkdir vault &amp;&amp; echo "top secret" &gt; vault/data.txt
+chmod 000 vault/data.txt          # remove ALL bits on the FILE
+cat vault/data.txt                # denied — you can't read it…
+rm  vault/data.txt                # …yet you CAN delete it. Why? (you own the DIR)
+mkdir locked &amp;&amp; echo hi &gt; locked/x
+chmod 600 locked                  # dir has r+w but NO execute (traverse)
+ls locked                         # you can LIST the name…
+cat locked/x                      # …but can't OPEN it: no traverse (x) on the dir
+chmod 700 locked                  # restore, then clean up</code></pre>
+      <p>
+        Explain, using the §6.4 table, (a) why you could delete a <code>000</code> file you couldn't read, and
+        (b) why removing <code>x</code> from a directory blocked <code>cat locked/x</code> even though
+        <code>r</code> still let you <code>ls</code> it.
+      </p>
+      <div class="out">Deliverable: the two behaviours observed and one sentence each: "delete depends on directory write," and "execute on a directory = permission to traverse."</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E4</span>Escalate deliberately with <code>sudo</code> — and see the guard rail</div>
+      <p><span class="pill r">needs sudo</span> Feel the difference between ordinary and borrowed privilege (§6.7):</p>
+<pre><code>cat /etc/shadow                   # Permission denied — you're not root
+sudo cat /etc/shadow | head -1    # works: root skips the check (note YOUR password)
+sudo tail -n 3 /var/log/auth.log 2>/dev/null || sudo journalctl -n 3 _COMM=sudo
+                                  # find the log line recording what you just ran
+touch /etc/hosts.test            # denied (root-owned dir)…
+sudo touch /etc/hosts.test &amp;&amp; sudo rm /etc/hosts.test   # …deliberate, scoped, logged</code></pre>
+      <p>
+        Explain why <code>cat /etc/shadow</code> failed but <code>sudo cat /etc/shadow</code> succeeded (what
+        makes root special, §6.7), and find the audit line proving the machine recorded <em>who</em> escalated.
+        Note that you authenticated with <em>your</em> password, not root's.
+      </p>
+      <div class="out">Deliverable: the sudo audit-log line (who/when/what) and one sentence on why root bypasses the permission check.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E5</span>First real least-privilege step: a no-login service user for DevBoard</div>
+      <p><span class="pill r">needs sudo</span> Create the dedicated, powerless account the app will run as (§6.8):</p>
+<pre><code>sudo useradd --system --no-create-home --shell /usr/sbin/nologin devboard
+getent passwd devboard            # note: system UID, nologin shell
+sudo -u devboard whoami           # run a command AS the service user
+sudo -u devboard bash -lc 'echo test'   # fails/limited: it has no login shell
+sudo mkdir -p /srv/devboard &amp;&amp; sudo chown -R devboard: /srv/devboard
+ls -ld /srv/devboard              # owned by devboard, not root
+# reasoning check: if the web process (running as devboard) is exploited,
+# what on THIS box can the attacker touch? Write down the blast radius.</code></pre>
+      <p>
+        Explain, using §4.1 and §6.8, why running DevBoard as this <code>nologin</code> service user (rather
+        than root or your own account) shrinks the blast radius of a web-app compromise — and why
+        <code>/srv/devboard</code> is owned by <code>devboard</code>. This is the seed of Milestone&nbsp;3 and
+        the <code>User=devboard</code> line you'll write in Lesson 3.6.
+      </p>
+      <div class="out">Deliverable: the <code>getent</code> and <code>ls -ld</code> output, plus 2–3 sentences describing exactly what an attacker who compromises the <code>devboard</code> process could and could not reach. Adds to your Milestone&nbsp;3 hardening record.</div>
+    </div>
+
+    <!-- ============================== 16 ============================== -->
+    <h2 id="s16">16 · Quiz</h2>
+    <div class="callout warn">
+      <span class="t">How to use this</span>
+      <p>
+        Answer in your own words <strong>before</strong> revealing the model answer. Two or three sentences
+        each. You're ready for Lesson 3.3 (the shell) when you can answer Q1, Q3, Q5 and Q8 cold and have
+        completed E1–E5 on a real machine.
+      </p>
+    </div>
+
+    <div class="quiz">
+
+      <details class="q"><summary>An <code>ls -l</code> line reads <code>-rw-r-----  1 deploy devs  ... app.env</code>. Who can do what, and how does the kernel decide?</summary>
+        <div class="ans"><p>Owner <strong>deploy</strong> can <em>read and write</em> (<code>rw-</code>); members of group <strong>devs</strong> can <em>read only</em> (<code>r--</code>); everyone else gets <em>nothing</em> (<code>---</code>). On any access the kernel checks classes in order — <em>owner, then group, then other</em> — and uses the <strong>first</strong> matching class and stops; it never sums rights across classes. So a devs member who is not deploy is judged solely by the group triad. (Octal: mode <code>640</code>.)</p></div>
+      </details>
+
+      <details class="q"><summary>Translate <code>755</code>, <code>644</code> and <code>600</code> to <code>rwx</code> form, and say when you'd use each.</summary>
+        <div class="ans"><p><code>755</code> = <code>rwxr-xr-x</code> — owner full, others read+execute: a <strong>program or a directory</strong> everyone may run/enter. <code>644</code> = <code>rw-r--r--</code> — owner edits, everyone reads: an <strong>ordinary file</strong>. <code>600</code> = <code>rw-------</code> — owner only: a <strong>secret</strong> (SSH private key, <code>.env</code>, TLS key). The digits come from r=4, w=2, x=1 summed per triad (owner, group, other).</p></div>
+      </details>
+
+      <details class="q"><summary>Explain what read, write and execute each mean on a <em>directory</em> — and why deleting a file doesn't need write on the file.</summary>
+        <div class="ans"><p>On a directory: <strong>read</strong> = list the names inside (<code>ls</code>); <strong>write</strong> = add, rename or delete entries; <strong>execute</strong> = enter/traverse it (<code>cd</code>, and open items by name). Deleting a file is <em>editing the directory's name→inode table</em>, so it requires <strong>write on the containing directory</strong>, not on the file — which is why you can delete a read-only file in a directory you can write, and why <code>/tmp</code> needs the sticky bit to prevent users deleting each other's files.</p></div>
+      </details>
+
+      <details class="q"><summary>You create a file and it comes out <code>644</code> though you set no mode. Where did that come from?</summary>
+        <div class="ans"><p>From the process's <strong>umask</strong>. Programs create files with a base mode of <code>666</code> (directories <code>777</code>), then the umask <em>subtracts</em> the bits it names. The default umask <code>022</code> removes write from group and other, so <code>666 − 022 = 644</code> for files and <code>777 − 022 = 755</code> for directories. Setting a tighter umask like <code>077</code> makes new files owner-only (<code>600</code>) by default — useful for accounts handling secrets.</p></div>
+      </details>
+
+      <details class="q"><summary>What makes <code>root</code> special, and why is "just run the app as root" dangerous?</summary>
+        <div class="ans"><p>Root is UID&nbsp;0, the identity for which the kernel <em>skips</em> the permission check entirely — it is always allowed. That's why it's dangerous as a default: the privilege a process holds <em>is</em> the damage a bug or exploit can do. An internet-facing app running as root turns one vulnerability into a full machine takeover (secrets, SSH config, other services). Run as a dedicated low-privilege user, the same bug is contained to that user's tiny rights — the essence of least privilege.</p></div>
+      </details>
+
+      <details class="q"><summary>How is <code>sudo apt install nginx</code> different from logging in as root and running <code>apt install nginx</code>?</summary>
+        <div class="ans"><p><code>sudo</code> runs that <strong>one</strong> command as root and immediately returns you to your own identity — you're never "in a root session." It authenticates with <strong>your own</strong> password, is <strong>authorised by <code>/etc/sudoers</code></strong> (which can scope you to specific commands), and is <strong>logged</strong> against your name. A root login is an unbounded session, unattributed, with no guard rails on typos — exactly the risks (blast radius + lost accountability) that sudo exists to remove.</p></div>
+      </details>
+
+      <details class="q"><summary>Why does <code>/usr/bin/passwd</code> need the setuid bit, and what does it do?</summary>
+        <div class="ans"><p>An ordinary user must be able to change their own password, but the password store (<code>/etc/shadow</code>) is writable only by root. The <strong>setuid</strong> bit makes <code>passwd</code> run with the privileges of its <em>owner</em> (root) rather than the caller, so for the duration of that one program the user has exactly the power to update their own entry — and nothing else. It's controlled, narrow privilege escalation, and the ancestor of <code>sudo</code>. (Setuid-root binaries are risky and audited precisely because a bug in one is a privilege-escalation hole.)</p></div>
+      </details>
+
+      <details class="q"><summary>Why is <code>chmod 777</code> a bad reflex fix for "permission denied," and what should you do instead?</summary>
+        <div class="ans"><p><code>777</code> grants <em>every</em> process — including a compromised web app — read, <strong>write and execute</strong> on the file, removing the boundary entirely; a world-writable script is a remote-code-execution waiting to happen. The correct fix is to identify <em>which</em> account legitimately needs access, set the file's <strong>owner/group</strong> with <code>chown</code>, and grant the <strong>minimum</strong> bits (usually <code>644</code>, <code>600</code> or <code>755</code>). Least privilege, not maximum permission.</p></div>
+      </details>
+
+      <details class="q"><summary>What is the "blast radius" of a compromise, and how do users/groups let you control it?</summary>
+        <div class="ans"><p>The blast radius is <em>everything an attacker can reach once they've taken over a process</em>. Because a process runs <em>as a user</em> and can only touch what that user's ownership/permission bits allow, running each service as its own dedicated, low-privilege, no-login account confines a break-in to that account's files. A hijacked <code>devboard</code> web process can't read the database's data dir, other services' files, or system config — you <em>designed</em> the blast radius small. Running the same process as root makes the blast radius the whole machine.</p></div>
+      </details>
+
+      <details class="q"><summary>Give three least-privilege steps you'd take to harden DevBoard's server, and the reason for each.</summary>
+        <div class="ans"><p>Examples (any three): (1) <strong>per-person accounts in the <code>sudo</code> group instead of shared root</strong> — restores accountability and adds guard rails to daily work. (2) <strong>Run the app as a dedicated <code>nologin</code> service user owning only its files</strong> — shrinks the blast radius of a web-app compromise to near zero. (3) <strong><code>chmod 600</code> on secrets and keys, owned by the one account that uses them</strong> — so a stray read bug can't leak the database password or private key. (4) <strong>Don't run as root to bind port 80; put Nginx in front or grant <code>CAP_NET_BIND_SERVICE</code></strong> — never trade the machine's safety for a port number. (5) <strong>Scope automation's sudo to one exact command (<code>NOPASSWD</code>)</strong> — the deploy robot gets one verb, not a blank cheque.</p></div>
+      </details>
+
+    </div>
+
+    <div class="callout good">
+      <span class="t">Next: Lesson 3.3</span>
+      <p>
+        You can now read every <code>ls -l</code> line as a sentence about <em>who</em> may touch each file,
+        and you can run DevBoard as a near-powerless service user — the machine is finally safe to expose. Next
+        we make it <em>productive</em>. Lesson 3.3 treats the shell as a programming model: the
+        <em>streams</em>, <em>pipes</em> and <em>redirection</em> that Lesson 3.1's file descriptors made
+        possible, plus exit codes and globbing. Every command you run there executes <em>as your user</em>,
+        subject to exactly the permission bits you just mastered — so the shell is where identity, the
+        filesystem tree, and least privilege all come together into real operational work.
+      </p>
+    </div>
+
+    <hr>
+
+    <nav class="pager" aria-label="Lesson navigation">
+      <a href="lesson-01-filesystem-hierarchy-everything-is-a-file.html"><em>Previous lesson</em>← 3.1 · The filesystem hierarchy &amp; "everything is a file"</a>
+      <span class="disabled next"><em>Next lesson</em>3.3 · The shell as a programming model: streams, pipes, redirection, exit codes, globbing <small>(not yet generated)</small></span>
+    </nav>
+
+    <footer class="foot">
+      <b>From Commit to Production</b> · Module 3 · Lesson 3.2 — <em>Users, Groups, Permissions, sudo &amp; Least Privilege</em><br>
+      <small>Self-contained offline document · no external assets · regenerated in full when revised.
+      Roadmap: <a href="../../index.html">course/index.html</a></small>
+    </footer>
+  </article>
+</div>
+
+<script>
+(function(){
+  var root = document.documentElement;
+
+  /* ---------- theme ---------- */
+  var KEY='ftp.theme', saved=null;
+  try { saved = localStorage.getItem(KEY); } catch(e){}
+  if (saved) root.setAttribute('data-theme', saved);
+  document.getElementById('theme').addEventListener('click', function(){
+    var cur = root.getAttribute('data-theme');
+    if (!cur) cur = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    var next = cur === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem(KEY, next); } catch(e){}
+  });
+
+  /* ---------- expand/collapse all quiz answers ---------- */
+  var btn = document.getElementById('expand');
+  btn.addEventListener('click', function(){
+    var all = document.querySelectorAll('details.q');
+    var anyClosed = Array.prototype.some.call(all, function(d){ return !d.open; });
+    Array.prototype.forEach.call(all, function(d){ d.open = anyClosed; });
+    btn.textContent = anyClosed ? '⇕ Collapse all' : '⇕ Expand all';
+  });
+
+  /* ---------- reading progress bar ---------- */
+  var barEl = document.getElementById('readbar');
+  function onScroll(){
+    var h = document.documentElement;
+    var max = h.scrollHeight - h.clientHeight;
+    barEl.style.width = (max > 0 ? (h.scrollTop / max * 100) : 0) + '%';
+  }
+  addEventListener('scroll', onScroll, {passive:true});
+  onScroll();
+
+  /* ---------- TOC scroll-spy ---------- */
+  var links = Array.prototype.slice.call(document.querySelectorAll('#tocList a'));
+  var targets = links.map(function(a){ return document.querySelector(a.getAttribute('href')); })
+                     .filter(Boolean);
+  if ('IntersectionObserver' in window && targets.length){
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if (!e.isIntersecting) return;
+        links.forEach(function(a){
+          a.classList.toggle('on', a.getAttribute('href') === '#' + e.target.id);
+        });
+      });
+    }, { rootMargin:'-80px 0px -70% 0px', threshold:0 });
+    targets.forEach(function(t){ io.observe(t); });
+  }
+})();
+</script>
+</body>
+</html>
