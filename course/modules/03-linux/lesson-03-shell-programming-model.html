@@ -1,0 +1,1420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 3.3 · The Shell as a Programming Model: Streams, Pipes, Redirection, Exit Codes &amp; Globbing — From Commit to Production</title>
+<style>
+/* ============================================================
+   DESIGN TOKENS  (same system as the roadmap)
+   ============================================================ */
+:root{
+  color-scheme: dark light;
+  --font-sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", Consolas, "SFMono-Regular", Menlo, monospace;
+
+  --bg:#0a0e17; --bg-alt:#0e1421; --surface:#131b2b; --surface-2:#19233a;
+  --border:#243049; --border-strong:#37456a;
+  --text:#e8eefb; --text-dim:#a7b4cd; --text-faint:#78869f;
+
+  --accent:#6ea8ff;  --accent-soft:rgba(110,168,255,.14);
+  --green:#4fd39c;   --green-soft:rgba(79,211,156,.13);
+  --amber:#f2b754;   --amber-soft:rgba(242,183,84,.13);
+  --red:#ff7f76;     --red-soft:rgba(255,127,118,.13);
+  --purple:#b28cff;  --purple-soft:rgba(178,140,255,.13);
+  --teal:#4fd0d9;    --teal-soft:rgba(79,208,217,.13);
+
+  --radius:14px; --radius-sm:8px;
+  --shadow:0 1px 2px rgba(0,0,0,.45), 0 14px 34px -18px rgba(0,0,0,.75);
+  --maxw:1220px; --readw:840px;
+}
+:root[data-theme="light"]{
+  color-scheme: light;
+  --bg:#f7f9fc; --bg-alt:#eef2f8; --surface:#ffffff; --surface-2:#f2f5fa;
+  --border:#dde3ee; --border-strong:#c2ccdd;
+  --text:#131a26; --text-dim:#4b586e; --text-faint:#75839a;
+  --accent:#1f5fd0; --accent-soft:rgba(31,95,208,.09);
+  --green:#0f8a5f;  --green-soft:rgba(15,138,95,.10);
+  --amber:#9a6a06;  --amber-soft:rgba(154,106,6,.10);
+  --red:#c3352b;    --red-soft:rgba(195,53,43,.09);
+  --purple:#6d3ecb; --purple-soft:rgba(109,62,203,.09);
+  --teal:#07767e;   --teal-soft:rgba(7,118,126,.10);
+  --shadow:0 1px 2px rgba(18,28,45,.06), 0 12px 28px -18px rgba(18,28,45,.25);
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    color-scheme: light;
+    --bg:#f7f9fc; --bg-alt:#eef2f8; --surface:#ffffff; --surface-2:#f2f5fa;
+    --border:#dde3ee; --border-strong:#c2ccdd;
+    --text:#131a26; --text-dim:#4b586e; --text-faint:#75839a;
+    --accent:#1f5fd0; --accent-soft:rgba(31,95,208,.09);
+    --green:#0f8a5f;  --green-soft:rgba(15,138,95,.10);
+    --amber:#9a6a06;  --amber-soft:rgba(154,106,6,.10);
+    --red:#c3352b;    --red-soft:rgba(195,53,43,.09);
+    --purple:#6d3ecb; --purple-soft:rgba(109,62,203,.09);
+    --teal:#07767e;   --teal-soft:rgba(7,118,126,.10);
+    --shadow:0 1px 2px rgba(18,28,45,.06), 0 12px 28px -18px rgba(18,28,45,.25);
+  }
+}
+
+/* ============================================================ BASE */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth; scroll-padding-top:80px}
+body{margin:0; background:var(--bg); color:var(--text);
+  font-family:var(--font-sans); font-size:16.5px; line-height:1.72; -webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{line-height:1.28; margin:0 0 .5em; letter-spacing:-.015em; font-weight:680}
+h1{font-size:clamp(1.9rem,4vw,2.7rem)}
+h2{font-size:clamp(1.35rem,2.4vw,1.72rem); margin-top:2.6em; padding-top:.2em}
+h3{font-size:1.1rem; margin-top:2em; color:var(--text)}
+h4{font-size:.98rem; margin-top:1.5em; color:var(--text-dim)}
+p{margin:0 0 1.05em}
+a{color:var(--accent); text-decoration:none}
+a:hover{text-decoration:underline}
+strong{font-weight:660}
+em.term{font-style:normal; font-weight:680; color:var(--text)}
+code{font-family:var(--font-mono); font-size:.87em; background:var(--surface-2);
+  border:1px solid var(--border); border-radius:5px; padding:.1em .38em}
+ul,ol{padding-left:1.3em; margin:0 0 1.05em}
+li{margin:.35em 0}
+blockquote{margin:1.5em 0; padding:2px 0 2px 18px; border-left:3px solid var(--border-strong);
+  color:var(--text-dim); font-style:italic}
+blockquote footer{font-style:normal; font-size:.85rem; color:var(--text-faint); margin-top:.4em}
+hr{border:0; border-top:1px solid var(--border); margin:2.6rem 0}
+small{color:var(--text-faint)}
+sup a{font-size:.7em; padding:0 1px}
+
+/* ============================================================ BAR */
+header.bar{position:sticky; top:0; z-index:60;
+  background:color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter:blur(10px); border-bottom:1px solid var(--border)}
+.bar-in{padding:10px 22px; display:flex; align-items:center; gap:14px}
+.brand{font-weight:700; font-size:.92rem; white-space:nowrap}
+.brand a{color:var(--text)}
+.brand span{color:var(--accent)}
+.crumb{font-size:.82rem; color:var(--text-faint); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.bar .right{margin-left:auto; display:flex; gap:8px; align-items:center}
+button.ghost{font:inherit; font-size:.8rem; cursor:pointer; color:var(--text-dim);
+  background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:5px 11px}
+button.ghost:hover{border-color:var(--border-strong); color:var(--text)}
+#readbar{position:fixed; top:0; left:0; height:2px; background:var(--accent); z-index:70; width:0}
+
+/* ============================================================ LAYOUT */
+.shell{padding:0 40px;
+  display:grid; grid-template-columns:1fr; gap:36px}
+
+aside.toc{display:none}
+aside.toc .inner{position:sticky; top:74px; max-height:calc(100vh - 96px); overflow:auto;
+  padding:22px 0 40px; font-size:.86rem}
+aside.toc .lbl{font-size:.7rem; letter-spacing:.12em; text-transform:uppercase;
+  color:var(--text-faint); font-weight:700; margin:0 0 10px}
+aside.toc ol{list-style:none; padding:0; margin:0; counter-reset:t}
+aside.toc li{margin:0; counter-increment:t}
+aside.toc a{display:flex; gap:8px; padding:5px 10px 5px 8px; border-radius:6px;
+  color:var(--text-dim); border-left:2px solid transparent; line-height:1.4}
+aside.toc a:before{content:counter(t); font-family:var(--font-mono); font-size:.72rem;
+  color:var(--text-faint); flex:0 0 1.4em; text-align:right}
+aside.toc a:hover{background:var(--surface-2); color:var(--text); text-decoration:none}
+aside.toc a.on{color:var(--accent); border-left-color:var(--accent); background:var(--accent-soft)}
+article{min-width:0; padding-bottom:20px}
+
+/* ============================================================ HERO */
+.lead{padding:46px 0 26px; border-bottom:1px solid var(--border); margin-bottom:8px}
+.kicker{font-family:var(--font-mono); font-size:.74rem; letter-spacing:.16em;
+  text-transform:uppercase; color:var(--accent); margin-bottom:12px}
+.subtitle{font-size:1.1rem; color:var(--text-dim); max-width:var(--readw); margin-top:.6em}
+.meta{display:flex; flex-wrap:wrap; gap:8px; margin-top:20px}
+
+/* ============================================================ COMPONENTS */
+.pill{display:inline-block; font-family:var(--font-mono); font-size:.7rem; padding:3px 9px;
+  border-radius:999px; border:1px solid var(--border-strong); color:var(--text-dim); white-space:nowrap}
+.pill.a{color:var(--accent); border-color:var(--accent); background:var(--accent-soft)}
+.pill.g{color:var(--green); border-color:var(--green); background:var(--green-soft)}
+.pill.r{color:var(--red); border-color:var(--red); background:var(--red-soft)}
+.pill.p{color:var(--purple); border-color:var(--purple); background:var(--purple-soft)}
+
+.callout{border-left:3px solid var(--accent); background:var(--accent-soft);
+  border-radius:0 var(--radius-sm) var(--radius-sm) 0; padding:15px 19px; margin:1.7em 0}
+.callout.warn{border-color:var(--amber); background:var(--amber-soft)}
+.callout.bad{border-color:var(--red); background:var(--red-soft)}
+.callout.good{border-color:var(--green); background:var(--green-soft)}
+.callout.def{border-color:var(--purple); background:var(--purple-soft)}
+.callout .t{font-weight:700; font-size:.76rem; letter-spacing:.1em; text-transform:uppercase;
+  margin-bottom:6px; display:block; color:var(--text)}
+.callout > :last-child{margin-bottom:0}
+
+dl.terms{margin:1.4em 0; padding:0}
+dl.terms dt{font-weight:680; color:var(--text); margin-top:1em; font-size:.98rem}
+dl.terms dt:first-child{margin-top:0}
+dl.terms dd{margin:.25em 0 0; color:var(--text-dim); padding-left:0}
+
+pre{background:var(--bg-alt); border:1px solid var(--border); border-radius:var(--radius-sm);
+  padding:16px 18px; overflow-x:auto; font-family:var(--font-mono); font-size:.8rem;
+  line-height:1.5; margin:1.6em 0}
+pre code{background:none; border:0; padding:0; font-size:inherit}
+figure{margin:1.8em 0}
+figure figcaption{font-size:.82rem; color:var(--text-faint); margin-top:-.6em; padding-left:2px}
+
+.tablewrap{overflow-x:auto; margin:1.6em 0; border:1px solid var(--border); border-radius:var(--radius)}
+table{border-collapse:collapse; width:100%; font-size:.9rem; min-width:560px}
+th,td{padding:10px 14px; text-align:left; border-bottom:1px solid var(--border); vertical-align:top}
+th{background:var(--surface-2); font-size:.73rem; text-transform:uppercase; letter-spacing:.08em;
+  color:var(--text-dim); font-weight:700}
+tr:last-child td{border-bottom:0}
+td.y{color:var(--green); font-weight:600} td.n{color:var(--red); font-weight:600}
+
+.card{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+  padding:20px 22px; box-shadow:var(--shadow); margin:1.6em 0}
+.card > :first-child{margin-top:0}
+.grid2{display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; margin:1.6em 0}
+.grid2 .card{margin:0}
+
+/* misconceptions */
+.myth{border:1px solid var(--border); border-radius:var(--radius); margin:14px 0; overflow:hidden}
+.myth .m{background:var(--red-soft); border-bottom:1px solid var(--border); padding:11px 16px;
+  font-weight:660; display:flex; gap:10px}
+.myth .m:before{content:"✕"; color:var(--red); font-weight:700}
+.myth .r{padding:13px 16px}
+.myth .r:before{content:"Reality "; font-family:var(--font-mono); font-size:.68rem;
+  letter-spacing:.12em; text-transform:uppercase; color:var(--green); display:block; margin-bottom:4px}
+.myth .r > :last-child{margin-bottom:0}
+
+/* resources */
+.res{margin:1.4em 0}
+.res h4{margin:1.4em 0 .4em; color:var(--accent); font-size:.78rem;
+  letter-spacing:.1em; text-transform:uppercase}
+.res ul{list-style:none; padding:0; margin:0}
+.res li{border-bottom:1px dashed var(--border); padding:8px 0; margin:0}
+.res li:last-child{border-bottom:0}
+.res .why{display:block; font-size:.85rem; color:var(--text-dim)}
+.res .rank{font-family:var(--font-mono); font-size:.66rem; padding:1px 6px; border-radius:999px;
+  border:1px solid var(--green); color:var(--green); background:var(--green-soft); margin-left:6px}
+
+/* exercises */
+.ex{border:1px solid var(--border); border-left:3px solid var(--teal);
+  border-radius:0 var(--radius) var(--radius) 0; padding:16px 20px; margin:16px 0; background:var(--surface)}
+.ex .h{font-weight:680; margin-bottom:6px}
+.ex .h span{font-family:var(--font-mono); font-size:.72rem; color:var(--teal); margin-right:8px}
+.ex .out{font-size:.86rem; color:var(--text-faint); margin-top:8px; border-top:1px dashed var(--border); padding-top:8px}
+.ex > :last-child{margin-bottom:0}
+
+/* quiz */
+.quiz{counter-reset:q}
+.q{border:1px solid var(--border); border-radius:var(--radius); margin:12px 0;
+  background:var(--surface); overflow:hidden}
+.q > summary{cursor:pointer; list-style:none; padding:14px 18px; display:flex; gap:12px;
+  font-weight:600; align-items:flex-start}
+.q > summary::-webkit-details-marker{display:none}
+.q > summary:before{counter-increment:q; content:"Q" counter(q); font-family:var(--font-mono);
+  font-size:.72rem; color:var(--accent); background:var(--accent-soft);
+  border:1px solid var(--accent); border-radius:6px; padding:2px 7px; flex:0 0 auto; margin-top:2px}
+.q > summary::after{content:"show answer"; margin-left:auto; font-size:.7rem; font-weight:600;
+  letter-spacing:.08em; text-transform:uppercase; color:var(--text-faint); flex:0 0 auto; padding-top:4px}
+.q[open] > summary::after{content:"hide"}
+.q .ans{padding:2px 18px 16px; border-top:1px solid var(--border); margin-top:0;
+  background:var(--bg-alt); color:var(--text-dim)}
+.q .ans > :first-child{margin-top:1em}
+.q .ans > :last-child{margin-bottom:0}
+.q .ans strong{color:var(--text)}
+
+/* summary list */
+ul.takeaways{list-style:none; padding:0}
+ul.takeaways li{padding:9px 0 9px 30px; position:relative; border-bottom:1px dashed var(--border)}
+ul.takeaways li:last-child{border-bottom:0}
+ul.takeaways li:before{content:"▸"; position:absolute; left:6px; top:9px; color:var(--accent)}
+
+/* pager / footer */
+.pager{display:flex; gap:12px; margin:44px 0 30px; flex-wrap:wrap; max-width:none}
+.pager a, .pager .disabled{flex:1 1 250px; border:1px solid var(--border); border-radius:var(--radius);
+  padding:14px 18px; background:var(--surface); text-decoration:none; color:var(--text)}
+.pager a:hover{border-color:var(--accent); text-decoration:none}
+.pager .disabled{opacity:.45}
+.pager em{display:block; font-style:normal; font-size:.7rem; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--text-faint); margin-bottom:3px}
+.pager .next{text-align:right}
+footer.foot{border-top:1px solid var(--border); margin-top:20px; padding:24px 0 56px;
+  color:var(--text-faint); font-size:.85rem}
+
+@media print{
+  header.bar,aside.toc,#readbar,button.ghost,.pager{display:none}
+  body{background:#fff; color:#000; font-size:10.5pt}
+  .shell{display:block; max-width:none; padding:0}
+  .q{break-inside:avoid} .q .ans{display:block !important}
+  article > *{max-width:none}
+}
+</style>
+</head>
+<body>
+
+<div id="readbar"></div>
+<header class="bar">
+  <div class="bar-in">
+    <div class="brand"><a href="../../index.html">Commit&nbsp;<span>→</span>&nbsp;Production</a></div>
+    <div class="crumb">/ Module&nbsp;3 · Linux / Lesson&nbsp;3.3</div>
+    <div class="right">
+      <button class="ghost" id="expand">⇕ Expand all</button>
+      <button class="ghost" id="theme">◐ Theme</button>
+    </div>
+  </div>
+</header>
+
+<div class="shell">
+
+  <aside class="toc">
+    <div class="inner">
+      <p class="lbl">Lesson contents</p>
+      <ol id="tocList">
+        <li><a href="#s1">Problem Statement</a></li>
+        <li><a href="#s2">Historical Context</a></li>
+        <li><a href="#s3">Previous Solution</a></li>
+        <li><a href="#s4">Why It Failed</a></li>
+        <li><a href="#s5">New Solution</a></li>
+        <li><a href="#s6">Internal Mechanics</a></li>
+        <li><a href="#s7">Real Industry Examples</a></li>
+        <li><a href="#s8">Diagrams</a></li>
+        <li><a href="#s9">Advantages</a></li>
+        <li><a href="#s10">Limitations</a></li>
+        <li><a href="#s11">Common Misconceptions</a></li>
+        <li><a href="#s12">Practical Use Cases</a></li>
+        <li><a href="#s13">Summary</a></li>
+        <li><a href="#s14">Recommended Resources</a></li>
+        <li><a href="#s15">Exercise</a></li>
+        <li><a href="#s16">Quiz</a></li>
+      </ol>
+    </div>
+  </aside>
+
+  <article>
+    <div class="lead">
+      <div class="kicker">Module 3 · Lesson 3.3</div>
+      <h1>The shell as a programming model: streams, pipes, redirection, exit codes &amp; globbing</h1>
+      <p class="subtitle">
+        You can now name any object on the machine as a path (3.1) and reason about <em>who</em> may touch it
+        (3.2). This lesson gives you the third pillar of operating a server: the ability to <em>make the machine
+        do work</em>. The shell is not a place you type commands — it is a small, strange, and remarkably
+        powerful <strong>programming language</strong> whose data type is the stream of bytes, whose function
+        composition operator is the <em>pipe</em>, and whose control flow runs on <em>exit codes</em>. Master
+        its five core ideas — <strong>streams, redirection, pipes, exit codes and globbing</strong> — and you
+        stop copying commands from the internet and start <em>composing</em> tools you've never seen into
+        answers to questions nobody wrote a program for. This is the model behind every deploy script, every CI
+        step, and every 3&nbsp;a.m. debugging session for the rest of the course.
+      </p>
+      <div class="meta">
+        <span class="pill a">~70 min read</span>
+        <span class="pill">Prerequisites: Lessons 3.1, 3.2</span>
+        <span class="pill">Conceptual · hands-on at the end</span>
+        <span class="pill g">Module 3 · Milestone 3</span>
+      </div>
+    </div>
+
+    <div class="callout def">
+      <span class="t">Learning objectives</span>
+      <p>By the end of this lesson you will be able to:</p>
+      <ol style="margin-bottom:0">
+        <li>Explain that the shell is an <em>interpreter</em> for a programming language — a read-eval-print loop that parses a line, expands it, and executes programs — not merely a command prompt.</li>
+        <li>Name the <em>three standard streams</em> — <em>stdin (fd 0)</em>, <em>stdout (fd 1)</em>, <em>stderr (fd 2)</em> — and connect them to the file descriptors from Lesson 3.1's "everything is a file."</li>
+        <li>Redirect any stream to or from a file with <code>&gt;</code>, <code>&gt;&gt;</code>, <code>&lt;</code>, <code>2&gt;</code>, <code>2&gt;&amp;1</code> and <code>&amp;&gt;</code>, and discard output to <code>/dev/null</code>.</li>
+        <li>Explain a <em>pipe</em> as an in-kernel buffer joining one program's <em>stdout</em> to the next's <em>stdin</em>, and build multi-stage pipelines that answer real questions.</li>
+        <li>Read and use <em>exit codes</em> (<code>$?</code>, <code>0</code>=success), chain commands with <code>&amp;&amp;</code> and <code>||</code>, and understand why <code>set -euo pipefail</code> is the first line of every serious script.</li>
+        <li>Predict exactly what <em>globbing</em> (<code>*</code>, <code>?</code>, <code>[…]</code>) and <em>brace expansion</em> (<code>{a,b}</code>) expand to — and why <em>the shell</em>, not the command, does the expanding.</li>
+        <li>Quote correctly (<em>single</em> vs <em>double</em> vs none), so spaces, globs and variables behave — the single most common source of broken scripts.</li>
+        <li>Read a real deploy/CI one-liner and narrate every symbol in it, then write your own DevBoard log-triage pipelines.</li>
+      </ol>
+    </div>
+
+    <div class="callout">
+      <span class="t">Where this sits on the map</span>
+      <p>
+        Lesson 3.1 gave you the <em>nouns</em> (paths, files, file descriptors); Lesson 3.2 gave you the
+        <em>access rules</em> (every command runs <em>as your user</em>, subject to the permission bits). This
+        lesson gives you the <em>verbs and the grammar</em> — how to combine programs into new behaviour. It is
+        the direct foundation of Lesson 3.4 (the ops debugger's toolkit: <code>grep</code>, <code>sed</code>,
+        <code>awk</code>, <code>jq</code>, <code>find</code>, <code>xargs</code> — every one of which is a
+        stream filter designed to live in a pipe), Lesson 3.6 (<code>systemd</code> units are <em>commands with
+        their streams wired to the journal</em> and judged by their <em>exit code</em>), and every
+        <code>RUN</code> line of a Dockerfile and every step of a GitHub Actions job in later modules — all of
+        them shell. Get streams, pipes and exit codes into your hands now and the rest of DevOps reads like a
+        language you already speak.
+      </p>
+    </div>
+
+    <!-- ============================== 1 ============================== -->
+    <h2 id="s1">1 · Problem Statement</h2>
+
+    <p>
+      You are logged into DevBoard's server (as your own unprivileged user, per Lesson 3.2), and something is
+      wrong. The API feels slow. You have no dashboard yet — that's Module 12 — so the only instruments you have
+      are the raw materials of the machine: a log file that is now 400&nbsp;MB, a directory of rotated logs, a
+      list of running processes, and a prompt. The questions in your head are concrete and urgent, and
+      <em>none</em> of them is answered by a single ready-made command:
+    </p>
+    <ul>
+      <li>"How many <code>500</code> errors did the API return in the last hour, and which <em>three</em> URLs caused the most of them?"</li>
+      <li>"Something is filling the disk. <em>Which</em> directories, ranked by size, and is it the logs or an upload gone wrong?"</li>
+      <li>"I need to restart the app <em>only if</em> the config file actually parses — never restart into a broken config. How do I make the second action depend on the first <em>succeeding</em>?"</li>
+      <li>"I want to back up all <code>*.env</code> files under <code>/srv</code> — there are dozens, in folders I'd have to type out by hand. Can I name them all at once?"</li>
+      <li>"My deploy script ran ten steps and 'finished,' but did step 6 actually <em>work</em>, or did it fail silently and the script barrelled on to production anyway?"</li>
+    </ul>
+
+    <p>
+      Notice the shape of every one of these. Each is a small <em>program</em> — take some data, filter it,
+      transform it, count it, decide something, act on the result. But writing an actual program (a C or Python
+      file) for each throwaway question is absurd: you'd spend more time on boilerplate than on the answer, and
+      you'd need to write a <em>new</em> one every time the question changed slightly. What you need is a way to
+      <strong>assemble a bespoke program in one line, out of tools that already exist, in the time it takes to
+      think of the question</strong> — and to do it so routinely that composition becomes reflex.
+    </p>
+
+    <div class="callout bad">
+      <span class="t">The core problem</span>
+      <p>
+        Operating a server is a relentless stream of one-off data-processing and decision tasks — filter these
+        lines, count those, rank the results, and take an action <em>only if</em> the previous one succeeded —
+        that no single pre-written command answers. Writing a standalone program for each is far too slow, and
+        clicking through a GUI (even if one existed on a headless server) can neither be repeated exactly nor
+        automated. We need a <strong>programming model</strong> in which tiny, single-purpose tools can be
+        <em>composed</em> on the fly — their outputs fed into each other's inputs, their success or failure
+        driving what happens next — fast enough to keep pace with the questions, and reproducible enough to
+        paste into a deploy script tomorrow. That model is the Unix shell.
+      </p>
+    </div>
+
+    <p>
+      The promise of this lesson: by the end you will look at a line like
+      <code>grep ' 500 ' access.log | awk '{print $7}' | sort | uniq -c | sort -rn | head -3</code> and read it
+      the way you read a sentence — not as an incantation, but as a <em>data pipeline</em> whose every stage you
+      understand and could have written yourself.
+    </p>
+
+    <!-- ============================== 2 ============================== -->
+    <h2 id="s2">2 · Historical Context</h2>
+
+    <p>
+      The shell's power is not an accident of syntax; it is the direct expression of a <em>design philosophy</em>
+      that predates it. Each step below added one idea to the model you'll use today.
+    </p>
+
+    <h3>1964–1969 · Multics and the idea of a "shell"</h3>
+    <p>
+      The term <em>shell</em> — a program that wraps the kernel and lets a human drive it — comes from
+      <em>Multics</em>, the ambitious time-sharing system that Unix's authors worked on and reacted against.
+      Multics established that the command interpreter should be an ordinary, replaceable <em>user program</em>,
+      not a privileged part of the OS. That single decision — the shell is just another process, with no special
+      powers beyond your own (exactly the point of Lesson 3.2) — is why you can swap <code>bash</code> for
+      <code>zsh</code> or <code>fish</code> without touching the kernel.
+    </p>
+
+    <h3>1971 · The Thompson shell — small, and a real program</h3>
+    <p>
+      Ken Thompson wrote the first Unix shell (<code>sh</code>). It was tiny, but it already carried the
+      revolutionary ideas: a command was just a program to run, and its input and output could be
+      <em>redirected</em> to files with <code>&lt;</code> and <code>&gt;</code>. Redirection existed before pipes
+      — the shell could already treat a program's output as detachable from the terminal.
+    </p>
+
+    <h3>1973 · The pipe — the idea that changed everything</h3>
+    <p>
+      Doug McIlroy had been agitating for years for a way to connect programs "like a garden hose." In 1973 Ken
+      Thompson added the <em>pipe</em> (<code>|</code>) to the shell and the kernel in a single evening. Overnight,
+      the crucial move became possible: the <em>output</em> of one program could become the <em>input</em> of
+      the next, with no temporary file and no coordination between the two programs. McIlroy's insistence
+      crystallised into the <strong>Unix philosophy</strong>, which he later stated as: <em>"Write programs that
+      do one thing and do it well. Write programs to work together. Write programs to handle text streams,
+      because that is a universal interface."</em> The pipe is the mechanism that makes that philosophy pay off.
+    </p>
+
+    <h3>1977–1979 · The Bourne shell — a real programming language</h3>
+    <p>
+      Stephen Bourne (Bell Labs) rewrote the shell as <code>sh</code> — the <em>Bourne shell</em> — turning it
+      from a command launcher into a genuine <em>programming language</em>: variables, control flow
+      (<code>if</code>, <code>for</code>, <code>while</code>, <code>case</code>), functions, and the use of a
+      command's <em>exit status</em> as a boolean for that control flow. The <code>#!/bin/sh</code> script was
+      born. This is the direct ancestor of the syntax in every deploy script you'll ever write.
+    </p>
+
+    <h3>1978 · The C shell, and the fork in the road</h3>
+    <p>
+      Bill Joy at Berkeley wrote <code>csh</code>, adding interactive conveniences (command history, job
+      control) with a C-like syntax. It seeded a lasting split between "good for scripting" (Bourne family) and
+      "nice interactively" (C family) — a distinction that still bites people who write <code>csh</code>-isms
+      into <code>sh</code> scripts.
+    </p>
+
+    <h3>1989 · Bash — "Bourne Again," and the modern default</h3>
+    <p>
+      Brian Fox wrote <em>bash</em> (the <em>Bourne-Again SHell</em>) for the GNU project: Bourne-compatible for
+      scripting, but with the interactive niceties of <code>csh</code> and more. It became the default login
+      shell of Linux and thus the lingua franca of servers, containers and CI systems. When this course says
+      "the shell," it means a POSIX <code>sh</code>-compatible shell, with <code>bash</code> as the concrete
+      default — the one inside your Ubuntu VPS and inside almost every Docker image.
+    </p>
+
+    <div class="callout">
+      <span class="t">The through-line</span>
+      <p>
+        Every historical step added one piece of the same model: the shell is a <em>replaceable user program</em>
+        (Multics) that <em>runs other programs</em> (Thompson), can <em>redirect their streams</em> (1971) and
+        <em>connect them with pipes</em> (1973), treats their <em>exit status as truth</em> for control flow
+        (Bourne), and is itself a full <em>programming language</em> (Bourne → bash). Streams, pipes, exit codes,
+        composition — the four ideas were assembled fifty years ago and have never needed replacing.
+      </p>
+    </div>
+
+    <!-- ============================== 3 ============================== -->
+    <h2 id="s3">3 · The Previous Solution (in detail)</h2>
+
+    <p>
+      What did people do <em>before</em> the compose-small-tools model, and what do engineers still default to
+      when they haven't internalised it? Two patterns, both instructive because both feel reasonable.
+    </p>
+
+    <h3>3.1 The monolithic program with a hundred flags</h3>
+    <p>
+      The pre-Unix instinct — and the instinct of many modern tools — is: if a program needs to do more, add
+      more <em>options</em> to it. Want your file-lister to also sort by size, filter by date, count matches,
+      and email you the result? Add <code>--sort</code>, <code>--filter</code>, <code>--count</code>,
+      <code>--email</code> flags. Each program grows into a self-contained universe that tries to anticipate
+      every use.
+    </p>
+<pre><code>THE MONOLITH MODEL  ("one big program that does everything")
+
+  supertool --input access.log --filter status=500 --since 1h \
+            --group-by url --sort count --desc --top 3 --format table
+
+  Every capability is a FLAG that the tool's author had to foresee,
+  implement, document, and version. Want something they didn't foresee?
+  You wait for a new release — or you're stuck.</code></pre>
+
+    <h3>3.2 Writing a bespoke program per task</h3>
+    <p>
+      The other pre-shell answer: for anything the standard tools couldn't do, write a small program in C (later
+      Perl, Python). Correct, general — and far too slow for the throwaway questions of §1. A five-line C
+      program to count status codes needs a source file, a compile step, and a name; multiply that by the fifty
+      small questions you ask in a debugging session and you get nothing done.
+    </p>
+
+    <p>The assumptions both patterns bake in:</p>
+    <dl class="terms">
+      <dt>Functionality lives <em>inside</em> tools, not <em>between</em> them</dt>
+      <dd>A new capability means changing a program's source or its flag set — never a new arrangement of existing programs.</dd>
+      <dt>Programs are endpoints, not building blocks</dt>
+      <dd>Each tool owns its input source and output destination (a file, the terminal, an email). Two tools have no standard way to hand data to each other.</dd>
+      <dt>Composition, if it happens, goes through temporary files</dt>
+      <dd>To feed tool A's output into tool B you run A into a temp file, then run B on it, then clean up — manual, error-prone, and impossible to do at conversational speed.</dd>
+      <dt>The set of possible questions is fixed at authoring time</dt>
+      <dd>You can only ask what some tool author already built a flag for. Novel questions require new code.</dd>
+    </dl>
+
+    <p>
+      Both models <em>work</em> — plenty of excellent software is monolithic, and sometimes a real program is
+      the right answer. Their appeal is real: a single tool is discoverable (one <code>--help</code>) and
+      self-contained. But as a way to <em>operate a machine</em>, both share a fatal ceiling: the number of
+      things you can do is bounded by what someone anticipated and shipped. The next section is where that
+      ceiling hits.
+    </p>
+
+    <!-- ============================== 4 ============================== -->
+    <h2 id="s4">4 · Why It Failed (as an operating model)</h2>
+
+    <p>
+      "Failed" is scoped precisely: monolithic tools and bespoke programs are not <em>wrong</em> — they are the
+      right shape for a <em>product</em>. They fail as the model for <em>operating a system</em>, where the
+      questions are infinite, unpredictable, and urgent. Each assumption becomes a concrete wall.</p>
+
+    <h3>4.1 The combinatorial explosion of features</h3>
+    <p>
+      If capability must live inside tools, then the number of features a tool needs is the number of
+      <em>combinations</em> of things users might want — which explodes. A file lister that also sorts, filters,
+      counts, formats and mails is five features; wanting any pair of them combined in a new way needs a sixth
+      flag its author didn't foresee. No author can foresee them all, so every monolith is permanently missing
+      the exact combination you need right now.
+    </p>
+
+    <h3>4.2 Every tool re-implements the same plumbing</h3>
+    <p>
+      When each program owns its input and output, every program must re-implement reading files, writing files,
+      parsing arguments, sorting, and paging — badly, differently, and incompatibly. Fifty tools contain fifty
+      slightly different sort routines. The effort is duplicated everywhere and shared nowhere.
+    </p>
+
+    <h3>4.3 You cannot answer a question nobody anticipated</h3>
+    <p>
+      This is the real failure. "How many 500s per URL in the last hour, top three" is a perfectly ordinary
+      operational question — and there is no <code>supertool</code> with exactly that flag, nor should there be.
+      In a model where functionality lives inside tools, an unanticipated question is simply
+      <strong>unanswerable</strong> without writing new software. On a server on fire, that is unacceptable.
+    </p>
+
+    <h3>4.4 Temp-file composition is too slow and too fragile to automate</h3>
+    <p>
+      Stitching tools together through temporary files — <code>A &gt; tmp1; B tmp1 &gt; tmp2; C tmp2</code> — is
+      slow to type, leaves litter, races with itself if two runs collide, and gives you no clean way to know
+      whether stage B actually <em>succeeded</em> before stage C ran. It is composition in theory but not at the
+      speed or reliability real operations demand.
+    </p>
+
+    <div class="callout warn">
+      <span class="t">The pattern behind all four failures</span>
+      <p>
+        Every failure traces to one root cause: <strong>functionality was trapped inside programs instead of
+        living in the connections between them.</strong> The fix is a single inversion — make the
+        <em>connection</em> a first-class, universal thing. Give every program the <em>same</em> three
+        connections (an input stream, an output stream, an error stream), make the <em>output of one the input
+        of the next</em> a trivial one-character operation (the pipe), and expose each program's
+        <em>success or failure</em> as a value the shell can branch on (the exit code). Then a new capability is
+        no longer a new flag or a new program — it is a new <em>arrangement</em>, composed in one line. That
+        inversion is §5.
+      </p>
+    </div>
+
+    <!-- ============================== 5 ============================== -->
+    <h2 id="s5">5 · The New Solution</h2>
+
+    <p>
+      The solution is the <strong>shell's programming model</strong>: treat every program as a <em>function</em>
+      whose type is "bytes in → bytes out," give them all a <em>universal interface</em> (three standard
+      streams), make <em>composition</em> a single character (the pipe), and make <em>control flow</em> run on a
+      program's <em>exit code</em>. Add <em>globbing</em> so the shell itself expands patterns into arguments,
+      and you have a complete, tiny language for making the machine work. Vocabulary first.
+    </p>
+
+    <h3>5.1 The core vocabulary</h3>
+    <dl class="terms">
+      <dt>Shell</dt>
+      <dd>An ordinary user program that reads a line you type, <em>parses and expands</em> it, launches the program(s) it names (with the streams wired up), waits, and shows you the result — then loops. A <em>read-eval-print loop</em> (REPL) whose "eval" is "run programs."</dd>
+      <dt>Stream</dt>
+      <dd>A one-directional flow of bytes. The shell's universal data type. A stream can come from the keyboard, a file, a pipe, or another program — the program reading it usually can't tell which, and doesn't care. (This is Lesson 3.1's "everything is a file" cashing out.)</dd>
+      <dt>Standard streams (stdin/stdout/stderr)</dt>
+      <dd>The three streams every process is born with: <em>standard input</em> (fd&nbsp;0, where it reads), <em>standard output</em> (fd&nbsp;1, where it writes results), and <em>standard error</em> (fd&nbsp;2, where it writes diagnostics). Keeping errors on a separate stream from results is what makes pipes clean.</dd>
+      <dt>Redirection</dt>
+      <dd>Telling the shell to connect a stream to a <em>file</em> instead of the terminal: <code>&gt;</code> (stdout to a file, overwrite), <code>&gt;&gt;</code> (append), <code>&lt;</code> (a file into stdin), <code>2&gt;</code> (stderr to a file).</dd>
+      <dt>Pipe (<code>|</code>)</dt>
+      <dd>An in-kernel buffer that connects the <em>stdout</em> of the program on its left to the <em>stdin</em> of the program on its right, so they run <em>concurrently</em> and data flows between them with no temp file.</dd>
+      <dt>Exit code / status</dt>
+      <dd>The small integer (0–255) every program returns when it ends. <strong>0 means success; any non-zero means some kind of failure.</strong> The shell stores the last one in <code>$?</code> and uses it as the boolean for <code>&amp;&amp;</code>, <code>||</code>, <code>if</code> and <code>while</code>.</dd>
+      <dt>Glob / wildcard</dt>
+      <dd>A pattern (<code>*</code>, <code>?</code>, <code>[…]</code>) that <em>the shell</em> expands into a list of matching filenames <em>before</em> the command runs. The command never sees the <code>*</code> — it sees the filenames.</dd>
+      <dt>Expansion</dt>
+      <dd>The set of transformations the shell applies to your line before executing it — variable expansion (<code>$VAR</code>), command substitution (<code>$(...)</code>), brace expansion (<code>{a,b}</code>), globbing, and word splitting. Understanding <em>expansion order</em> is understanding the shell.</dd>
+    </dl>
+
+    <div class="callout def">
+      <span class="t">The one sentence to hold onto</span>
+      <p>
+        <strong>The shell runs each program as a function over byte streams — <em>stdin</em> in,
+        <em>stdout</em>/<em>stderr</em> out — lets you rewire those streams to files (<em>redirection</em>) or to
+        each other (the <em>pipe</em>), branches on each program's <em>exit code</em> (0 = success), and expands
+        <em>globs</em> and variables in your line <em>before</em> anything runs.</strong> Every deploy script,
+        every Dockerfile <code>RUN</code>, every CI step and every debugging one-liner in this course is just
+        that model applied.
+      </p>
+    </div>
+
+    <h3>5.2 The shape of the solution</h3>
+    <p>
+      Return to §1's hardest question — top three URLs causing 500 errors — and watch the model dissolve it. Each
+      stage is a tiny tool doing one thing; the pipe is the composition; nobody had to anticipate this exact
+      question:
+    </p>
+<pre><code>grep ' 500 ' access.log | awk '{print $7}' | sort | uniq -c | sort -rn | head -3
+└──────┬──────┘ └──────┬───────┘ └─┬─┘ └──┬───┘ └───┬───┘ └──┬──┘
+ keep only 500  print the 7th     sort  count    sort by    take
+ lines          field (the URL)   them  identical count,     the
+ (a filter)     (a transform)           adjacents descending top 3
+                                        (=per-URL) (rank)
+
+  DATA FLOWS LEFT → RIGHT through the pipes. No temp files. Each program
+  reads stdin, writes stdout, and knows nothing about its neighbours.
+  A NEW question = a NEW arrangement of the same parts.</code></pre>
+    <p>
+      Now re-answer the rest of §1 in one line of model each. Restart <em>only if</em> the config parses?
+      <code>nginx -t &amp;&amp; systemctl reload nginx</code> — the <code>&amp;&amp;</code> runs the reload only if
+      the test's exit code was 0. Back up every <code>*.env</code> under <code>/srv</code>? A glob names them all
+      at once. Which directories are eating the disk? <code>du -h --max-depth=1 /srv | sort -rh | head</code> —
+      measure, rank, top. Did deploy step 6 <em>really</em> succeed? Because every step returns an exit code and
+      <code>set -e</code> halts the script the instant one is non-zero. One model, five answers, no new software
+      written.
+    </p>
+
+    <!-- ============================== 6 ============================== -->
+    <h2 id="s6">6 · Internal Mechanics</h2>
+
+    <p>
+      Now the machine in detail. We will (6.1) see the shell as an interpreter and trace what it does to one
+      line; (6.2) pin down the three streams as file descriptors; (6.3) master redirection, including the tricky
+      <code>2&gt;&amp;1</code>; (6.4) open up the pipe as a real kernel object; (6.5) make exit codes and
+      <code>&amp;&amp;</code>/<code>||</code>/<code>set -e</code> precise; (6.6) nail globbing and expansion
+      <em>order</em>; (6.7) get quoting right once and for all; and (6.8) assemble it into DevBoard operations.
+    </p>
+
+    <h3>6.1 The shell is an interpreter: what one line actually triggers</h3>
+    <p>
+      When you press Enter, the shell does <em>not</em> hand your text to some command. It runs a small parse-
+      and-expand pipeline of its own, then launches processes. Understanding this sequence is what separates
+      "the command did something weird" from "I know exactly why." Roughly, for a simple command the shell:
+    </p>
+    <ol>
+      <li><strong>Splits the line into words</strong> on whitespace (this is why spaces matter so much).</li>
+      <li><strong>Applies expansions</strong> in a defined order (§6.6): brace <code>{}</code> → tilde <code>~</code> → variables <code>$VAR</code> and command substitution <code>$(...)</code> → word splitting → <em>globbing</em> <code>*</code>.</li>
+      <li><strong>Sets up redirections</strong> — opens any files named by <code>&gt;</code>, <code>&lt;</code>, etc., and points the right file descriptors at them.</li>
+      <li><strong>Finds the program</strong> — a shell <em>builtin</em> (like <code>cd</code>), or an executable found by searching each directory in <code>$PATH</code>.</li>
+      <li><strong><code>fork()</code>s a child, wires up its streams, and <code>exec()</code>s the program</strong>; the shell <code>wait()</code>s and collects the child's <em>exit code</em>.</li>
+    </ol>
+    <p>
+      The crucial consequence: <strong>the command never sees your original text.</strong> By the time
+      <code>ls *.log</code> runs, <code>ls</code> receives <code>app.log web.log db.log</code> — the shell
+      already replaced the <code>*.log</code>. This one fact explains a huge fraction of "why did that happen?"
+      surprises, and we'll lean on it repeatedly.
+    </p>
+
+    <h3>6.2 The three streams are just file descriptors</h3>
+    <p>
+      Lesson 3.1 taught that an open file is referred to by a small integer — a <em>file descriptor</em> — in a
+      per-process table, and that "everything is a file." The three standard streams are simply the three
+      descriptors every process is handed at birth:
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Stream</th><th>fd</th><th>Default target</th><th>Purpose</th></tr></thead>
+        <tbody>
+          <tr><td><b>stdin</b> — standard input</td><td><code>0</code></td><td>your keyboard</td><td>where the program <em>reads</em> its input from</td></tr>
+          <tr><td><b>stdout</b> — standard output</td><td><code>1</code></td><td>your terminal</td><td>where the program writes its <em>results</em> — the data other tools want</td></tr>
+          <tr><td><b>stderr</b> — standard error</td><td><code>2</code></td><td>your terminal</td><td>where the program writes <em>diagnostics</em>: errors, warnings, progress</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      Why two <em>output</em> streams? Because results and complaints must be separable. When you run
+      <code>grep 500 *.log | wc -l</code>, you want only the <em>matching lines</em> (stdout) to flow into
+      <code>wc</code>; a message like "grep: web.log: Permission denied" is <em>not</em> data and must not
+      pollute the count — so it goes to stderr, which is <em>not</em> piped, and lands on your terminal instead.
+      Keeping fd&nbsp;1 clean (data only) and fd&nbsp;2 for humans is the discipline that makes pipes composable.
+      A subtle corollary that trips people: on a terminal both look identical, so you can't tell which stream a
+      line came from by looking — until you pipe or redirect and the error "escapes" the pipe.
+    </p>
+
+    <div class="callout">
+      <span class="t">The mental model</span>
+      <p>
+        Picture every program as a box with one input pipe (fd&nbsp;0) and two output pipes (fd&nbsp;1 for data,
+        fd&nbsp;2 for complaints). By default all three are plugged into your terminal. <em>Redirection</em> and
+        <em>pipes</em> are nothing more than <strong>unplugging one of these and plugging it into a file or into
+        another box's input.</strong> The program is oblivious — it just reads fd&nbsp;0 and writes fd&nbsp;1/2,
+        exactly as always. That obliviousness is the whole trick: it's what lets tools that know nothing about
+        each other snap together.
+      </p>
+    </div>
+
+    <h3>6.3 Redirection: rewiring a stream to a file</h3>
+    <p>
+      Redirection connects a standard stream to a <em>file</em> instead of the terminal. The operators are few
+      and worth memorising exactly, because a wrong one silently loses data.
+    </p>
+<pre><code>command &gt;  file      # stdout → file, TRUNCATE (overwrite). The famous data-loser.
+command &gt;&gt; file      # stdout → file, APPEND (add to the end)
+command &lt;  file      # file → stdin (feed the program from a file)
+command 2&gt; file      # stderr (fd 2) → file  — capture only the errors
+command 2&gt; /dev/null # discard errors entirely (/dev/null = the black hole, from 3.1)
+command &gt; out 2&gt; err # results to out, errors to err — two separate files
+command &gt; file 2&gt;&amp;1  # stdout → file, THEN stderr → "wherever fd 1 now points" (=file)
+command &amp;&gt; file      # bash shorthand for the line above: BOTH streams → file</code></pre>
+    <p>
+      The one that confuses everyone is <code>2&gt;&amp;1</code>, and it rewards one careful reading.
+      <code>2&gt;&amp;1</code> means "make fd&nbsp;2 point at <em>whatever fd&nbsp;1 currently points at</em>" —
+      it copies the <em>destination</em>, not the stream. Order therefore matters:
+    </p>
+<pre><code>command &gt; file 2&gt;&amp;1     # ✅ 1 is set to file FIRST, then 2 is aimed at the same file → both in file
+command 2&gt;&amp;1 &gt; file     # ⚠️ 2 is aimed at the TERMINAL (where 1 still points), THEN 1 moves to file
+                        #    → errors go to the screen, results go to the file. Rarely what you meant.</code></pre>
+    <p>
+      Read redirections strictly left to right, each one acting on the file descriptors <em>as they are at that
+      moment</em>. Two more constructs you'll meet constantly: the <em>here-document</em> feeds a literal block
+      into stdin, and the <em>here-string</em> feeds a single string:
+    </p>
+<pre><code>cat &lt;&lt;'EOF' &gt; /etc/devboard/notes.txt     # everything up to EOF becomes stdin for cat
+This is a here-doc.
+Handy for writing config files from a script.
+EOF
+
+grep devboard &lt;&lt;&lt; "$SOME_VARIABLE"        # here-string: feed one string as stdin</code></pre>
+    <div class="callout warn">
+      <span class="t">The classic footgun</span>
+      <p>
+        <code>sort file &gt; file</code> <strong>destroys <code>file</code></strong>. The shell sets up the
+        redirection <em>before</em> <code>sort</code> runs, so <code>&gt; file</code> truncates it to empty
+        first, and then <code>sort</code> reads an empty file. Never redirect a command's output onto its own
+        input file. Use a temp file, or a tool with an explicit in-place flag (<code>sort -o file file</code>,
+        <code>sed -i</code>). This bug has eaten many people's data — including config files on production boxes.
+      </p>
+    </div>
+
+    <h3>6.4 The pipe: an in-kernel buffer between two live programs</h3>
+    <p>
+      A pipe is not a file and not a variable — it is a small <em>buffer inside the kernel</em> (classically
+      64&nbsp;KB) with a read end and a write end. <code>A | B</code> tells the shell to: create a pipe, start
+      <em>both</em> A and B at the same time, wire A's stdout (fd&nbsp;1) to the pipe's write end, and wire B's
+      stdin (fd&nbsp;0) to the pipe's read end. A writes; B reads; the kernel moves the bytes.
+    </p>
+<pre><code>   producer                    kernel pipe buffer                 consumer
+  ┌──────────┐   fd1  write ──▶ ┌───────────────────┐ ──▶ read  fd0 ┌──────────┐
+  │  grep    │═════════════════▶│  ~64 KB of bytes  │═════════════▶│   wc     │
+  └──────────┘                  └───────────────────┘              └──────────┘
+      │                                                                  │
+      └─ if the buffer FILLS, grep BLOCKS until wc reads (back-pressure) ┘
+      └─ if wc reads faster than grep writes, wc BLOCKS waiting for data ─┘</code></pre>
+    <p>
+      Three consequences fall straight out of this being a bounded buffer between concurrent processes:
+    </p>
+    <ul>
+      <li><strong>The stages run <em>simultaneously</em>, not one-then-the-next.</strong> <code>grep</code> and <code>wc</code> are both alive; data streams through. This is why <code>tail -f app.log | grep ERROR</code> shows new errors live — the pipeline never "finishes" the first stage before starting the second.</li>
+      <li><strong>Memory stays tiny even for huge inputs.</strong> A 400&nbsp;MB log piped through a chain never lives in RAM all at once; only ~64&nbsp;KB is ever "in flight." You can process files far larger than memory.</li>
+      <li><strong>Back-pressure is automatic.</strong> If a downstream stage is slow, the buffer fills and the kernel <em>blocks</em> the upstream writer until there's room. Nobody floods anybody; the fast producer politely waits.</li>
+    </ul>
+    <p>
+      Two important details. First, <strong>only stdout flows through the pipe</strong> — stderr does not, which
+      is exactly why errors still reach your screen mid-pipeline (§6.2). To pipe errors too, merge them first:
+      <code>command 2&gt;&amp;1 | less</code>. Second, a pipe connects <em>adjacent</em> stages only; there's no
+      "skip a stage." Data is a relay, hand to hand.
+    </p>
+
+    <h3>6.5 Exit codes: the shell's booleans, and safe scripts</h3>
+    <p>
+      Every program, when it ends, returns an integer 0–255 to its parent. The convention is rigid and
+      universal: <strong><code>0</code> = success; any non-zero = a failure</strong> (and different non-zero
+      values can distinguish <em>kinds</em> of failure — e.g. <code>grep</code> returns 1 for "no matches
+      found," 2 for "real error"). The shell captures the most recent exit code in the special variable
+      <code>$?</code> and — crucially — uses it as the truth value for all control flow.
+    </p>
+<pre><code>ls /etc/devboard ; echo $?      # run it, then print the exit code (0 if the dir exists)
+grep -q ERROR app.log           # -q = quiet: no output, just an exit code (0 = found)
+echo $?                          # 0 if "ERROR" was present, 1 if not
+
+# && = "and then, only if the left SUCCEEDED (exit 0)"
+# || = "or else, only if the left FAILED (non-zero)"
+mkdir -p /srv/devboard/releases &amp;&amp; cd /srv/devboard/releases   # cd only if mkdir worked
+systemctl is-active --quiet devboard || systemctl start devboard  # start only if NOT running
+nginx -t &amp;&amp; systemctl reload nginx || echo "config broken, NOT reloaded"</code></pre>
+    <p>
+      Because <code>if</code> and <code>while</code> also test exit codes, control flow reads naturally:
+      <code>if grep -q ERROR app.log; then …</code> means "if grep <em>succeeded</em> (found a match)." There is
+      no separate boolean type — <em>success is the boolean</em>. This is the Bourne-shell insight from §2.
+    </p>
+
+    <div class="callout bad">
+      <span class="t">The three lines that make a script safe</span>
+      <p>
+        By default a shell script <strong>ignores failures and marches on</strong>: if step 6 fails, step 7 runs
+        anyway, and you deploy a half-built release. The fix is the first line of every serious script:
+        <code>set -euo pipefail</code>.
+        <br><br>
+        <strong><code>set -e</code></strong> — exit the whole script the moment any command returns non-zero, so
+        a failure <em>stops</em> the deploy instead of continuing past it.
+        <strong><code>set -u</code></strong> — treat use of an <em>unset variable</em> as an error, so a typo'd
+        <code>$RELEAES_DIR</code> can't silently expand to empty and <code>rm -rf $EMPTY/</code> your disk.
+        <strong><code>set -o pipefail</code></strong> — make a pipeline fail if <em>any</em> stage fails, not
+        just the last one; without it, <code>false | true</code> "succeeds" because only <code>true</code>'s exit
+        code counts. Memorise this line; it is the difference between a deploy script that fails <em>loudly and
+        early</em> and one that fails <em>silently in production</em>.
+      </p>
+    </div>
+
+    <h3>6.6 Globbing and expansion — and the order that governs everything</h3>
+    <p>
+      A <em>glob</em> is a filename pattern the <strong>shell</strong> expands into a list of matching paths
+      before the command runs. The command never sees the pattern. The wildcards:
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Pattern</th><th>Matches</th><th>Example → expands to</th></tr></thead>
+        <tbody>
+          <tr><td><code>*</code></td><td>any run of characters (incl. none), <em>except</em> a leading dot</td><td><code>*.log</code> → <code>app.log web.log</code></td></tr>
+          <tr><td><code>?</code></td><td>exactly one character</td><td><code>app.?</code> → <code>app.c app.h</code></td></tr>
+          <tr><td><code>[…]</code></td><td>one character from the set/range</td><td><code>log[0-9]</code> → <code>log1 log8</code></td></tr>
+          <tr><td><code>[!…]</code></td><td>one character <em>not</em> in the set</td><td><code>[!.]*</code> → files not starting with dot</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      Two facts about globbing catch nearly everyone. <strong>First: globbing is done by the shell, not the
+      program.</strong> When you run <code>rm *.log</code>, the shell expands <code>*.log</code> to the actual
+      filenames and hands <em>those</em> to <code>rm</code>; <code>rm</code> has no idea a glob was involved.
+      That is why quoting a glob (<code>rm "*.log"</code>) disables it — the shell leaves the literal string
+      alone and <code>rm</code> looks for a file literally named <code>*.log</code>. <strong>Second: if a glob
+      matches <em>nothing</em></strong>, a POSIX shell passes the <em>literal pattern through unchanged</em>
+      (bash default) — so <code>ls *.tar</code> in a directory with no tarballs runs <code>ls '*.tar'</code> and
+      errors with "No such file." (This surprising default can be changed with bash's <code>nullglob</code>, but
+      knowing the default explains the error.)
+    </p>
+    <p>
+      Distinct from globbing is <em>brace expansion</em>, which is pure text generation and does <strong>not</strong>
+      look at the filesystem at all:
+    </p>
+<pre><code>echo file{1,2,3}.txt        → file1.txt file2.txt file3.txt   (whether or not they exist)
+mkdir -p /srv/devboard/{releases,shared,current}   # make three dirs in one go
+cp app.conf{,.bak}          → cp app.conf app.conf.bak   (a common "backup this file" idiom)
+echo {1..5}                 → 1 2 3 4 5   (ranges)</code></pre>
+    <p>
+      And this is where <em>expansion order</em> earns its keep, because the shell applies these transformations
+      in a fixed sequence, and the order explains otherwise baffling behaviour:
+    </p>
+<pre><code>EXPANSION ORDER (bash), left conceptually as a pipeline the shell runs on your line:
+
+  1. Brace expansion        {a,b}       →  a b            (pure text, no filesystem)
+  2. Tilde expansion        ~           →  /home/you
+  3. Parameter/variable     $VAR ${VAR} →  its value
+     & command substitution $(cmd) `cmd`→  the cmd's stdout
+  4. Arithmetic             $((1+2))    →  3
+  5. Word splitting         splits UNQUOTED results on whitespace (IFS)
+  6. Pathname expansion     *  ?  [ ]   →  matching filenames (GLOBBING happens LAST)
+
+  Key takeaways:
+    • Globbing happens AFTER variable expansion → a glob stored in $VAR still expands.
+    • Word splitting happens on UNQUOTED expansions → this is why "$var" needs quotes.
+    • Brace expansion happens FIRST and never touches the disk → {a,b} always expands.</code></pre>
+
+    <h3>6.7 Quoting: the rule that ends half your bugs</h3>
+    <p>
+      Because the shell splits on whitespace and expands globs and variables (§6.6), <em>quoting</em> is how you
+      control what stays literal. There are exactly three modes, and knowing them cold prevents an enormous class
+      of failures:
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Form</th><th>Word splitting?</th><th><code>$VAR</code> expands?</th><th>Globs expand?</th><th>Use it for</th></tr></thead>
+        <tbody>
+          <tr><td>no quotes — <code>$x</code></td><td class="y">yes</td><td class="y">yes</td><td class="y">yes</td><td>when you <em>want</em> a glob or splitting to happen</td></tr>
+          <tr><td>double — <code>"$x"</code></td><td class="n">no</td><td class="y">yes</td><td class="n">no</td><td><b>the default you should reach for</b>: value in, spaces safe</td></tr>
+          <tr><td>single — <code>'$x'</code></td><td class="n">no</td><td class="n">no</td><td class="n">no</td><td>a totally literal string (e.g. an <code>awk</code> program)</td></tr>
+        </tbody>
+      </table>
+    </div>
+<pre><code>file="my report.txt"
+rm  $file      # ⚠️ becomes: rm my report.txt  → tries to delete TWO files, "my" and "report.txt"
+rm "$file"     # ✅ becomes: rm "my report.txt" → deletes the ONE file you meant
+
+echo '$HOME costs $5'   # single quotes: literal  → $HOME costs $5
+echo "$HOME costs \$5"  # double quotes: expands   → /home/you costs $5</code></pre>
+    <div class="callout good">
+      <span class="t">The habit to build</span>
+      <p>
+        <strong>Quote every variable expansion in double quotes by default — <code>"$var"</code>,
+        <code>"$(cmd)"</code>, <code>"${arr[@]}"</code> — and only drop the quotes when you specifically want
+        word-splitting or globbing.</strong> Almost every "it worked until a filename had a space / until the
+        variable was empty" bug is a missing pair of double quotes. This one habit will save you more grief than
+        any other single thing in this lesson.
+      </p>
+    </div>
+
+    <h3>6.8 Putting it together: the model as DevBoard operations</h3>
+    <p>
+      Everything above composes into the real work of operating DevBoard. A few representative one-liners, each
+      annotated — read them as sentences now:
+    </p>
+<pre><code># Top 3 URLs returning 500, last hour's log (the §1 question, solved)
+grep ' 500 ' access.log | awk '{print $7}' | sort | uniq -c | sort -rn | head -3
+
+# What's eating the disk under /srv, biggest first
+du -h --max-depth=1 /srv 2&gt;/dev/null | sort -rh | head
+
+# Reload nginx ONLY if its config parses; report clearly either way
+nginx -t &amp;&amp; systemctl reload nginx &amp;&amp; echo "reloaded" || echo "BAD CONFIG — left running"
+
+# Follow the live log, keep only errors, and save a copy while watching
+tail -f app.log | grep --line-buffered ERROR | tee errors.log
+
+# Count how many times each log level appears right now
+awk '{print $3}' app.log | sort | uniq -c | sort -rn
+
+# Back up every .env under /srv (glob names them; brace makes the .bak suffix)
+for f in /srv/**/*.env; do cp "$f" "$f.bak"; done   # (bash globstar) — quote $f for spaces!</code></pre>
+    <p>
+      This is the payoff of the whole lesson: you did not learn six commands, you learned a <em>model</em> in
+      which those commands — and hundreds you haven't met — snap together. Lesson 3.4 hands you sharper filters
+      for the middle of these pipes (<code>grep</code>, <code>sed</code>, <code>awk</code>, <code>jq</code>);
+      they slot into exactly the model you now hold.
+    </p>
+
+    <!-- ============================== 7 ============================== -->
+    <h2 id="s7">7 · Real Industry Example</h2>
+
+    <p>
+      This model is not a beginner's toy that "real" systems outgrow — it is the substrate that professional
+      infrastructure is <em>built on</em>. Three concrete places you'll see it:
+    </p>
+
+    <div class="grid2">
+      <div class="card">
+        <h4 style="margin-top:0">CI/CD pipelines are shell</h4>
+        <p style="margin-bottom:0">
+          Every step in a GitHub Actions job (Module 9) is a <code>run:</code> block executed by
+          <code>bash</code>. The job <em>succeeds or fails on the exit code</em> of each step — this is §6.5
+          exactly. A test command that exits non-zero fails the build and blocks the merge. Your entire
+          "is this change safe?" gate is exit codes and pipes.
+        </p>
+      </div>
+      <div class="card">
+        <h4 style="margin-top:0">Dockerfiles are shell</h4>
+        <p style="margin-bottom:0">
+          Every <code>RUN apt-get update &amp;&amp; apt-get install -y …</code> in a Dockerfile (Module 7) is this
+          model. The <code>&amp;&amp;</code> chaining is deliberate: if <code>update</code> fails, the
+          <code>install</code> must not run against a stale index. Image builds live or die by exit-code
+          chaining you now understand.
+        </p>
+      </div>
+      <div class="card">
+        <h4 style="margin-top:0">systemd runs commands &amp; reads exit codes</h4>
+        <p style="margin-bottom:0">
+          A <code>systemd</code> service (Lesson 3.6) is fundamentally <em>a command whose stdout/stderr are
+          wired to the journal and whose exit code decides restart policy</em>. "Restart the app if it crashes"
+          is systemd watching for a non-zero exit — the same integer <code>$?</code> gives you.
+        </p>
+      </div>
+      <div class="card">
+        <h4 style="margin-top:0">The one-liner that saves the outage</h4>
+        <p style="margin-bottom:0">
+          When something breaks at 3&nbsp;a.m. and there's no dashboard for <em>this</em> question, the engineer
+          who can compose <code>journalctl -u devboard --since '10 min ago' | grep -i timeout | wc -l</code> in
+          ten seconds finds the answer while everyone else is googling. Fluency here is measurably faster
+          incident response.
+        </p>
+      </div>
+    </div>
+
+    <p>
+      Google's, Netflix's and every serious shop's deploy tooling bottoms out in shell somewhere, precisely
+      because the compose-small-tools model is the fastest way to express "do this, check it worked, then do the
+      next thing" — which is what deployment <em>is</em>.
+    </p>
+
+    <!-- ============================== 8 ============================== -->
+    <h2 id="s8">8 · Diagrams</h2>
+
+    <h3>8.1 The three streams of a single process</h3>
+<pre><code>                        ┌───────────────────────────┐
+   keyboard ──fd 0──────▶│                           │
+   (stdin)               │        your program        │──fd 1──▶ terminal  (stdout: DATA)
+                         │   reads fd0, writes fd1/2  │──fd 2──▶ terminal  (stderr: ERRORS)
+                         └───────────────────────────┘
+   Default: all three are plugged into your terminal.
+   Redirection & pipes just UNPLUG one and plug it somewhere else.</code></pre>
+
+    <h3>8.2 Redirection vs pipe — the two ways to rewire</h3>
+<pre><code>  REDIRECTION  (stream ↔ FILE)                 PIPE  (stdout → next stdin)
+
+   grep 500 access.log  &gt; out.txt               grep 500 access.log | wc -l
+   ┌────────┐                                    ┌────────┐        ┌──────┐
+   │ grep   │ fd1 ═══════▶  ┌────────┐           │ grep   │ fd1 ══▶│ wc   │ fd1 ═▶ terminal
+   └────────┘               │ out.txt│           └────────┘  pipe  └──────┘
+        fd2 ═▶ terminal     └────────┘                fd2 ═▶ terminal (errors escape the pipe!)</code></pre>
+
+    <h3>8.3 A pipeline as a data assembly line</h3>
+<pre><code>  raw log ─▶ [ grep 500 ] ─▶ [ awk $7 ] ─▶ [ sort ] ─▶ [ uniq -c ] ─▶ [ sort -rn ] ─▶ [ head -3 ] ─▶ answer
+             keep the       pull out      group      count each      rank by         take the
+             500 lines      the URL       equals     unique URL      count desc       top three
+
+  All six programs run AT THE SAME TIME. ~64 KB flows between each pair. No temp files.
+  Errors from any stage bypass the belt and go straight to your terminal.</code></pre>
+
+    <h3>8.4 Exit-code control flow</h3>
+<pre><code>   command
+      │ returns an integer 0..255
+      ▼
+   ┌───────────────┬───────────────────────────┐
+   │  exit == 0    │        exit != 0           │
+   │  (success)    │        (failure)           │
+   ▼               ▼
+  A &amp;&amp; B  runs B   A &amp;&amp; B  skips B               ("and": B needs A to succeed)
+  A || B  skips B  A || B  runs B                ("or":  B is the fallback)
+  set -e  continues set -e  ABORTS the script    (fail-fast: stop on first error)</code></pre>
+
+    <!-- ============================== 9 ============================== -->
+    <h2 id="s9">9 · Advantages</h2>
+    <ul>
+      <li><strong>Infinite composability from a finite toolset.</strong> A few dozen small tools plus the pipe yield billions of pipelines. You answer questions no tool author anticipated, by <em>arrangement</em> rather than new code.</li>
+      <li><strong>A universal interface.</strong> Because every tool speaks the same "text stream in/out," any tool composes with any other. There is no per-pair integration work — the pipe is the integration.</li>
+      <li><strong>Constant memory over unbounded data.</strong> Streaming through pipes means a 400&nbsp;MB log — or an infinite <code>tail -f</code> — flows through in ~64&nbsp;KB chunks. You process data far larger than RAM without thinking about it.</li>
+      <li><strong>Reproducible and automatable.</strong> A pipeline that answered a question interactively is <em>the same text</em> you paste into a deploy script or CI step. Exploration and automation are one artifact — unlike clicking a GUI, which vanishes.</li>
+      <li><strong>Fail-fast control flow for free.</strong> Exit codes plus <code>&amp;&amp;</code>/<code>set -e</code> give you "do this only if that worked" as a one-character operator — the exact primitive safe deployment needs.</li>
+      <li><strong>Ubiquitous and stable.</strong> The same model works on your laptop, the VPS, inside every container, and in every CI runner — and has been stable for decades. Learning it once pays off everywhere in this course and after it.</li>
+    </ul>
+
+    <!-- ============================== 10 ============================== -->
+    <h2 id="s10">10 · Limitations</h2>
+    <ul>
+      <li><strong>The syntax is genuinely treacherous.</strong> Word splitting, glob surprises, and quoting rules mean a script that works on your files breaks on a filename with a space or a newline. The model is elegant; the surface is full of sharp edges (which is why §6.7 and <code>set -euo pipefail</code> matter so much).</li>
+      <li><strong>Text streams are a lossy interface for structured data.</strong> Parsing columns with <code>awk '{print $7}'</code> is fragile: change the log format and every pipeline breaks. Truly structured data (JSON) needs structure-aware tools (<code>jq</code>, Lesson 3.4) rather than whitespace splitting.</li>
+      <li><strong>Poor for real programming-in-the-large.</strong> Beyond ~50 lines, shell's lack of real data structures, error handling, and testing makes it a bad choice. When a script grows arms and legs, rewrite it in Python. Shell is glue, not girders.</li>
+      <li><strong>Portability gaps.</strong> <code>bash</code>-isms (<code>[[ ]]</code>, arrays, <code>&amp;&gt;</code>) don't work in the leaner <code>sh</code>/<code>dash</code> that many containers ship as <code>/bin/sh</code>. A script with <code>#!/bin/sh</code> that uses bash features fails mysteriously.</li>
+      <li><strong>Silent failure is the default.</strong> Without <code>set -e</code>/<code>pipefail</code>, errors are ignored and scripts continue — arguably the language's worst default, and a real cause of bad deploys. You must opt into safety.</li>
+      <li><strong>Security footguns.</strong> Unquoted expansions and naive use of <code>eval</code> or command substitution on untrusted input are classic injection vectors. The same flexibility that composes tools can compose an attacker's input into a command.</li>
+    </ul>
+
+    <!-- ============================== 11 ============================== -->
+    <h2 id="s11">11 · Common Misconceptions</h2>
+
+    <div class="myth">
+      <div class="m">"The program interprets the <code>*</code> — I'm passing a wildcard to <code>ls</code>."</div>
+      <div class="r"><p>The <strong>shell</strong> expands <code>*</code> into the list of matching filenames <em>before</em> <code>ls</code> ever runs; <code>ls</code> receives ordinary filenames and never sees the <code>*</code>. Proof: <code>ls "*.log"</code> (quoted) disables the glob, and <code>ls</code> then complains it can't find a file literally named <code>*.log</code>. Globbing is a shell service, uniform across every command — which is why it works identically with <code>rm</code>, <code>cp</code>, and tools that have never heard of wildcards.</p></div>
+    </div>
+
+    <div class="myth">
+      <div class="m">"A pipe runs the first command fully, saves the output, then runs the second."</div>
+      <div class="r"><p>Both commands run <strong>concurrently</strong>, with a small kernel buffer between them; data streams through as it's produced. That's why <code>tail -f log | grep ERROR</code> shows matches live forever and why huge inputs use tiny memory. There is no intermediate file and no "finish then start."</p></div>
+    </div>
+
+    <div class="myth">
+      <div class="m">"<code>&gt;</code> and <code>|</code> do basically the same thing."</div>
+      <div class="r"><p><code>&gt;</code> sends a stream to a <em>file</em> (redirection); <code>|</code> sends stdout to another <em>program's stdin</em> (a pipe). <code>grep 500 log &gt; out</code> writes a file; <code>grep 500 log | wc</code> feeds a program. You can't <code>| file.txt</code> and you (usually) don't want <code>&gt; anotherprogram</code>.</p></div>
+    </div>
+
+    <div class="myth">
+      <div class="m">"Exit code 1 means the number one / an error count."</div>
+      <div class="r"><p>The exit code is a <em>status</em>, not a quantity. <code>0</code> = success; any non-zero = a <em>category</em> of failure (e.g. <code>grep</code> uses 1 for "no match," 2 for "actual error"). It never means "one error occurred." And higher isn't "worse" — the numbers are labels, not a severity scale.</p></div>
+    </div>
+
+    <div class="myth">
+      <div class="m">"Piping to <code>less</code> or <code>grep</code> also filters the error messages."</div>
+      <div class="r"><p>Only <strong>stdout</strong> flows through a pipe; <strong>stderr</strong> bypasses it and hits your terminal directly. That's <em>by design</em> — errors are not data. To include them, merge first: <code>command 2&gt;&amp;1 | less</code>. Forgetting this is why "why is this error still on my screen when I piped everything to a file?" is such a common question.</p></div>
+    </div>
+
+    <div class="myth">
+      <div class="m">"Quotes are optional style — <code>$var</code> and <code>"$var"</code> are the same."</div>
+      <div class="r"><p>They differ whenever the value contains spaces, globs, or is empty. Unquoted <code>$var</code> is word-split and glob-expanded <em>after</em> substitution; <code>"$var"</code> is inserted as a single literal word. <code>rm $file</code> where <code>file="a b"</code> deletes two files; <code>rm "$file"</code> deletes one. Quote by default.</p></div>
+    </div>
+
+    <!-- ============================== 12 ============================== -->
+    <h2 id="s12">12 · Practical Use Cases</h2>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>You need to…</th><th>The model, applied</th></tr></thead>
+        <tbody>
+          <tr><td>Find the noisiest error in a log</td><td><code>grep -i error app.log | sort | uniq -c | sort -rn | head</code> — filter, group, count, rank.</td></tr>
+          <tr><td>Deploy only if tests pass</td><td><code>npm test &amp;&amp; ./deploy.sh</code> — exit-code chaining is the entire safety gate.</td></tr>
+          <tr><td>Free up disk, find the culprit</td><td><code>du -h --max-depth=1 /var/log | sort -rh | head</code> — measure and rank directories.</td></tr>
+          <tr><td>Write a config file from a script</td><td>a <em>here-doc</em>: <code>cat &lt;&lt;EOF &gt; /etc/devboard/app.conf … EOF</code>.</td></tr>
+          <tr><td>Act on every matching file</td><td>a glob + loop: <code>for f in logs/*.gz; do gunzip "$f"; done</code> (quote <code>"$f"</code>!).</td></tr>
+          <tr><td>Watch live logs for a keyword</td><td><code>tail -f app.log | grep --line-buffered -i timeout</code> — streaming, forever.</td></tr>
+          <tr><td>Silence a command but keep its status</td><td><code>somecmd &gt;/dev/null 2&gt;&amp;1; echo $?</code> — discard output, read success.</td></tr>
+          <tr><td>Count requests per client IP</td><td><code>awk '{print $1}' access.log | sort | uniq -c | sort -rn | head</code>.</td></tr>
+          <tr><td>Make a timestamped backup dir</td><td><code>mkdir -p /backup/$(date +%F)</code> — command substitution inside a path.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ============================== 13 ============================== -->
+    <h2 id="s13">13 · Summary</h2>
+    <ul class="takeaways">
+      <li>The shell is a <strong>programming language and interpreter</strong>, not a command prompt: it parses your line, expands it, wires up streams, runs programs, and branches on their exit codes.</li>
+      <li>Every process has <strong>three standard streams</strong> — <em>stdin (fd 0)</em>, <em>stdout (fd 1, data)</em>, <em>stderr (fd 2, diagnostics)</em> — the file descriptors from Lesson 3.1. Keeping data and errors on separate streams is what makes pipes clean.</li>
+      <li><strong>Redirection</strong> (<code>&gt;</code>, <code>&gt;&gt;</code>, <code>&lt;</code>, <code>2&gt;</code>, <code>2&gt;&amp;1</code>, <code>&amp;&gt;</code>) rewires a stream to a <em>file</em>; <code>&gt;</code> truncates, <code>&gt;&gt;</code> appends, and <code>2&gt;&amp;1</code> copies fd 1's <em>current</em> destination — so order matters.</li>
+      <li>A <strong>pipe</strong> is an in-kernel buffer joining one program's stdout to the next's stdin; the stages run <em>concurrently</em>, memory stays tiny, and back-pressure is automatic. Only stdout flows through — stderr escapes to the terminal.</li>
+      <li><strong>Exit codes</strong> (<code>0</code>=success, non-zero=failure, in <code>$?</code>) are the shell's booleans: <code>&amp;&amp;</code> runs the next command only on success, <code>||</code> only on failure. <code>set -euo pipefail</code> turns silent failure into fail-fast — the first line of every serious script.</li>
+      <li><strong>Globbing</strong> (<code>*</code>, <code>?</code>, <code>[…]</code>) is done by the <em>shell, before</em> the command runs and <em>last</em> in the expansion order; <strong>brace expansion</strong> (<code>{a,b}</code>) is pure text done <em>first</em> and never touches the disk.</li>
+      <li><strong>Quote every variable in double quotes by default</strong> (<code>"$var"</code>) — this single habit prevents the largest class of shell bugs (spaces, empty values, accidental globbing).</li>
+      <li>This model is the substrate of CI steps, Dockerfile <code>RUN</code> lines, and <code>systemd</code> services — learning it now is learning the grammar of the rest of the course.</li>
+    </ul>
+
+    <div class="callout def">
+      <span class="t">The lesson in one line</span>
+      <p>
+        <strong>Compose small single-purpose programs by wiring their byte streams together with pipes and
+        redirection, branch on their exit codes, and let the shell expand your globs and variables — and you can
+        make the machine do anything, one line at a time.</strong>
+      </p>
+    </div>
+
+    <!-- ============================== 14 ============================== -->
+    <h2 id="s14">14 · Recommended Resources</h2>
+    <div class="res">
+      <h4>Official docs &amp; specifications</h4>
+      <ul>
+        <li><b>The GNU Bash Reference Manual — "Redirections," "Pipelines," "Shell Expansions" and "Exit Status"</b> <span class="rank">start here</span>
+          <span class="why">The authoritative description of exactly what §6.3–6.6 cover. Dense but precise; read the four named sections rather than front to back.</span></li>
+        <li><b>POSIX Shell Command Language (IEEE Std 1003.1, "Shell &amp; Utilities")</b>
+          <span class="why">The portable core that every <code>sh</code> agrees on — the difference between "works everywhere" and "bash-only," which matters the moment you write a Dockerfile.</span></li>
+        <li><b>The <code>man</code> pages for <code>bash</code>, <code>test</code>, and each tool you pipe (<code>sort</code>, <code>uniq</code>, <code>cut</code>, <code>tee</code>)</b>
+          <span class="why">Reading the flags of the small tools is how you expand your composable vocabulary. <code>man sort</code> alone unlocks a dozen pipelines.</span></li>
+      </ul>
+
+      <h4>Books</h4>
+      <ul>
+        <li><b><em>The Linux Command Line</em> — William Shotts (free online), Part 2: "I/O Redirection" and the expansion chapters</b> <span class="rank">start here</span>
+          <span class="why">The clearest first pass at streams, redirection, pipes, and expansion for this exact audience. Do its exercises alongside §15.</span></li>
+        <li><b><em>The Unix Programming Environment</em> — Kernighan &amp; Pike</b>
+          <span class="why">The classic that <em>teaches the philosophy</em> (§2) as much as the syntax — why composition beats monoliths, from two of the people who built it. Dated tools, timeless model.</span></li>
+        <li><b><em>Classic Shell Scripting</em> — Robbins &amp; Beebe</b>
+          <span class="why">The step up from one-liners to robust scripts: quoting, exit-status discipline, and portability — the deep version of §6.5–6.7.</span></li>
+      </ul>
+
+      <h4>Talks, articles &amp; tools</h4>
+      <ul>
+        <li><b>ShellCheck (shellcheck.net) — run every script through it</b> <span class="rank">start here</span>
+          <span class="why">A linter that catches missing quotes, <code>set -e</code> gaps, and the exact footguns in §6.7 automatically. The fastest way to internalise good habits is to have a tool flag the bad ones.</span></li>
+        <li><b>"Master the Bash loop" and the quoting sections of the BashGuide / Greg's Wiki (mywiki.wooledge.org)</b>
+          <span class="why">The community's canonical, no-nonsense answers to word-splitting and quoting — the antidote to the copy-pasted Stack Overflow snippet that breaks on spaces.</span></li>
+        <li><b>Doug McIlroy's account of the invention of the pipe, and the "Unix philosophy" essay</b>
+          <span class="why">Short, and it makes §2–§5 click: understanding <em>why</em> the pipe was demanded makes the whole model feel inevitable rather than arbitrary.</span></li>
+      </ul>
+
+      <h4>Interactive labs &amp; practice</h4>
+      <ul>
+        <li><b>Your $5 VPS + a real log file (the app's, or <code>/var/log/nginx/access.log</code>)</b> <span class="rank">start here</span>
+          <span class="why">The only lab you need: pipe, redirect, count and rank against real data until composition is reflex. The exercise below is built entirely on this.</span></li>
+        <li><b><code>explainshell.com</code></b>
+          <span class="why">Paste any scary one-liner and it annotates every flag and operator — the fastest way to turn "incantation I copied" into "pipeline I understand," which is the whole goal of this lesson.</span></li>
+      </ul>
+    </div>
+
+    <!-- ============================== 15 ============================== -->
+    <h2 id="s15">15 · Exercise</h2>
+    <p>
+      Module 3's project increment is to <strong>operate and harden your Linux server</strong>. This lesson's job
+      is to make you <em>fluent</em> at asking it questions. Do these on the real VPS, in a scratch directory
+      (<code>~/shell-lab</code>). Where a real log isn't handy, generate a fake one (E1 shows how) so every step
+      works. Read each command before you run it, and predict the output <em>before</em> pressing Enter — that
+      prediction is where the learning is.
+    </p>
+
+    <div class="ex">
+      <div class="h"><span>E1</span>Make a playground and see the three streams</div>
+      <p>Create data, and prove stdout and stderr are different streams (§6.2):</p>
+<pre><code>mkdir -p ~/shell-lab &amp;&amp; cd ~/shell-lab
+printf '%s\n' "GET /a 200" "GET /b 500" "GET /a 500" "GET /c 200" "GET /b 500" &gt; access.log
+ls access.log nope.txt            # one exists, one doesn't → note WHICH message is which stream
+ls access.log nope.txt &gt; out.txt  # results go to the file… but the error still hits your screen
+ls access.log nope.txt 2&gt; err.txt # …now the ERROR goes to a file and the result hits your screen
+cat out.txt err.txt               # confirm the split</code></pre>
+      <p>
+        Explain, from §6.2, why redirecting <code>&gt;</code> captured the found file but left the "No such
+        file" message on your terminal, and what changed when you used <code>2&gt;</code>.
+      </p>
+      <div class="out">Deliverable: the contents of <code>out.txt</code> and <code>err.txt</code>, and one sentence on which stream (fd 1 vs fd 2) each line travelled on.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E2</span>Build the §1 pipeline one stage at a time</div>
+      <p>Grow the pipeline left to right, running it after each added stage so you <em>see</em> what each does:</p>
+<pre><code>grep ' 500 ' access.log                         # 1. just the 500 lines
+grep ' 500 ' access.log | awk '{print $2}'       # 2. pull the URL (2nd field here)
+grep ' 500 ' access.log | awk '{print $2}' | sort            # 3. group identical URLs together
+grep ' 500 ' access.log | awk '{print $2}' | sort | uniq -c  # 4. count each unique URL
+grep ' 500 ' access.log | awk '{print $2}' | sort | uniq -c | sort -rn | head -3  # 5. top 3</code></pre>
+      <p>
+        For each stage, write one sentence on what it added. Explain why <code>uniq -c</code> needs the
+        <code>sort</code> before it (hint: <code>uniq</code> only collapses <em>adjacent</em> duplicates).
+      </p>
+      <div class="out">Deliverable: the final ranked output, plus your five one-sentence stage descriptions.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E3</span>Redirection, truncate vs append, and the footgun</div>
+      <p>Feel the difference between <code>&gt;</code> and <code>&gt;&gt;</code>, and reproduce the self-clobber (§6.3):</p>
+<pre><code>echo "first"  &gt;  notes.txt ; cat notes.txt     # file now: first
+echo "second" &gt;  notes.txt ; cat notes.txt     # OVERWRITTEN → file now: second (first is gone!)
+echo "third"  &gt;&gt; notes.txt ; cat notes.txt     # APPENDED   → file now: second / third
+sort access.log &gt; access.log ; cat access.log  # ⚠️ predict THEN observe: the file is now EMPTY. Why?
+# recover:
+printf '%s\n' "GET /a 200" "GET /b 500" &gt; access.log</code></pre>
+      <p>
+        Explain, using §6.3, why <code>sort access.log &gt; access.log</code> emptied the file — specifically,
+        <em>when</em> the shell opened/truncated the file relative to when <code>sort</code> read it.
+      </p>
+      <div class="out">Deliverable: one sentence on truncate-vs-append, and one sentence explaining the self-clobber in terms of order of operations.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E4</span>Exit codes and safe chaining</div>
+      <p>Make control flow depend on success (§6.5). Watch <code>$?</code> and the chaining operators:</p>
+<pre><code>grep -q 500 access.log ; echo "exit was $?"     # 0 if "500" is present
+grep -q 999 access.log ; echo "exit was $?"     # 1 (not found) — a "clean" non-zero
+mkdir -p build &amp;&amp; echo "made build, entering" &amp;&amp; cd build &amp;&amp; pwd   # each step gates the next
+cd /definitely/not/here &amp;&amp; echo "you will NOT see this"          # && short-circuits on failure
+cd /definitely/not/here || echo "fallback ran because cd FAILED" # || runs the fallback
+# now the safety line — put it at the top of a scratch script and watch it abort early:
+bash -c 'set -euo pipefail; echo step1; false; echo "step2 should NOT print"'</code></pre>
+      <p>
+        Explain what <code>set -e</code> did to the last line, and give a one-sentence reason each for why
+        <code>set -u</code> and <code>set -o pipefail</code> make a deploy script safer (tie back to §6.5).
+      </p>
+      <div class="out">Deliverable: the observed exit codes, and 2–3 sentences on how <code>&amp;&amp;</code>/<code>||</code>/<code>set -euo pipefail</code> would protect a real DevBoard deploy.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E5</span>Globbing, brace expansion, and quoting — prove who does the work</div>
+      <p>See that the <em>shell</em> expands patterns, and that quoting changes everything (§6.6–6.7):</p>
+<pre><code>touch app.log web.log db.log report.txt
+echo *.log            # the SHELL expands this → app.log web.log db.log (echo never sees the *)
+echo "*.log"          # quoted → literal *.log (glob disabled). Same command, different result!
+ls *.tar 2&gt;/dev/null || echo "no tarballs — the unmatched glob passed through literally"
+mkdir -p /tmp/devboard/{releases,shared,current} &amp;&amp; ls /tmp/devboard   # brace expansion: 3 dirs
+name="my notes.txt" ; touch "$name"
+rm  $name             # ⚠️ predict: tries to remove TWO names ("my" and "notes.txt") → error
+rm "$name"            # ✅ removes the ONE file. Explain the difference from §6.7.</code></pre>
+      <p>
+        Explain (a) how you proved that <em>the shell</em>, not <code>echo</code>, expands the glob; (b) why the
+        unmatched <code>*.tar</code> produced an error rather than "nothing"; and (c) exactly why
+        <code>rm $name</code> and <code>rm "$name"</code> behave differently.
+      </p>
+      <div class="out">Deliverable: the three explanations, plus the <code>ls /tmp/devboard</code> output showing brace expansion made three directories in one command.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E6</span>A real DevBoard triage one-liner (capstone)</div>
+      <p>
+        Compose your own pipeline to answer a question about a real log on the box — the app's log if it's
+        running, else <code>/var/log/nginx/access.log</code> or <code>journalctl</code>. Pick one question and
+        build the pipe for it:
+      </p>
+      <ul style="margin:0 0 .6em">
+        <li>The 5 most frequent client IPs in the access log, with counts.</li>
+        <li>How many lines contain "error" (case-insensitive) in the last 500 lines of a log.</li>
+        <li>The three largest directories under <code>/var/log</code>.</li>
+      </ul>
+<pre><code># examples to adapt — DON'T just paste; predict each stage first:
+awk '{print $1}' /var/log/nginx/access.log | sort | uniq -c | sort -rn | head -5
+tail -n 500 app.log | grep -ic error
+du -h --max-depth=1 /var/log 2&gt;/dev/null | sort -rh | head -3</code></pre>
+      <p>
+        Narrate your chosen pipeline stage by stage in your own words, then save it into a file
+        <code>~/shell-lab/triage.sh</code> beginning with <code>#!/usr/bin/env bash</code> and
+        <code>set -euo pipefail</code>. This is the seed of the operational muscle Milestone&nbsp;3 expects.
+      </p>
+      <div class="out">Deliverable: your pipeline, a stage-by-stage narration, and the saved <code>triage.sh</code> (with the safety header). Add it to your Milestone&nbsp;3 record.</div>
+    </div>
+
+    <!-- ============================== 16 ============================== -->
+    <h2 id="s16">16 · Quiz</h2>
+    <div class="callout warn">
+      <span class="t">How to use this</span>
+      <p>
+        Answer in your own words <strong>before</strong> revealing the model answer. Two or three sentences each.
+        You're ready for Lesson 3.4 (the <code>grep</code>/<code>sed</code>/<code>awk</code>/<code>jq</code>
+        toolkit) when you can answer Q1, Q3, Q5 and Q7 cold and have completed E1–E6 on a real machine.
+      </p>
+    </div>
+
+    <div class="quiz">
+
+      <details class="q"><summary>Name the three standard streams, their file descriptor numbers, and why stdout and stderr are kept separate.</summary>
+        <div class="ans"><p><strong>stdin</strong> (fd&nbsp;0, input), <strong>stdout</strong> (fd&nbsp;1, results/data), <strong>stderr</strong> (fd&nbsp;2, diagnostics/errors). They're separate so that a program's <em>results</em> can flow cleanly through a pipe to the next tool while its <em>error messages</em> go to the human on the terminal instead of polluting the data. If both shared one stream, an error like "Permission denied" would be counted as a data line by the next stage.</p></div>
+      </details>
+
+      <details class="q"><summary>What is the difference between <code>command &gt; file</code> and <code>command | other</code>?</summary>
+        <div class="ans"><p><code>&gt;</code> is <strong>redirection</strong>: it connects the command's stdout to a <em>file</em> (overwriting it). <code>|</code> is a <strong>pipe</strong>: it connects the command's stdout to <em>another program's stdin</em>, and the two run concurrently with an in-kernel buffer between them. One writes to storage; the other feeds a live program. You redirect to save/persist; you pipe to keep processing.</p></div>
+      </details>
+
+      <details class="q"><summary>Explain <code>2&gt;&amp;1</code>, and why <code>cmd &gt; f 2&gt;&amp;1</code> and <code>cmd 2&gt;&amp;1 &gt; f</code> differ.</summary>
+        <div class="ans"><p><code>2&gt;&amp;1</code> means "point fd&nbsp;2 (stderr) at <em>whatever fd&nbsp;1 currently points at</em>." Redirections are applied left to right. In <code>cmd &gt; f 2&gt;&amp;1</code>, fd&nbsp;1 is aimed at <code>f</code> first, then fd&nbsp;2 is aimed at the same place → <em>both</em> land in <code>f</code>. In <code>cmd 2&gt;&amp;1 &gt; f</code>, fd&nbsp;2 is aimed at the terminal (where fd&nbsp;1 still points) <em>first</em>, then fd&nbsp;1 moves to <code>f</code> → errors go to the screen, results to the file.</p></div>
+      </details>
+
+      <details class="q"><summary>Why does <code>tail -f app.log | grep ERROR</code> keep printing new errors forever, and use very little memory?</summary>
+        <div class="ans"><p>Because a pipe runs both programs <strong>concurrently</strong> with a small (~64&nbsp;KB) kernel buffer between them, streaming data as it's produced rather than "finish tail, then run grep." <code>tail -f</code> never exits — it emits each new line as the file grows — and <code>grep</code> filters each line as it arrives. Only a tiny buffer's worth of data is ever in memory, so it works on unbounded/huge inputs without loading them.</p></div>
+      </details>
+
+      <details class="q"><summary>What does an exit code of 0 mean vs non-zero, and how do <code>&amp;&amp;</code> and <code>||</code> use it?</summary>
+        <div class="ans"><p><strong>0 = success; any non-zero = a category of failure</strong> (stored in <code>$?</code>). <code>A &amp;&amp; B</code> runs B <em>only if</em> A exited 0 ("and then, if it worked"); <code>A || B</code> runs B <em>only if</em> A exited non-zero ("or else, as a fallback"). This is how the shell does control flow — success itself is the boolean, so <code>nginx -t &amp;&amp; systemctl reload nginx</code> reloads only when the config test passes.</p></div>
+      </details>
+
+      <details class="q"><summary>What does <code>set -euo pipefail</code> do, and why is it the first line of a deploy script?</summary>
+        <div class="ans"><p><code>-e</code> aborts the script on the first command that fails (non-zero), so a broken step stops the deploy instead of continuing. <code>-u</code> makes referencing an unset variable an error, catching typos before they expand to empty (which prevents disasters like <code>rm -rf $TYPO/</code>). <code>-o pipefail</code> makes a pipeline fail if <em>any</em> stage fails, not just the last. Together they convert the shell's dangerous default — ignore errors and keep going — into fail-fast behaviour, so problems surface loudly and early rather than silently in production.</p></div>
+      </details>
+
+      <details class="q"><summary>When you run <code>rm *.log</code>, who expands the <code>*.log</code>, and what does <code>rm</code> actually receive?</summary>
+        <div class="ans"><p>The <strong>shell</strong> expands <code>*.log</code> into the list of matching filenames <em>before</em> <code>rm</code> runs; <code>rm</code> receives ordinary filenames (e.g. <code>app.log web.log</code>) and never sees the <code>*</code>. Globbing is a uniform shell service, which is why it works identically with every command and why quoting (<code>rm "*.log"</code>) disables it — the shell then passes the literal string and <code>rm</code> looks for a file actually named <code>*.log</code>.</p></div>
+      </details>
+
+      <details class="q"><summary>Distinguish globbing from brace expansion. Which one touches the filesystem?</summary>
+        <div class="ans"><p><strong>Globbing</strong> (<code>*</code>, <code>?</code>, <code>[…]</code>) matches <em>existing filenames</em> — it reads the filesystem, happens <em>last</em> in expansion order, and yields nothing new if no file matches (in bash's default it passes the literal pattern through). <strong>Brace expansion</strong> (<code>{a,b}</code>, <code>{1..5}</code>) is pure <em>text generation</em> — it happens <em>first</em>, ignores the filesystem entirely, and always expands (e.g. <code>mkdir {a,b,c}</code> makes three dirs regardless of what exists).</p></div>
+      </details>
+
+      <details class="q"><summary>Why can <code>rm $file</code> and <code>rm "$file"</code> behave differently, and which should you default to?</summary>
+        <div class="ans"><p>After the shell substitutes the variable, an <em>unquoted</em> <code>$file</code> is subject to word splitting and globbing: if <code>file="my notes.txt"</code>, <code>rm $file</code> becomes <code>rm my notes.txt</code> — two arguments, wrong files. <code>"$file"</code> inserts the value as a <em>single</em> literal word, so <code>rm "$file"</code> deletes the one intended file. <strong>Default to double-quoting every expansion</strong> (<code>"$var"</code>, <code>"$(cmd)"</code>); it prevents the biggest class of shell bugs (spaces, empties, accidental globs).</p></div>
+      </details>
+
+      <details class="q"><summary>You pipe a command's output to <code>less</code> but an error message still flashes on your screen. Why, and how do you capture it too?</summary>
+        <div class="ans"><p>A pipe only carries <strong>stdout</strong> (fd&nbsp;1); <strong>stderr</strong> (fd&nbsp;2) is not connected to the pipe and goes straight to the terminal — by design, since errors aren't data. To route errors into the pipe as well, merge them into stdout first: <code>command 2&gt;&amp;1 | less</code>. (Or to discard them: <code>command 2&gt;/dev/null | less</code>.)</p></div>
+      </details>
+
+    </div>
+
+    <div class="callout good">
+      <span class="t">Next: Lesson 3.4</span>
+      <p>
+        You now hold the shell's programming model: streams as the data type, pipes and redirection as the
+        wiring, exit codes as control flow, and globbing/quoting under your command. What you have so far are the
+        <em>connectors</em>; Lesson 3.4 hands you the <strong>power tools that live in the middle of the pipe</strong>
+        — <code>grep</code> (find lines), <code>sed</code> (edit streams), <code>awk</code> (columns and
+        arithmetic), <code>jq</code> (structured JSON), and <code>find</code>&nbsp;+&nbsp;<code>xargs</code>
+        (act on many files). Every one of them is a stream filter designed to snap into exactly the pipelines you
+        just learned to build. The model stays the same; the vocabulary gets sharp.
+      </p>
+    </div>
+
+    <hr>
+
+    <nav class="pager" aria-label="Lesson navigation">
+      <a href="lesson-02-users-groups-permissions-sudo.html"><em>Previous lesson</em>← 3.2 · Users, groups, permissions, sudo &amp; least privilege</a>
+      <span class="disabled next"><em>Next lesson</em>3.4 · The ops debugger's toolkit: grep, sed, awk, jq, find, xargs <small>(not yet generated)</small></span>
+    </nav>
+
+    <footer class="foot">
+      <b>From Commit to Production</b> · Module 3 · Lesson 3.3 — <em>The Shell as a Programming Model</em><br>
+      <small>Self-contained offline document · no external assets · regenerated in full when revised.
+      Roadmap: <a href="../../index.html">course/index.html</a></small>
+    </footer>
+  </article>
+</div>
+
+<script>
+(function(){
+  var root = document.documentElement;
+
+  /* ---------- theme ---------- */
+  var KEY='ftp.theme', saved=null;
+  try { saved = localStorage.getItem(KEY); } catch(e){}
+  if (saved) root.setAttribute('data-theme', saved);
+  document.getElementById('theme').addEventListener('click', function(){
+    var cur = root.getAttribute('data-theme');
+    if (!cur) cur = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    var next = cur === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem(KEY, next); } catch(e){}
+  });
+
+  /* ---------- expand/collapse all quiz answers ---------- */
+  var btn = document.getElementById('expand');
+  btn.addEventListener('click', function(){
+    var all = document.querySelectorAll('details.q');
+    var anyClosed = Array.prototype.some.call(all, function(d){ return !d.open; });
+    Array.prototype.forEach.call(all, function(d){ d.open = anyClosed; });
+    btn.textContent = anyClosed ? '⇕ Collapse all' : '⇕ Expand all';
+  });
+
+  /* ---------- reading progress bar ---------- */
+  var barEl = document.getElementById('readbar');
+  function onScroll(){
+    var h = document.documentElement;
+    var max = h.scrollHeight - h.clientHeight;
+    barEl.style.width = (max > 0 ? (h.scrollTop / max * 100) : 0) + '%';
+  }
+  addEventListener('scroll', onScroll, {passive:true});
+  onScroll();
+
+  /* ---------- TOC scroll-spy ---------- */
+  var links = Array.prototype.slice.call(document.querySelectorAll('#tocList a'));
+  var targets = links.map(function(a){ return document.querySelector(a.getAttribute('href')); })
+                     .filter(Boolean);
+  if ('IntersectionObserver' in window && targets.length){
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if (!e.isIntersecting) return;
+        links.forEach(function(a){
+          a.classList.toggle('on', a.getAttribute('href') === '#' + e.target.id);
+        });
+      });
+    }, { rootMargin:'-80px 0px -70% 0px', threshold:0 });
+    targets.forEach(function(t){ io.observe(t); });
+  }
+})();
+</script>
+</body>
+</html>
