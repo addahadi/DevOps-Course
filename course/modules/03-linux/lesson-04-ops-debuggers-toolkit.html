@@ -1,0 +1,1551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 3.4 · The Ops Debugger's Toolkit: grep, sed, awk, jq, find &amp; xargs — From Commit to Production</title>
+<style>
+/* ============================================================
+   DESIGN TOKENS  (same system as the roadmap)
+   ============================================================ */
+:root{
+  color-scheme: dark light;
+  --font-sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", Consolas, "SFMono-Regular", Menlo, monospace;
+
+  --bg:#0a0e17; --bg-alt:#0e1421; --surface:#131b2b; --surface-2:#19233a;
+  --border:#243049; --border-strong:#37456a;
+  --text:#e8eefb; --text-dim:#a7b4cd; --text-faint:#78869f;
+
+  --accent:#6ea8ff;  --accent-soft:rgba(110,168,255,.14);
+  --green:#4fd39c;   --green-soft:rgba(79,211,156,.13);
+  --amber:#f2b754;   --amber-soft:rgba(242,183,84,.13);
+  --red:#ff7f76;     --red-soft:rgba(255,127,118,.13);
+  --purple:#b28cff;  --purple-soft:rgba(178,140,255,.13);
+  --teal:#4fd0d9;    --teal-soft:rgba(79,208,217,.13);
+
+  --radius:14px; --radius-sm:8px;
+  --shadow:0 1px 2px rgba(0,0,0,.45), 0 14px 34px -18px rgba(0,0,0,.75);
+  --maxw:1220px; --readw:840px;
+}
+:root[data-theme="light"]{
+  color-scheme: light;
+  --bg:#f7f9fc; --bg-alt:#eef2f8; --surface:#ffffff; --surface-2:#f2f5fa;
+  --border:#dde3ee; --border-strong:#c2ccdd;
+  --text:#131a26; --text-dim:#4b586e; --text-faint:#75839a;
+  --accent:#1f5fd0; --accent-soft:rgba(31,95,208,.09);
+  --green:#0f8a5f;  --green-soft:rgba(15,138,95,.10);
+  --amber:#9a6a06;  --amber-soft:rgba(154,106,6,.10);
+  --red:#c3352b;    --red-soft:rgba(195,53,43,.09);
+  --purple:#6d3ecb; --purple-soft:rgba(109,62,203,.09);
+  --teal:#07767e;   --teal-soft:rgba(7,118,126,.10);
+  --shadow:0 1px 2px rgba(18,28,45,.06), 0 12px 28px -18px rgba(18,28,45,.25);
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    color-scheme: light;
+    --bg:#f7f9fc; --bg-alt:#eef2f8; --surface:#ffffff; --surface-2:#f2f5fa;
+    --border:#dde3ee; --border-strong:#c2ccdd;
+    --text:#131a26; --text-dim:#4b586e; --text-faint:#75839a;
+    --accent:#1f5fd0; --accent-soft:rgba(31,95,208,.09);
+    --green:#0f8a5f;  --green-soft:rgba(15,138,95,.10);
+    --amber:#9a6a06;  --amber-soft:rgba(154,106,6,.10);
+    --red:#c3352b;    --red-soft:rgba(195,53,43,.09);
+    --purple:#6d3ecb; --purple-soft:rgba(109,62,203,.09);
+    --teal:#07767e;   --teal-soft:rgba(7,118,126,.10);
+    --shadow:0 1px 2px rgba(18,28,45,.06), 0 12px 28px -18px rgba(18,28,45,.25);
+  }
+}
+
+/* ============================================================ BASE */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth; scroll-padding-top:80px}
+body{margin:0; background:var(--bg); color:var(--text);
+  font-family:var(--font-sans); font-size:16.5px; line-height:1.72; -webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{line-height:1.28; margin:0 0 .5em; letter-spacing:-.015em; font-weight:680}
+h1{font-size:clamp(1.9rem,4vw,2.7rem)}
+h2{font-size:clamp(1.35rem,2.4vw,1.72rem); margin-top:2.6em; padding-top:.2em}
+h3{font-size:1.1rem; margin-top:2em; color:var(--text)}
+h4{font-size:.98rem; margin-top:1.5em; color:var(--text-dim)}
+p{margin:0 0 1.05em}
+a{color:var(--accent); text-decoration:none}
+a:hover{text-decoration:underline}
+strong{font-weight:660}
+em.term{font-style:normal; font-weight:680; color:var(--text)}
+code{font-family:var(--font-mono); font-size:.87em; background:var(--surface-2);
+  border:1px solid var(--border); border-radius:5px; padding:.1em .38em}
+ul,ol{padding-left:1.3em; margin:0 0 1.05em}
+li{margin:.35em 0}
+blockquote{margin:1.5em 0; padding:2px 0 2px 18px; border-left:3px solid var(--border-strong);
+  color:var(--text-dim); font-style:italic}
+blockquote footer{font-style:normal; font-size:.85rem; color:var(--text-faint); margin-top:.4em}
+hr{border:0; border-top:1px solid var(--border); margin:2.6rem 0}
+small{color:var(--text-faint)}
+sup a{font-size:.7em; padding:0 1px}
+
+/* ============================================================ BAR */
+header.bar{position:sticky; top:0; z-index:60;
+  background:color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter:blur(10px); border-bottom:1px solid var(--border)}
+.bar-in{padding:10px 22px; display:flex; align-items:center; gap:14px}
+.brand{font-weight:700; font-size:.92rem; white-space:nowrap}
+.brand a{color:var(--text)}
+.brand span{color:var(--accent)}
+.crumb{font-size:.82rem; color:var(--text-faint); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.bar .right{margin-left:auto; display:flex; gap:8px; align-items:center}
+button.ghost{font:inherit; font-size:.8rem; cursor:pointer; color:var(--text-dim);
+  background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:5px 11px}
+button.ghost:hover{border-color:var(--border-strong); color:var(--text)}
+#readbar{position:fixed; top:0; left:0; height:2px; background:var(--accent); z-index:70; width:0}
+
+/* ============================================================ LAYOUT */
+.shell{padding:0 40px;
+  display:grid; grid-template-columns:1fr; gap:36px}
+
+aside.toc{display:none}
+aside.toc .inner{position:sticky; top:74px; max-height:calc(100vh - 96px); overflow:auto;
+  padding:22px 0 40px; font-size:.86rem}
+aside.toc .lbl{font-size:.7rem; letter-spacing:.12em; text-transform:uppercase;
+  color:var(--text-faint); font-weight:700; margin:0 0 10px}
+aside.toc ol{list-style:none; padding:0; margin:0; counter-reset:t}
+aside.toc li{margin:0; counter-increment:t}
+aside.toc a{display:flex; gap:8px; padding:5px 10px 5px 8px; border-radius:6px;
+  color:var(--text-dim); border-left:2px solid transparent; line-height:1.4}
+aside.toc a:before{content:counter(t); font-family:var(--font-mono); font-size:.72rem;
+  color:var(--text-faint); flex:0 0 1.4em; text-align:right}
+aside.toc a:hover{background:var(--surface-2); color:var(--text); text-decoration:none}
+aside.toc a.on{color:var(--accent); border-left-color:var(--accent); background:var(--accent-soft)}
+article{min-width:0; padding-bottom:20px}
+
+/* ============================================================ HERO */
+.lead{padding:46px 0 26px; border-bottom:1px solid var(--border); margin-bottom:8px}
+.kicker{font-family:var(--font-mono); font-size:.74rem; letter-spacing:.16em;
+  text-transform:uppercase; color:var(--accent); margin-bottom:12px}
+.subtitle{font-size:1.1rem; color:var(--text-dim); max-width:var(--readw); margin-top:.6em}
+.meta{display:flex; flex-wrap:wrap; gap:8px; margin-top:20px}
+
+/* ============================================================ COMPONENTS */
+.pill{display:inline-block; font-family:var(--font-mono); font-size:.7rem; padding:3px 9px;
+  border-radius:999px; border:1px solid var(--border-strong); color:var(--text-dim); white-space:nowrap}
+.pill.a{color:var(--accent); border-color:var(--accent); background:var(--accent-soft)}
+.pill.g{color:var(--green); border-color:var(--green); background:var(--green-soft)}
+.pill.r{color:var(--red); border-color:var(--red); background:var(--red-soft)}
+.pill.p{color:var(--purple); border-color:var(--purple); background:var(--purple-soft)}
+
+.callout{border-left:3px solid var(--accent); background:var(--accent-soft);
+  border-radius:0 var(--radius-sm) var(--radius-sm) 0; padding:15px 19px; margin:1.7em 0}
+.callout.warn{border-color:var(--amber); background:var(--amber-soft)}
+.callout.bad{border-color:var(--red); background:var(--red-soft)}
+.callout.good{border-color:var(--green); background:var(--green-soft)}
+.callout.def{border-color:var(--purple); background:var(--purple-soft)}
+.callout .t{font-weight:700; font-size:.76rem; letter-spacing:.1em; text-transform:uppercase;
+  margin-bottom:6px; display:block; color:var(--text)}
+.callout > :last-child{margin-bottom:0}
+
+dl.terms{margin:1.4em 0; padding:0}
+dl.terms dt{font-weight:680; color:var(--text); margin-top:1em; font-size:.98rem}
+dl.terms dt:first-child{margin-top:0}
+dl.terms dd{margin:.25em 0 0; color:var(--text-dim); padding-left:0}
+
+pre{background:var(--bg-alt); border:1px solid var(--border); border-radius:var(--radius-sm);
+  padding:16px 18px; overflow-x:auto; font-family:var(--font-mono); font-size:.8rem;
+  line-height:1.5; margin:1.6em 0}
+pre code{background:none; border:0; padding:0; font-size:inherit}
+figure{margin:1.8em 0}
+figure figcaption{font-size:.82rem; color:var(--text-faint); margin-top:-.6em; padding-left:2px}
+
+.tablewrap{overflow-x:auto; margin:1.6em 0; border:1px solid var(--border); border-radius:var(--radius)}
+table{border-collapse:collapse; width:100%; font-size:.9rem; min-width:560px}
+th,td{padding:10px 14px; text-align:left; border-bottom:1px solid var(--border); vertical-align:top}
+th{background:var(--surface-2); font-size:.73rem; text-transform:uppercase; letter-spacing:.08em;
+  color:var(--text-dim); font-weight:700}
+tr:last-child td{border-bottom:0}
+td.y{color:var(--green); font-weight:600} td.n{color:var(--red); font-weight:600}
+
+.card{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+  padding:20px 22px; box-shadow:var(--shadow); margin:1.6em 0}
+.card > :first-child{margin-top:0}
+.grid2{display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; margin:1.6em 0}
+.grid2 .card{margin:0}
+
+/* misconceptions */
+.myth{border:1px solid var(--border); border-radius:var(--radius); margin:14px 0; overflow:hidden}
+.myth .m{background:var(--red-soft); border-bottom:1px solid var(--border); padding:11px 16px;
+  font-weight:660; display:flex; gap:10px}
+.myth .m:before{content:"✕"; color:var(--red); font-weight:700}
+.myth .r{padding:13px 16px}
+.myth .r:before{content:"Reality "; font-family:var(--font-mono); font-size:.68rem;
+  letter-spacing:.12em; text-transform:uppercase; color:var(--green); display:block; margin-bottom:4px}
+.myth .r > :last-child{margin-bottom:0}
+
+/* resources */
+.res{margin:1.4em 0}
+.res h4{margin:1.4em 0 .4em; color:var(--accent); font-size:.78rem;
+  letter-spacing:.1em; text-transform:uppercase}
+.res ul{list-style:none; padding:0; margin:0}
+.res li{border-bottom:1px dashed var(--border); padding:8px 0; margin:0}
+.res li:last-child{border-bottom:0}
+.res .why{display:block; font-size:.85rem; color:var(--text-dim)}
+.res .rank{font-family:var(--font-mono); font-size:.66rem; padding:1px 6px; border-radius:999px;
+  border:1px solid var(--green); color:var(--green); background:var(--green-soft); margin-left:6px}
+
+/* exercises */
+.ex{border:1px solid var(--border); border-left:3px solid var(--teal);
+  border-radius:0 var(--radius) var(--radius) 0; padding:16px 20px; margin:16px 0; background:var(--surface)}
+.ex .h{font-weight:680; margin-bottom:6px}
+.ex .h span{font-family:var(--font-mono); font-size:.72rem; color:var(--teal); margin-right:8px}
+.ex .out{font-size:.86rem; color:var(--text-faint); margin-top:8px; border-top:1px dashed var(--border); padding-top:8px}
+.ex > :last-child{margin-bottom:0}
+
+/* quiz */
+.quiz{counter-reset:q}
+.q{border:1px solid var(--border); border-radius:var(--radius); margin:12px 0;
+  background:var(--surface); overflow:hidden}
+.q > summary{cursor:pointer; list-style:none; padding:14px 18px; display:flex; gap:12px;
+  font-weight:600; align-items:flex-start}
+.q > summary::-webkit-details-marker{display:none}
+.q > summary:before{counter-increment:q; content:"Q" counter(q); font-family:var(--font-mono);
+  font-size:.72rem; color:var(--accent); background:var(--accent-soft);
+  border:1px solid var(--accent); border-radius:6px; padding:2px 7px; flex:0 0 auto; margin-top:2px}
+.q > summary::after{content:"show answer"; margin-left:auto; font-size:.7rem; font-weight:600;
+  letter-spacing:.08em; text-transform:uppercase; color:var(--text-faint); flex:0 0 auto; padding-top:4px}
+.q[open] > summary::after{content:"hide"}
+.q .ans{padding:2px 18px 16px; border-top:1px solid var(--border); margin-top:0;
+  background:var(--bg-alt); color:var(--text-dim)}
+.q .ans > :first-child{margin-top:1em}
+.q .ans > :last-child{margin-bottom:0}
+.q .ans strong{color:var(--text)}
+
+/* summary list */
+ul.takeaways{list-style:none; padding:0}
+ul.takeaways li{padding:9px 0 9px 30px; position:relative; border-bottom:1px dashed var(--border)}
+ul.takeaways li:last-child{border-bottom:0}
+ul.takeaways li:before{content:"▸"; position:absolute; left:6px; top:9px; color:var(--accent)}
+
+/* pager / footer */
+.pager{display:flex; gap:12px; margin:44px 0 30px; flex-wrap:wrap; max-width:none}
+.pager a, .pager .disabled{flex:1 1 250px; border:1px solid var(--border); border-radius:var(--radius);
+  padding:14px 18px; background:var(--surface); text-decoration:none; color:var(--text)}
+.pager a:hover{border-color:var(--accent); text-decoration:none}
+.pager .disabled{opacity:.45}
+.pager em{display:block; font-style:normal; font-size:.7rem; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--text-faint); margin-bottom:3px}
+.pager .next{text-align:right}
+footer.foot{border-top:1px solid var(--border); margin-top:20px; padding:24px 0 56px;
+  color:var(--text-faint); font-size:.85rem}
+
+@media print{
+  header.bar,aside.toc,#readbar,button.ghost,.pager{display:none}
+  body{background:#fff; color:#000; font-size:10.5pt}
+  .shell{display:block; max-width:none; padding:0}
+  .q{break-inside:avoid} .q .ans{display:block !important}
+  article > *{max-width:none}
+}
+</style>
+</head>
+<body>
+
+<div id="readbar"></div>
+<header class="bar">
+  <div class="bar-in">
+    <div class="brand"><a href="../../index.html">Commit&nbsp;<span>→</span>&nbsp;Production</a></div>
+    <div class="crumb">/ Module&nbsp;3 · Linux / Lesson&nbsp;3.4</div>
+    <div class="right">
+      <button class="ghost" id="expand">⇕ Expand all</button>
+      <button class="ghost" id="theme">◐ Theme</button>
+    </div>
+  </div>
+</header>
+
+<div class="shell">
+
+  <aside class="toc">
+    <div class="inner">
+      <p class="lbl">Lesson contents</p>
+      <ol id="tocList">
+        <li><a href="#s1">Problem Statement</a></li>
+        <li><a href="#s2">Historical Context</a></li>
+        <li><a href="#s3">Previous Solution</a></li>
+        <li><a href="#s4">Why It Failed</a></li>
+        <li><a href="#s5">New Solution</a></li>
+        <li><a href="#s6">Internal Mechanics</a></li>
+        <li><a href="#s7">Real Industry Examples</a></li>
+        <li><a href="#s8">Diagrams</a></li>
+        <li><a href="#s9">Advantages</a></li>
+        <li><a href="#s10">Limitations</a></li>
+        <li><a href="#s11">Common Misconceptions</a></li>
+        <li><a href="#s12">Practical Use Cases</a></li>
+        <li><a href="#s13">Summary</a></li>
+        <li><a href="#s14">Recommended Resources</a></li>
+        <li><a href="#s15">Exercise</a></li>
+        <li><a href="#s16">Quiz</a></li>
+      </ol>
+    </div>
+  </aside>
+
+  <article>
+    <div class="lead">
+      <div class="kicker">Module 3 · Lesson 3.4</div>
+      <h1>The ops debugger's toolkit: <code>grep</code>, <code>sed</code>, <code>awk</code>, <code>jq</code>, <code>find</code> &amp; <code>xargs</code></h1>
+      <p class="subtitle">
+        Lesson 3.3 gave you the <em>plumbing</em> — streams as the data type, pipes and redirection as the wiring,
+        exit codes as control flow. This lesson gives you the <strong>power tools that live in the middle of the
+        pipe</strong>: the six programs an operator reaches for a hundred times a day. <code>grep</code>
+        <em>selects</em> lines, <code>sed</code> <em>edits</em> them, <code>awk</code> does <em>columns and
+        arithmetic</em>, <code>jq</code> handles <em>structured JSON</em>, and <code>find</code> +
+        <code>xargs</code> <em>walk the filesystem and act on what they find</em>. None of them is new syntax to
+        memorise for its own sake — each is a <em>stream filter</em> that snaps into exactly the pipelines you
+        already know how to build. Learn the shape of each, and the 3&nbsp;a.m. question "which URL is throwing
+        the most 500s, and what's the p95 latency on it?" becomes one line you can <em>write</em>, not one you
+        google.
+      </p>
+      <div class="meta">
+        <span class="pill a">~75 min read</span>
+        <span class="pill">Prerequisites: Lessons 3.1, 3.2, 3.3</span>
+        <span class="pill">Conceptual · hands-on throughout</span>
+        <span class="pill g">Module 3 · Milestone 3</span>
+      </div>
+    </div>
+
+    <div class="callout def">
+      <span class="t">Learning objectives</span>
+      <p>By the end of this lesson you will be able to:</p>
+      <ol style="margin-bottom:0">
+        <li>Place each tool on a single map — <em>selection</em> (<code>grep</code>, <code>find</code>), <em>transformation</em> (<code>sed</code>), <em>computation over columns</em> (<code>awk</code>), <em>structured data</em> (<code>jq</code>), and <em>the stream→arguments adapter</em> (<code>xargs</code>) — and pick the right one on sight.</li>
+        <li>Read and write <em>regular expressions</em> — the shared pattern language under <code>grep</code>, <code>sed</code> and <code>awk</code> — including anchors, character classes, quantifiers and groups, and know when you need <em>extended</em> regex (<code>-E</code>).</li>
+        <li>Use <code>grep</code> fluently: <code>-i -v -c -n -o -r -E -F -w -A/-B/-C</code>, and know why <code>grep -F</code> exists.</li>
+        <li>Use <code>sed</code> for the 90% case — <code>s/old/new/g</code>, addressed edits, <code>-n …p</code>, deletion — and understand the danger of <code>sed -i</code>.</li>
+        <li>Use <code>awk</code> as what it is — a tiny language of <code>pattern { action }</code> rules over auto-split <em>fields</em> (<code>$1…$NF</code>), with <code>BEGIN</code>/<code>END</code>, variables and <em>associative arrays</em> for grouping and summing.</li>
+        <li>Use <code>jq</code> to query JSON <em>by structure</em> instead of guessing at whitespace — field access, <code>[]</code>, <code>select()</code>, pipes and <code>-r</code> — and explain why JSON logs need it and not <code>awk</code>.</li>
+        <li>Use <code>find</code> to name files by <em>predicate</em> (name, type, age, size) and <code>find … -exec</code> / <code>xargs -0 -P</code> to act on them safely, including the <code>-print0</code>/<code>-0</code> null-separator discipline.</li>
+        <li>Compose all six into real DevBoard incident-triage one-liners, and know the honest boundary where you should stop and write Python instead.</li>
+      </ol>
+    </div>
+
+    <div class="callout">
+      <span class="t">Where this sits on the map</span>
+      <p>
+        Lesson 3.3 handed you the <em>connectors</em>: <code>|</code>, <code>&gt;</code>, <code>&amp;&amp;</code>,
+        globbing, quoting. This lesson fills the <em>boxes those connectors join</em>. Everything here is a
+        stream filter — it reads stdin, writes stdout, sets an exit code — so it plugs into the exact model you
+        already hold. Downstream, this toolkit is the beating heart of Lesson 3.6 (reading <code>journalctl</code>
+        output), every log-triage step in Module 12 (Observability), the <code>RUN</code> lines that massage
+        config in a Dockerfile (Module 7), and the shell steps of a GitHub Actions job that parse test output and
+        fail the build (Module 9). Fluency in these six commands is the single highest-leverage manual skill in
+        operating a Linux server — the difference between finding the answer in ten seconds and not finding it
+        at all.
+      </p>
+    </div>
+
+    <!-- ============================== 1 ============================== -->
+    <h2 id="s1">1 · Problem Statement</h2>
+
+    <p>
+      It is a Tuesday afternoon and DevBoard's error rate just spiked. You SSH into the production VPS (as your
+      unprivileged user, per Lesson 3.2) and you have exactly what Lesson 3.3 gave you: a prompt, pipes, and the
+      raw materials of the machine. But now the questions are sharper than "count the 500s," and the data comes
+      in <em>two different shapes</em> — Nginx's access log is whitespace-separated text, and the Express app's
+      log is one JSON object per line:
+    </p>
+<pre><code># /var/log/nginx/access.log  — one request per line, space-separated
+203.0.113.7 - - [17/Aug/2026:14:03:11 +0000] "GET /api/boards/42 HTTP/1.1" 500 812 "-" "axios/1.6" 0.184
+198.51.100.9 - - [17/Aug/2026:14:03:11 +0000] "POST /api/login HTTP/1.1" 200 44 "-" "Mozilla/5.0" 0.031
+
+# /var/log/devboard/app.log  — one JSON object per line ("JSON Lines")
+{"ts":"2026-08-17T14:03:11Z","level":"error","route":"/api/boards/42","status":500,"ms":184,"msg":"pg: deadlock detected"}
+{"ts":"2026-08-17T14:03:11Z","level":"info","route":"/api/login","status":200,"ms":31}</code></pre>
+
+    <p>The questions in your head are precise, and each one defeats a plain <code>grep | sort | uniq</code>:</p>
+    <ul>
+      <li>"Which route is throwing the most 500s <em>right now</em>, and what's its <em>p95 latency</em> — not from the count, but computed from the <code>ms</code> field?"</li>
+      <li>"The app log is JSON. I need every <code>error</code>-level line whose <code>route</code> starts with <code>/api/boards</code> — but <code>grep 500</code> would also match a <em>latency</em> of 500&nbsp;ms or a byte count of 500. I must match a <em>field</em>, not a substring."</li>
+      <li>"A config value changed across 30 files under <code>/etc/devboard</code>. I need to <em>rewrite</em> <code>db.pool=10</code> to <code>db.pool=20</code> in every one — as a repeatable, scriptable edit, not by opening each in an editor."</li>
+      <li>"Some upload job left thousands of stale temp files older than 7 days under <code>/srv</code>. I need to <em>find</em> exactly those — by age and size — and delete them, safely, even though some have spaces in their names."</li>
+      <li>"For each client IP, how many requests, and what fraction errored? That's <em>grouping and arithmetic</em>, not just counting identical lines."</li>
+    </ul>
+
+    <p>
+      Look at the shape of each. They are no longer "filter and count identical lines" — the job <code>sort |
+      uniq -c</code> does. They are <strong>match by pattern</strong>, <strong>match a specific field</strong>,
+      <strong>rewrite text</strong>, <strong>compute over columns</strong>, <strong>query a structure</strong>,
+      and <strong>select files by properties and act on them</strong>. The pipe from Lesson 3.3 is still the
+      wiring — but the boxes in the middle have to be smarter than <code>sort</code> and <code>wc</code>.
+    </p>
+
+    <div class="callout bad">
+      <span class="t">The core problem</span>
+      <p>
+        Operating a server means constantly interrogating and reshaping unstructured or semi-structured text —
+        logs, config, process lists, filesystem trees — with questions that are more than "how many?": match by
+        <em>pattern</em>, edit in place, split into <em>fields</em> and do arithmetic, drill into <em>nested
+        JSON</em>, and select <em>files</em> by their properties then act on each. The generic tools of Lesson 3.3
+        (<code>sort</code>, <code>uniq</code>, <code>wc</code>, <code>cut</code>) can't express these. We need a
+        small set of <strong>specialised stream filters</strong>, each a master of one of these jobs, all sharing
+        the same stdin→stdout interface so they compose in the same pipes. That set — <code>grep</code>,
+        <code>sed</code>, <code>awk</code>, <code>jq</code>, <code>find</code>, <code>xargs</code> — is the ops
+        debugger's toolkit.
+      </p>
+    </div>
+
+    <p>
+      The promise of this lesson: by the end, a line like
+      <code>awk '$9==500{c[$7]++} END{for(u in c) print c[u], u}' access.log | sort -rn | head</code> reads to
+      you as plainly as an English sentence — "for every request whose status field is 500, tally it by URL, then
+      print the tallies, ranked" — and you can compose the JSON equivalent with <code>jq</code> without pausing.
+    </p>
+
+    <!-- ============================== 2 ============================== -->
+    <h2 id="s2">2 · Historical Context</h2>
+
+    <p>
+      These tools were not designed together in a weekend. They accreted over a decade at Bell Labs, each solving
+      the frustration the previous one left behind — which is exactly why they form such a clean progression from
+      "match lines" to "a real programming language for text."
+    </p>
+
+    <h3>1968–1969 · Thompson, regular expressions, and the QED editor</h3>
+    <p>
+      Ken Thompson took Stephen Kleene's mathematical notion of a <em>regular expression</em> — a compact algebra
+      for describing sets of strings — and built it into the <code>qed</code> and <code>ed</code> editors as a way
+      to <em>search</em> text. This is the ancestor of everything in this lesson: the pattern language that
+      <code>grep</code>, <code>sed</code> and <code>awk</code> all speak was born here.
+    </p>
+
+    <h3>1973 · grep is extracted from the editor</h3>
+    <p>
+      The story is famous. A colleague asked Thompson to find lines matching a pattern across a set of files.
+      Rather than do it by hand in <code>ed</code>, Thompson took <code>ed</code>'s command
+      <code>g/re/p</code> — <strong>g</strong>lobally search for a <strong>r</strong>egular
+      <strong>e</strong>xpression and <strong>p</strong>rint — and made it a standalone program overnight. The
+      name is literally that editor command. <code>grep</code> embodies the Unix philosophy perfectly: one tool,
+      one job (select lines by pattern), composes with everything.
+    </p>
+
+    <h3>1973–1974 · sed — the editor as a filter</h3>
+    <p>
+      Lee McMahon wrote <code>sed</code> (the <em>stream editor</em>). The insight: the same
+      search-and-replace commands you run interactively in <code>ed</code> could be applied
+      <em>non-interactively</em>, line by line, to a stream flowing through a pipe. It made <em>editing</em> a
+      composable pipeline stage — you could transform text on its way from one program to another without ever
+      opening a file.
+    </p>
+
+    <h3>1977 · awk — a language for fields</h3>
+    <p>
+      Alfred <strong>A</strong>ho, Peter <strong>W</strong>einberger and Brian <strong>K</strong>ernighan built
+      <code>awk</code> (their initials) because <code>sed</code>'s line-at-a-time substitution couldn't easily do
+      the thing everyone actually wanted with tabular data: split each line into <em>fields</em>, refer to them by
+      number, and do <em>arithmetic and grouping</em>. <code>awk</code> is a genuine programming language —
+      variables, arithmetic, associative arrays, control flow — wrapped in a "for each line, run these rules"
+      loop. It is the bridge between "text tools" and "real programs."
+    </p>
+
+    <h3>1987 · Perl absorbs them — and the pendulum swings back</h3>
+    <p>
+      Larry Wall built Perl explicitly to unify <code>grep</code>, <code>sed</code>, <code>awk</code> and shell
+      into one language for bigger text-processing jobs. Perl (and later Python) is where you graduate when a
+      pipeline outgrows one line — a boundary we treat honestly in §10. But for interactive, one-line questions,
+      the small specialised tools stayed faster to reach for, which is why they're still what you type at 3&nbsp;a.m.
+    </p>
+
+    <h3>2012 · jq — the awk of the JSON era</h3>
+    <p>
+      The web changed the shape of data. Logs, APIs and cloud tooling now emit <em>JSON</em>, which is
+      <em>nested</em> and <em>quoted</em> — and therefore hostile to whitespace-splitting tools like
+      <code>awk</code>. Stephen Dolan wrote <code>jq</code> to be for JSON what <code>awk</code> is for columns: a
+      small, composable filter language that understands the <em>structure</em>, so you query by field path
+      instead of praying that a value never contains a space. It completes the toolkit for the world DevBoard
+      actually lives in.
+    </p>
+
+    <p>
+      <code>find</code> (1974, part of the original Unix utilities) and <code>xargs</code> (added early to bridge
+      "a list of filenames on stdin" back into "arguments to a command") round out the set — they extend the same
+      filter model from <em>streams of text</em> to <em>the filesystem tree</em>.
+    </p>
+
+    <div class="callout">
+      <span class="t">The through-line</span>
+      <p>
+        One idea — <em>regular expressions</em> — seeds a family of tools, each adding one capability the last
+        one lacked: <strong>grep</strong> selects lines by pattern; <strong>sed</strong> edits them; <strong>awk</strong>
+        adds fields, arithmetic and memory; <strong>jq</strong> re-does awk's job for <em>structured</em> data;
+        <strong>find</strong> + <strong>xargs</strong> stretch the model over the filesystem. Fifty years on,
+        every one is still installed on every server and container you will ever touch.
+      </p>
+    </div>
+
+    <!-- ============================== 3 ============================== -->
+    <h2 id="s3">3 · The Previous Solution (in detail)</h2>
+
+    <p>
+      Before these tools were reflexes, how did people answer §1's questions? Two default strategies, both of
+      which still trap engineers who haven't internalised the toolkit.
+    </p>
+
+    <h3>3.1 Open the file in an editor and eyeball / hand-edit it</h3>
+    <p>
+      The GUI-brain instinct: open the log in an editor, use its find box, scroll, and manually change lines.
+      Fine for a 200-line file you look at once. But DevBoard's access log is 400&nbsp;MB, the config change spans
+      30 files, and "eyeball it" is neither <em>repeatable</em> nor <em>automatable</em> — you cannot paste an
+      eyeball into a deploy script or a CI step. It also does not <em>compute</em>: no editor tells you the p95
+      latency per route.
+    </p>
+
+    <h3>3.2 Reach only for the generic Lesson-3.3 tools</h3>
+    <p>
+      The half-fluent instinct: force every question through <code>grep | sort | uniq -c</code> and
+      <code>cut</code>. This works for "count identical lines," but it buckles the moment you need to match a
+      <em>field</em> rather than a substring, or do arithmetic, or touch JSON:
+    </p>
+<pre><code># You want "requests whose STATUS is 500". You reach for grep:
+grep " 500 " access.log        # ⚠️ also matches a 500-BYTE response, or 500 ms latency,
+                                #    or an IP like 10.0.0.500 — grep sees a substring, not a field.
+
+# You want the URL column. cut splits on a SINGLE char, but the log is space-separated
+# with QUOTED fields that themselves contain spaces:
+cut -d' ' -f7 access.log       # ⚠️ "GET /api/boards/42 HTTP/1.1" is ONE logical field but
+                                #    THREE space-separated tokens — cut miscounts every column after it.
+
+# You want the average latency. sort/uniq/wc cannot add numbers at all. Dead end.
+
+# The app log is JSON. grep for a value works by luck until a message contains that text:
+grep '"status":500' app.log    # brittle: breaks on a space after the colon, key order, nesting…</code></pre>
+
+    <p>The assumptions these approaches bake in:</p>
+    <dl class="terms">
+      <dt>Text is a flat blob of characters, not records with fields</dt>
+      <dd>Substring matching (plain <code>grep</code>) and single-char splitting (<code>cut</code>) treat a line as undifferentiated bytes. They have no concept of "the 7th <em>field</em>, correctly handling quoted spaces."</dd>
+      <dt>You can only count, never compute</dt>
+      <dd><code>sort | uniq -c</code> tallies identical lines. It cannot average, sum, take a max, or compute a percentile — because it has no variables and no arithmetic.</dd>
+      <dt>Structure is something you match through, not into</dt>
+      <dd>Treating JSON as text means matching brittle substrings of its serialisation, instead of asking for a value by its <em>path</em> in the structure. It works until the day it silently doesn't.</dd>
+      <dt>Editing is a manual, interactive act</dt>
+      <dd>Changing text means a human in an editor — so it can't be scripted, reviewed in a diff, or run across 30 files identically.</dd>
+    </dl>
+
+    <p>
+      Each of these works for the smallest version of the problem, which is exactly why they're seductive. The
+      next section is where they hit their wall — and every wall points at the specific tool that removes it.
+    </p>
+
+    <!-- ============================== 4 ============================== -->
+    <h2 id="s4">4 · Why It Failed (as an operating model)</h2>
+
+    <p>
+      "Failed" is scoped, as always: an editor and <code>grep|sort|uniq</code> are the <em>right</em> tools for
+      the jobs they fit. They fail as a <em>general</em> way to interrogate a running system, because production
+      questions routinely need field-awareness, arithmetic, structure and scale — and each of those is a hard
+      wall for the naive approach.
+    </p>
+
+    <h3>4.1 Substring matching gives false positives and false negatives</h3>
+    <p>
+      Matching <code>" 500 "</code> to find HTTP 500s is a coin flip: it also matches a 500-byte body, a 500&nbsp;ms
+      timing, or the number 500 anywhere on the line — and it <em>misses</em> a 500 that happens to sit at the
+      start or end of the line where your spaces don't line up. When the answer drives an incident response,
+      "roughly matches" is a bug. You need to match a <em>column with a value</em>, which is <code>awk</code>'s
+      home turf: <code>$9 == 500</code>.
+    </p>
+
+    <h3>4.2 The generic tools cannot do arithmetic or keep state</h3>
+    <p>
+      "Average latency per route," "p95," "error <em>rate</em> per IP" — every one requires summing, dividing,
+      or remembering values across lines. <code>sort</code>, <code>uniq</code> and <code>cut</code> have no
+      variables and no math; the wall is absolute. This is the exact gap <code>awk</code>'s associative arrays
+      and arithmetic were invented to fill.
+    </p>
+
+    <h3>4.3 JSON breaks whitespace tools by design</h3>
+    <p>
+      JSON is nested and its string values can contain spaces, commas, colons and even escaped braces. Any tool
+      that splits on a delimiter (<code>cut</code>, <code>awk</code>'s default) will eventually cut through the
+      <em>middle of a value</em> and hand you garbage — not always, but unpredictably, which is worse. A log
+      message <code>"msg":"error: 500 rows, done"</code> destroys a <code>grep '"status":500'</code> heuristic.
+      Structured data demands a <em>structure-aware</em> tool: <code>jq</code>.
+    </p>
+
+    <h3>4.4 Manual editing doesn't scale or reproduce</h3>
+    <p>
+      Changing one value in 30 files by hand is slow, error-prone, and — fatally — <em>not reproducible</em>. You
+      can't code-review an editor session, can't re-run it on the staging box, can't put it in a deploy script.
+      Repeatable text transformation is precisely what <code>sed</code> (for streams) and
+      <code>find … -exec sed -i</code> (for many files) provide.
+    </p>
+
+    <h3>4.5 "Act on every matching file" outgrows the glob</h3>
+    <p>
+      A glob (<code>*.log</code>) matches filenames in <em>one directory</em> by <em>name</em>. It cannot say
+      "every file under this whole tree, older than 7 days, larger than 100&nbsp;MB, whatever it's named." And once
+      you've selected thousands of files, passing them all to one command can overflow the command line's length
+      limit. Selecting by <em>predicate</em> across a tree is <code>find</code>; safely turning that list into
+      command arguments is <code>xargs</code>.
+    </p>
+
+    <div class="callout warn">
+      <span class="t">The pattern behind all five failures</span>
+      <p>
+        Every wall is the same shape: <strong>the generic tools see undifferentiated text, but the questions are
+        about structure, computation, and scale.</strong> The fix is not a bigger generic tool — it's a small
+        set of <em>specialists</em>, each fluent in one missing dimension (patterns, editing, fields+math,
+        JSON structure, filesystem predicates), all wearing the same stdin→stdout interface so they drop into
+        the pipelines you already build. Meet the specialists.
+      </p>
+    </div>
+
+    <!-- ============================== 5 ============================== -->
+    <h2 id="s5">5 · The New Solution</h2>
+
+    <p>
+      The solution is a <strong>toolkit of composable stream filters</strong>, organised by the <em>kind of job</em>
+      each does. The single most useful thing you can carry out of this lesson is the map: given a question, which
+      tool is its natural home. Vocabulary first, then the map.
+    </p>
+
+    <h3>5.1 The core vocabulary</h3>
+    <dl class="terms">
+      <dt>Regular expression (regex)</dt>
+      <dd>A compact pattern language for describing <em>sets of strings</em> — "a digit," "three letters then a dot," "starts with <code>/api</code>." It is the shared engine under <code>grep</code>, <code>sed</code> and <code>awk</code>; learn it once and it pays off in all three (and in your editor, and in most languages).</dd>
+      <dt><code>grep</code> — the selector</dt>
+      <dd>Reads lines, prints the ones that <em>match</em> a regex (or, with <code>-v</code>, the ones that don't). Pure filter: it never changes a line, only decides whether it passes. "Which lines are about X?"</dd>
+      <dt><code>sed</code> — the stream editor</dt>
+      <dd>Reads lines and <em>transforms</em> them — most often substitution (<code>s/old/new/</code>) — then prints the result. "Rewrite every line like this." Editing as a pipeline stage.</dd>
+      <dt><code>awk</code> — the field processor</dt>
+      <dd>Splits each line into <em>fields</em> (<code>$1</code>, <code>$2</code>, … <code>$NF</code>), and runs your <code>pattern { action }</code> rules against each. It has variables, arithmetic and <em>associative arrays</em>, so it can group, sum, average and rank. "For each record, compute something across its columns."</dd>
+      <dt><code>jq</code> — the JSON processor</dt>
+      <dd><code>awk</code> for structured data. Parses JSON and lets you select and transform by <em>path</em> (<code>.route</code>, <code>.[]</code>, <code>select(.status==500)</code>). Understands nesting and quoting, so it never mis-splits a value.</dd>
+      <dt><code>find</code> — the filesystem selector</dt>
+      <dd><code>grep</code> for the directory tree: walks a whole subtree and prints the paths matching <em>predicates</em> — name, type, age (<code>-mtime</code>), size (<code>-size</code>), depth. Optionally acts on each with <code>-exec</code>.</dd>
+      <dt><code>xargs</code> — the stream→arguments adapter</dt>
+      <dd>Reads items on stdin and turns them into <em>command-line arguments</em> for a program you name. The bridge from "a pipeline that <em>produces</em> a list of things" to "a command that <em>takes</em> them as arguments," batching to respect the argv length limit and parallelising with <code>-P</code>.</dd>
+    </dl>
+
+    <div class="callout def">
+      <span class="t">The one map to hold onto</span>
+      <p>
+        <strong>Ask what <em>kind</em> of job it is. Select lines by pattern → <code>grep</code>. Edit/rewrite
+        text → <code>sed</code>. Split into columns and do math or grouping → <code>awk</code>. The data is JSON →
+        <code>jq</code>. Select <em>files</em> by their properties across a tree → <code>find</code>. Turn a
+        produced list back into a command's arguments → <code>xargs</code>.</strong> Every pipeline in this lesson
+        is these six specialists snapped into the pipe from Lesson 3.3.
+      </p>
+    </div>
+
+    <h3>5.2 The shape of the solution</h3>
+    <p>
+      Return to §1's hardest question — the noisiest 500 route and its p95 latency — and watch the toolkit
+      dissolve it. First, from the space-separated Nginx log with <code>awk</code> (fields, comparison,
+      grouping, arithmetic), then from the JSON app log with <code>jq</code> (same question, structured source):
+    </p>
+<pre><code># TEXT log → awk matches the STATUS FIELD ($9), tallies by ROUTE field, ranks:
+awk '$9==500 {count[$7]++} END {for (r in count) print count[r], r}' access.log \
+  | sort -rn | head -3
+#      └ match field, not substring ┘└ group+count in an array ┘└ print┘   └ rank ┘
+
+# JSON log → jq queries by STRUCTURE, no whitespace guessing:
+jq -r 'select(.status==500) | .route' app.log | sort | uniq -c | sort -rn | head -3
+#         └ pick error records ┘ └ pull the route ┘ └───── group, count, rank ─────┘</code></pre>
+    <p>
+      Now the rest of §1, one tool each. Rewrite a config value across 30 files?
+      <code>find /etc/devboard -name '*.conf' -exec sed -i 's/db.pool=10/db.pool=20/' {} +</code> — find selects
+      the files, sed does the repeatable edit. Match only <code>error</code>-level lines on a
+      <code>/api/boards</code> route in JSON? <code>jq 'select(.level=="error" and (.route |
+      startswith("/api/boards")))' app.log</code> — a structural predicate, no false positives. Delete stale temp
+      files safely, even with spaces in names? <code>find /srv -name '*.tmp' -mtime +7 -print0 | xargs -0 rm</code>
+      — predicate selection, null-safe hand-off. Error <em>rate</em> per IP? One <code>awk</code> program with two
+      arrays. One toolkit, every question in §1 answered — and none of them needed a program written.
+    </p>
+
+    <!-- ============================== 6 ============================== -->
+    <h2 id="s6">6 · Internal Mechanics</h2>
+
+    <p>
+      Now each tool in the depth you need to <em>use</em> it, not just recognise it. We take them in an order that
+      builds: (6.1) regular expressions, the shared language; (6.2) <code>grep</code>; (6.3) <code>sed</code>;
+      (6.4) <code>awk</code>, the centrepiece; (6.5) <code>jq</code>; (6.6) <code>find</code>; (6.7)
+      <code>xargs</code> and the null-separator discipline; (6.8) assembling all six into DevBoard triage.
+    </p>
+
+    <h3>6.1 Regular expressions — the language under grep, sed and awk</h3>
+    <p>
+      A <em>regex</em> is a pattern that matches a set of strings. Three tools in this lesson speak it, so learning
+      it once triples your return. The core alphabet:
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Pattern</th><th>Matches</th><th>Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>.</code></td><td>any single character</td><td><code>a.c</code> → <code>abc</code>, <code>a5c</code></td></tr>
+          <tr><td><code>*</code></td><td>zero or more of the <em>preceding</em> item</td><td><code>ab*c</code> → <code>ac</code>, <code>abc</code>, <code>abbc</code></td></tr>
+          <tr><td><code>^</code> … <code>$</code></td><td>start / end of the line (<em>anchors</em>)</td><td><code>^GET</code> matches lines <em>beginning</em> with GET</td></tr>
+          <tr><td><code>[abc]</code> / <code>[0-9]</code></td><td>one character from a set / range</td><td><code>[45][0-9][0-9]</code> → a 4xx or 5xx code</td></tr>
+          <tr><td><code>[^abc]</code></td><td>one character <em>not</em> in the set</td><td><code>[^ ]</code> → any non-space char</td></tr>
+          <tr><td><code>\</code></td><td>escape — treat a metacharacter literally</td><td><code>\.</code> → a literal dot; <code>3\.14</code></td></tr>
+          <tr><td><code>+</code> <code>?</code> <code>{n,m}</code> <span class="pill">ERE</span></td><td>one-or-more / zero-or-one / n-to-m repeats</td><td><code>[0-9]+</code> → one or more digits</td></tr>
+          <tr><td><code>(…)</code> <code>|</code> <span class="pill">ERE</span></td><td>grouping / alternation ("or")</td><td><code>(GET|POST)</code> → either word</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      The one wrinkle that confuses everyone: there are <strong>two dialects</strong>. <em>Basic</em> regex (BRE)
+      is the default in <code>grep</code> and <code>sed</code>, and it makes you <em>backslash-escape</em>
+      <code>+</code>, <code>?</code>, <code>(</code>, <code>|</code> and <code>{</code> to get their special
+      meaning (<code>\+</code>, <code>\(…\)</code>). <em>Extended</em> regex (ERE) — turned on with
+      <code>grep -E</code> / <code>sed -E</code>, and the default in <code>awk</code> — lets you write those
+      plainly. Life is easier in ERE; reach for <code>-E</code> and stop escaping.
+    </p>
+    <div class="callout warn">
+      <span class="t">Regex <code>*</code> is not glob <code>*</code></span>
+      <p>
+        A trap for the newly-fluent. In a <em>glob</em> (Lesson 3.3), <code>*</code> means "any run of
+        characters." In a <em>regex</em>, <code>*</code> means "zero or more of the <em>thing before it</em>" —
+        so the regex that means "anything" is <code>.*</code> (any char, repeated). <code>grep abc*</code> looks
+        for <code>ab</code> followed by zero-or-more <code>c</code>s, <em>not</em> "abc followed by anything." Same
+        symbol, different language. Keep the two straight and a whole class of "why didn't that match?" vanishes.
+      </p>
+    </div>
+
+    <h3>6.2 grep — select lines by pattern</h3>
+    <p>
+      <code>grep PATTERN [file…]</code> prints every line that matches. It is a pure filter — it never alters a
+      line — and it sets a useful <em>exit code</em>: 0 if it matched anything, 1 if not (§6.5 of Lesson 3.3),
+      which is why <code>grep -q</code> is the idiom for "does this appear?" in scripts. The flags you'll use
+      daily:
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Flag</th><th>Effect</th><th>When</th></tr></thead>
+        <tbody>
+          <tr><td><code>-i</code></td><td>case-insensitive</td><td><code>grep -i error</code> catches <code>Error</code>, <code>ERROR</code></td></tr>
+          <tr><td><code>-v</code></td><td><em>invert</em> — print non-matching lines</td><td>strip out noise: <code>grep -v healthcheck</code></td></tr>
+          <tr><td><code>-c</code></td><td>print a <em>count</em>, not the lines</td><td>"how many matches?" in one step</td></tr>
+          <tr><td><code>-n</code></td><td>prefix each match with its line number</td><td>jumping to it in an editor after</td></tr>
+          <tr><td><code>-o</code></td><td>print only the <em>matched part</em>, one per line</td><td>extract just the thing (feed to sort/uniq)</td></tr>
+          <tr><td><code>-r</code> / <code>-R</code></td><td>recurse through a directory tree</td><td><code>grep -rn TODO src/</code></td></tr>
+          <tr><td><code>-E</code></td><td>extended regex (no escaping <code>+ ? ( ) |</code>)</td><td>any non-trivial pattern</td></tr>
+          <tr><td><code>-F</code></td><td><em>fixed</em> string — no regex at all</td><td>searching for literal <code>.</code>, <code>[</code>, an IP</td></tr>
+          <tr><td><code>-w</code></td><td>match whole <em>words</em> only</td><td><code>grep -w id</code> skips <code>uuid</code>, <code>width</code></td></tr>
+          <tr><td><code>-A/-B/-C N</code></td><td>N lines <em>after</em>/<em>before</em>/<em>context</em></td><td>see the stack trace <em>around</em> an error</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      Two flags earn special mention. <code>grep -F</code> (fixed strings) exists because your search term often
+      <em>contains</em> regex metacharacters: to find the literal IP <code>10.0.0.1</code>, plain <code>grep
+      10.0.0.1</code> treats each <code>.</code> as "any char" and over-matches; <code>grep -F 10.0.0.1</code>
+      searches for the exact text and is also faster. And <code>grep -o</code> turns grep into a mini-extractor —
+      <code>grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' access.log | sort | uniq -c</code> pulls every IP out of a
+      line, ready to count.
+    </p>
+<pre><code>grep -i "deadlock" app.log                 # case-insensitive search
+grep -c "level\":\"error" app.log          # how many error lines? (count only)
+grep -rn "TODO" src/                        # every TODO under src/, with file:line
+grep -A3 "Traceback" app.log               # the error line + 3 lines of trace after it
+grep -vE "healthcheck|favicon" access.log  # drop the boring noise before you look</code></pre>
+    <div class="callout"><span class="t">A note on <code>ripgrep</code> (<code>rg</code>)</span>
+      <p>
+        On your laptop you'll often meet <code>rg</code> — a modern, much faster grep that respects
+        <code>.gitignore</code> and defaults to recursive, ERE search. It's wonderful and worth installing. But
+        it is <em>not</em> guaranteed to exist on a bare production server or inside a minimal container, whereas
+        <code>grep</code> always is. Learn <code>grep</code> as the portable baseline; enjoy <code>rg</code>
+        where you have it.
+      </p>
+    </div>
+
+    <h3>6.3 sed — edit a stream, line by line</h3>
+    <p>
+      <code>sed</code> reads each line, applies your editing commands, and prints the result. Ninety percent of
+      real usage is one command — <em>substitute</em>:
+    </p>
+<pre><code>sed 's/old/new/'      # replace the FIRST "old" on each line with "new"
+sed 's/old/new/g'     # GLOBAL: replace EVERY "old" on each line (the flag you usually want)
+sed 's/old/new/gi'    # global + case-insensitive
+sed -E 's/[0-9]+/N/g' # ERE: replace every run of digits with N  (redact numbers)</code></pre>
+    <p>
+      The structure is <code>s/PATTERN/REPLACEMENT/FLAGS</code>. The <code>/</code> is just a delimiter — if your
+      pattern contains slashes (like a path), <em>change the delimiter</em> to avoid a thicket of escapes:
+      <code>sed 's#/old/path#/new/path#'</code> reads far better than <code>sed 's/\/old\/path/\/new\/path/'</code>.
+      In the replacement, <code>&amp;</code> means "the whole matched text," and <code>\1</code>, <code>\2</code>
+      refer to <em>captured groups</em> — so you can reshape, not just replace:
+    </p>
+<pre><code># Wrap every matched IP in brackets ( & = the match )
+sed -E 's/[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[&amp;]/'
+
+# Swap "user=alice id=42" → "42:alice" using capture groups \1 \2
+sed -E 's/user=([a-z]+) id=([0-9]+)/\2:\1/'</code></pre>
+    <p>
+      <code>sed</code> can also <em>address</em> which lines a command applies to — by line number, by range, or
+      by regex — and can <em>delete</em> or <em>print</em> selectively. With <code>-n</code> (suppress the
+      default "print every line") plus the <code>p</code> command, <code>sed</code> becomes a line-slicer:
+    </p>
+<pre><code>sed -n '10,20p' file       # print ONLY lines 10–20 (like a targeted head/tail)
+sed '/^#/d' config.conf     # DELETE every comment line (starts with #)
+sed '/DEBUG/d' app.log      # drop every line containing DEBUG
+sed -n '/START/,/END/p' f   # print the block between a START line and an END line</code></pre>
+    <div class="callout bad">
+      <span class="t">The <code>-i</code> footgun: editing files in place</span>
+      <p>
+        By default <code>sed</code> writes to stdout and touches nothing. <code>sed -i</code> edits the
+        <em>file itself</em> — powerful and dangerous. <strong>Never run <code>sed -i</code> blind.</strong> Run
+        it <em>without</em> <code>-i</code> first and eyeball the output; a wrong regex can silently mangle a
+        production config. When you do commit, keep a backup: GNU sed's <code>sed -i.bak 's/…/…/' file</code>
+        writes the edited file <em>and</em> saves the original as <code>file.bak</code>. (Caveat: macOS/BSD
+        <code>sed -i</code> requires an explicit suffix argument — <code>sed -i '' …</code> for no backup — a
+        classic portability trap between your Mac and the Linux server.)
+      </p>
+    </div>
+
+    <h3>6.4 awk — the field processor (the centrepiece)</h3>
+    <p>
+      <code>awk</code> is the tool that turns "text on a screen" into "data you can compute over," and it repays
+      real study. Its entire model is one loop you don't write: <em>for every input line (a</em> record<em>),
+      split it into</em> fields<em>, then run each of your <code>pattern { action }</code> rules against it.</em>
+    </p>
+    <dl class="terms">
+      <dt>Record &amp; fields</dt>
+      <dd>Each line is a <em>record</em>. <code>awk</code> auto-splits it on whitespace into fields <code>$1</code>, <code>$2</code>, … . <code>$0</code> is the whole line; <code>$NF</code> is the <em>last</em> field (<code>NF</code> = "number of fields"); <code>NR</code> is the current record number (line count so far).</dd>
+      <dt><code>pattern { action }</code></dt>
+      <dd>The core structure. For each line, if the <em>pattern</em> is true, run the <em>action</em>. Omit the pattern → run on every line. Omit the action → default is <code>print $0</code>. So <code>awk '/error/'</code> behaves like grep, and <code>awk '{print $7}'</code> prints the 7th field of every line.</dd>
+      <dt><code>BEGIN { } … END { }</code></dt>
+      <dd>Special patterns: the <code>BEGIN</code> block runs <em>once before</em> any input (set things up, print a header), and <code>END</code> runs <em>once after</em> all input (print totals). The <code>END</code> block is where summaries live.</dd>
+      <dt>Variables &amp; associative arrays</dt>
+      <dd><code>awk</code> has real variables and arithmetic, and — crucially — <em>associative arrays</em> indexed by strings: <code>count["/api/login"]++</code>. This is how you group and tally, the thing <code>uniq -c</code> can only do for pre-sorted identical lines.</dd>
+      <dt><code>FS</code> / <code>OFS</code></dt>
+      <dd>The input and output field separators. Default is whitespace; set <code>-F,</code> for CSV or <code>-F:</code> for <code>/etc/passwd</code>. <code>OFS</code> is what <code>print a, b</code> puts between fields.</dd>
+    </dl>
+    <p>Watch the model climb from "grep clone" to "computes a percentile" in five steps:</p>
+<pre><code># 1. pattern only → acts like grep
+awk '/error/' app.log
+
+# 2. action only → print a field (space-split); $9 is the status in our access.log
+awk '{print $9}' access.log
+
+# 3. pattern + action → match a FIELD (no false positives), print the URL
+awk '$9==500 {print $7}' access.log
+
+# 4. associative array → GROUP and COUNT 500s per URL (no sort needed to group!)
+awk '$9==500 {count[$7]++} END {for (u in count) print count[u], u}' access.log | sort -rn
+
+# 5. arithmetic + END → average latency (last field $NF) per route
+awk '{sum[$7]+=$NF; n[$7]++} END {for (r in sum) printf "%.1f ms  %s\n", sum[r]/n[r], r}' access.log \
+  | sort -rn | head</code></pre>
+    <p>
+      Step 4 is the payoff moment. <code>uniq -c</code> can only count lines that are <em>already identical and
+      adjacent</em> (hence the mandatory <code>sort</code> before it in Lesson 3.3). <code>awk</code>'s array
+      counts by an arbitrary <em>key you choose</em> — the URL field — with no pre-sorting, and in one pass over
+      the data. And because it has arithmetic, step 5 does something <code>sort|uniq</code> physically cannot:
+      compute an average. A short but complete "error rate per IP" program shows the two-array idiom that answers
+      §1's last question:
+    </p>
+<pre><code>awk '{
+        total[$1]++                 # count all requests per client IP ($1)
+        if ($9 &gt;= 500) err[$1]++    # count the erroring ones
+     }
+     END {
+        for (ip in total)
+           printf "%-15s %4d reqs  %5.1f%% errors\n",
+                  ip, total[ip], 100*err[ip]/total[ip]
+     }' access.log | sort -k2 -rn | head</code></pre>
+    <div class="callout">
+      <span class="t">The mental model</span>
+      <p>
+        Picture <code>awk</code> as a tiny spreadsheet engine that reads one row at a time. Each line is a row;
+        <code>$1…$NF</code> are its columns; your <code>{ }</code> blocks are formulas that run per row; arrays
+        are named cells that accumulate across rows; and the <code>END</code> block is the summary row at the
+        bottom. Everything else — <code>if</code>, loops, <code>printf</code> — is there to make those formulas
+        expressive. If a question is "per <em>something</em>, compute <em>a number</em>," it's an
+        <code>awk</code> question.
+      </p>
+    </div>
+
+    <h3>6.5 jq — awk for JSON</h3>
+    <p>
+      The instant your data is JSON — DevBoard's app logs, <code>docker inspect</code>, a <code>kubectl -o
+      json</code>, any REST API — the whitespace tools become a liability and <code>jq</code> becomes the answer.
+      <code>jq</code> parses the JSON into a real structure and runs a small <em>filter</em> language over it.
+      A filter is an expression that takes one JSON value in and emits zero or more JSON values out — and, exactly
+      like the shell, filters compose with <code>|</code>.
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Filter</th><th>Does</th><th>Example on our app.log line</th></tr></thead>
+        <tbody>
+          <tr><td><code>.</code></td><td>the whole value (identity) — pretty-prints it</td><td><code>jq . app.log</code></td></tr>
+          <tr><td><code>.field</code></td><td>access an object field</td><td><code>.route</code> → <code>"/api/boards/42"</code></td></tr>
+          <tr><td><code>.a.b</code></td><td>drill into nested fields</td><td><code>.req.headers.host</code></td></tr>
+          <tr><td><code>.[]</code></td><td>iterate array elements (one output each)</td><td><code>.items[]</code></td></tr>
+          <tr><td><code>select(cond)</code></td><td>keep the value only if <code>cond</code> is true</td><td><code>select(.status==500)</code></td></tr>
+          <tr><td><code>a | b</code></td><td>pipe: feed a's output into b</td><td><code>select(.status==500) | .route</code></td></tr>
+          <tr><td><code>-r</code></td><td>raw output: strings without JSON quotes</td><td>so the result pipes cleanly into sort/uniq</td></tr>
+          <tr><td><code>-c</code></td><td>compact: one JSON value per line</td><td>re-emit JSON Lines for the next stage</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      The <code>-r</code> (raw) flag is the one beginners forget and then get puzzled by: without it,
+      <code>jq</code> prints strings <em>with</em> their JSON quotes (<code>"/api/login"</code>), which then
+      pollutes a downstream <code>sort | uniq -c</code>. With <code>-r</code> you get bare
+      <code>/api/login</code>, ready to compose. Watch the §1 question answered structurally, then some staples:
+    </p>
+<pre><code># The §1 question, on JSON: routes of 500-status records, ranked
+jq -r 'select(.status==500) | .route' app.log | sort | uniq -c | sort -rn | head
+
+# Structural predicate — error level AND route under /api/boards (no false positives)
+jq 'select(.level=="error" and (.route | startswith("/api/boards")))' app.log
+
+# Reshape into a compact "route status ms" line for awk to average
+jq -r '[.route, .status, .ms] | @tsv' app.log | awk '{sum[$1]+=$3; n[$1]++} END{for(r in sum) print sum[r]/n[r], r}'
+
+# Count log lines by level  (group-by, jq-native)
+jq -r '.level' app.log | sort | uniq -c | sort -rn</code></pre>
+    <p>
+      Notice the last-but-one line: <code>jq</code> and <code>awk</code> are <em>partners</em>, not rivals. Use
+      <code>jq</code> to safely extract fields <em>out of the structure</em> into flat columns (here with
+      <code>@tsv</code>), then hand those columns to <code>awk</code> for arithmetic. Structure-aware extraction
+      up front, column math after — a pattern you'll use constantly.
+    </p>
+
+    <h3>6.6 find — select files by predicate across a tree</h3>
+    <p>
+      <code>find</code> is <code>grep</code> for the filesystem. <code>find START_DIR [predicates] [action]</code>
+      walks the entire subtree under <code>START_DIR</code> and, for each entry, tests your predicates; the
+      survivors are printed (or acted on). The everyday predicates:
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Predicate</th><th>Selects entries…</th></tr></thead>
+        <tbody>
+          <tr><td><code>-name '*.log'</code></td><td>whose name matches a glob (quote it so the <em>shell</em> doesn't expand it first!)</td></tr>
+          <tr><td><code>-iname '*.LOG'</code></td><td>same, case-insensitive</td></tr>
+          <tr><td><code>-type f</code> / <code>-type d</code></td><td>that are regular files / directories</td></tr>
+          <tr><td><code>-mtime +7</code> / <code>-mtime -1</code></td><td>modified more than 7 days ago / less than 1 day ago</td></tr>
+          <tr><td><code>-size +100M</code></td><td>larger than 100&nbsp;MB</td></tr>
+          <tr><td><code>-maxdepth 2</code></td><td>don't descend deeper than 2 levels</td></tr>
+          <tr><td><code>-path '*/node_modules/*' -prune</code></td><td>skip an entire subtree (e.g. don't recurse into node_modules)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      Predicates are ANDed together by default; combine and act:
+    </p>
+<pre><code>find /srv -type f -name '*.tmp' -mtime +7          # stale temp files, tree-wide, by name+age
+find /var/log -type f -size +100M                  # the disk hogs under /var/log
+find . -type d -name node_modules -prune -o -type f -name '*.js' -print  # all .js, skipping deps
+
+# ACT on each match. Two forms of -exec:
+find /srv -name '*.tmp' -mtime +7 -exec rm {} \;   # runs rm ONCE PER FILE ({} = the path)
+find /srv -name '*.tmp' -mtime +7 -exec rm {} +    # batches MANY files into ONE rm (faster)</code></pre>
+    <p>
+      In <code>-exec</code>, <code>{}</code> is replaced by the matched path. The terminator matters:
+      <code>\;</code> runs the command <em>once per file</em>; <code>+</code> packs as many paths as fit into
+      <em>one</em> invocation (far fewer processes, much faster on thousands of files). <code>find</code>'s
+      <code>-exec … +</code> is often all you need — but the moment you want to <em>pipe</em> the file list into
+      a chain (grep it, count it, parallelise it), you hand off to <code>xargs</code>.
+    </p>
+
+    <h3>6.7 xargs — turn a stream of items into a command's arguments</h3>
+    <p>
+      Some programs read stdin (<code>grep</code>, <code>wc</code>); many don't — <code>rm</code>,
+      <code>cp</code>, <code>mv</code>, <code>kill</code>, <code>docker rm</code> take their targets as
+      <em>arguments</em>, not on stdin. <code>xargs</code> is the adapter: it reads items from stdin and appends
+      them as arguments to a command you name. <code>echo file1 file2 | xargs rm</code> runs <code>rm file1
+      file2</code>. Beyond convenience, <code>xargs</code> solves a real problem — the kernel caps how long a
+      single command line can be, so <code>rm $(find …)</code> with 100,000 matches fails with "Argument list too
+      long"; <code>xargs</code> automatically <em>batches</em> the items into as many <code>rm</code> calls as
+      needed.
+    </p>
+    <div class="callout bad">
+      <span class="t">The null-separator discipline (this one bites everyone)</span>
+      <p>
+        By default <code>xargs</code> splits its input on <em>whitespace</em> — so a filename containing a space
+        (<code>my report.log</code>) is torn into two arguments, and you delete the wrong things. The fix is a
+        pact between the producer and consumer: have <code>find</code> separate paths with a <em>NUL</em> byte
+        (the one character that can't appear in a filename) using <code>-print0</code>, and tell
+        <code>xargs</code> to split on NUL with <code>-0</code>. <strong>Make <code>find … -print0 | xargs -0
+        …</code> your automatic habit</strong> whenever filenames are involved. (Similarly, <code>grep -rlZ</code>
+        pairs with <code>xargs -0</code>.)
+      </p>
+    </div>
+<pre><code>find /srv -name '*.tmp' -mtime +7 -print0 | xargs -0 rm        # ✅ null-safe deletion
+find . -name '*.js' -print0 | xargs -0 grep -l "TODO"          # which JS files mention TODO
+docker ps -aq | xargs -r docker rm                             # -r: do nothing if input is EMPTY
+find . -name '*.png' -print0 | xargs -0 -P4 -n1 optipng        # -P4: run 4 in PARALLEL, -n1: one file each
+find . -name '*.log' -print0 | xargs -0 -I{} mv {} {}.archived # -I{}: put the arg in a SPECIFIC spot</code></pre>
+    <p>
+      Four flags carry most of the value: <code>-0</code> (null-separated, always with <code>find -print0</code>),
+      <code>-r</code> / <code>--no-run-if-empty</code> (don't run the command at all if stdin was empty — avoids
+      <code>docker rm</code> with no args erroring), <code>-P N</code> (run N invocations in <em>parallel</em> — a
+      free speedup on multi-core boxes), and <code>-I{}</code> (place the argument at a chosen position rather
+      than only at the end, needed for <code>mv</code>-style commands). Between <code>find -exec … +</code> and
+      <code>xargs</code> you can act on any set of files you can describe.
+    </p>
+
+    <h3>6.8 Putting it together: the toolkit as DevBoard triage</h3>
+    <p>Everything composes back into the pipe from Lesson 3.3. Read each as a sentence:</p>
+<pre><code># Top 5 routes by 500-count, from the text access log (awk matches the status FIELD)
+awk '$9==500 {c[$7]++} END{for(u in c) print c[u], u}' access.log | sort -rn | head -5
+
+# Same answer from the JSON app log (jq queries by structure)
+jq -r 'select(.status==500) | .route' app.log | sort | uniq -c | sort -rn | head -5
+
+# Average latency per route (jq extracts safely → awk does the math)
+jq -r '[.route,.ms] | @tsv' app.log | awk '{s[$1]+=$2; n[$1]++} END{for(r in s) printf "%.0fms  %s\n", s[r]/n[r], r}' | sort -rn
+
+# Bump a config value in every .conf under /etc/devboard, keeping backups
+find /etc/devboard -name '*.conf' -exec sed -i.bak 's/db.pool=10/db.pool=20/' {} +
+
+# Reclaim disk: delete *.tmp older than 7 days under /srv, safely (spaces in names OK)
+find /srv -type f -name '*.tmp' -mtime +7 -print0 | xargs -0 -r rm -v
+
+# Live tail, keep only real errors, extract the route, count as they stream by
+tail -f app.log | jq -rc 'select(.level=="error") | .route' | awk '{c[$0]++; print c[$0], $0}'</code></pre>
+    <p>
+      This is the lesson's payoff: you didn't memorise six commands, you learned a <em>division of labour</em>.
+      Selection, transformation, computation, structure, filesystem, adaptation — a slot for every question, all
+      snapping into the same pipe. Everything downstream in this course (journald in 3.6, the log stack in Module
+      12, the shell steps of CI in Module 9) is this toolkit, applied.
+    </p>
+
+    <!-- ============================== 7 ============================== -->
+    <h2 id="s7">7 · Real Industry Example</h2>
+
+    <p>
+      This is not beginner scaffolding that professionals outgrow — it is the day-to-day instrumentation of
+      running systems, from a solo VPS to a hyperscaler. Four concrete places you'll meet it:
+    </p>
+
+    <div class="grid2">
+      <div class="card">
+        <h4 style="margin-top:0">Incident response is grep + awk + jq</h4>
+        <p style="margin-bottom:0">
+          Long before the dashboard loads (Module 12), the on-call engineer who can type
+          <code>jq -r 'select(.status&gt;=500)|.route' app.log | sort | uniq -c | sort -rn</code> has the culprit
+          route in ten seconds. In postmortems across the industry, "grepped the logs and found…" is the single
+          most common first step. Fluency here is measurably faster mean-time-to-recovery.
+        </p>
+      </div>
+      <div class="card">
+        <h4 style="margin-top:0">CI pipelines parse output with these tools</h4>
+        <p style="margin-bottom:0">
+          A GitHub Actions step (Module 9) that must fail the build when coverage drops runs the test output
+          through <code>grep</code>/<code>awk</code> to extract the number and compare it — then relies on the
+          <em>exit code</em> (Lesson 3.3) to gate the merge. <code>jq</code> parses the JSON that <code>gh</code>,
+          <code>aws</code> and <code>kubectl</code> emit, feeding decisions in the pipeline.
+        </p>
+      </div>
+      <div class="card">
+        <h4 style="margin-top:0">Cloud &amp; container CLIs speak JSON → jq</h4>
+        <p style="margin-bottom:0">
+          <code>aws … --output json</code>, <code>docker inspect</code>, <code>kubectl get -o json</code>,
+          <code>gh api</code> — the entire modern cloud toolchain emits JSON, and <code>jq</code> is the universal
+          glue for extracting one field, filtering a list, or reshaping it for the next command. It is arguably
+          the most-installed non-standard binary on professional servers for exactly this reason.
+        </p>
+      </div>
+      <div class="card">
+        <h4 style="margin-top:0">Bulk operations run on find + xargs</h4>
+        <p style="margin-bottom:0">
+          "Rotate every log older than 30 days," "re-encode 40,000 images," "remove all stopped containers" —
+          fleet-scale maintenance is <code>find … -print0 | xargs -0 -P</code> in a cron job. The
+          <code>-P</code> parallelism turns an overnight job into a ten-minute one, and the null-separator
+          discipline is what keeps it from deleting the wrong file at 2&nbsp;a.m.
+        </p>
+      </div>
+    </div>
+
+    <p>
+      The Aho–Weinberger–Kernighan book and the original Bell Labs memos are still cited because the model never
+      needed replacing: professional operations at Google, Netflix, and every serious shop bottom out in these
+      filters somewhere, precisely because "match, extract, compute, decide" is what interrogating a running
+      system <em>is</em>.
+    </p>
+
+    <!-- ============================== 8 ============================== -->
+    <h2 id="s8">8 · Diagrams</h2>
+
+    <h3>8.1 The toolkit as a division of labour</h3>
+<pre><code>            WHAT KIND OF JOB IS IT?
+            │
+   ┌────────┼───────────────┬───────────────┬───────────────┬──────────────┐
+   ▼        ▼               ▼               ▼               ▼              ▼
+ SELECT   SELECT          EDIT /          COMPUTE over     QUERY          TURN a list
+ lines    FILES           rewrite         columns          structured     into command
+ by       by property     text            (fields+math)    JSON           arguments
+ pattern  (name/age/size)                 + grouping
+   │        │               │               │               │              │
+ grep     find            sed             awk             jq            xargs
+   └──────── regex ────────┘└─ regex ─┘   └ regex, fields, arrays ┘  └ structure ┘
+
+  All read stdin, write stdout, set an exit code → they snap into the SAME pipe (Lesson 3.3).</code></pre>
+
+    <h3>8.2 One log line, six ways to look at it</h3>
+<pre><code>  203.0.113.7 - - [17/Aug/2026:14:03:11] "GET /api/boards/42 HTTP/1.1" 500 812 0.184
+  $1          $2$3 $4-5                    $6   $7          $8         $9  $10 $11   ← awk fields
+
+   grep 500          → "does the line contain 500?"         (substring — risky here!)
+   awk '$9==500'     → "is FIELD 9 exactly 500?"            (precise: the status)
+   sed 's/GET/get/'  → rewrite text in the line
+   awk '{print $7}'  → pull one column: /api/boards/42
+   ── if it were JSON ──
+   jq '.status'      → 500   (by NAME, immune to spacing/order/nesting)</code></pre>
+
+    <h3>8.3 awk's execution model</h3>
+<pre><code>   BEGIN { ... }              ← runs ONCE, before any input (setup, headers)
+      │
+      ▼   for EACH input line (record):
+   ┌─────────────────────────────────────────────┐
+   │  split line into fields  $1 $2 … $NF          │
+   │  for each  pattern { action }  rule:          │
+   │      if pattern is true → run action          │◀── repeats per line
+   │  (arrays like count[$7]++ accumulate here)    │
+   └─────────────────────────────────────────────┘
+      │
+      ▼
+   END { for (k in count) print count[k], k }   ← runs ONCE, after all input (summaries)</code></pre>
+
+    <h3>8.4 find → xargs, and why -print0 / -0 matter</h3>
+<pre><code>  find /srv -name '*.tmp' -mtime +7 -print0  │  xargs -0  rm
+  └──── select files by predicate ────┘ └NUL┘   └split on NUL┘└act┘
+
+  WITHOUT -print0/-0 (splits on spaces):        WITH -print0/-0 (splits on NUL only):
+    "my report.tmp"  →  rm "my"  "report.tmp"      "my report.tmp"  →  rm "my report.tmp"
+                        ✗ deletes TWO wrong files                     ✓ deletes the ONE real file
+
+  xargs also BATCHES: 100,000 files → several rm calls, never "Argument list too long".</code></pre>
+
+    <!-- ============================== 9 ============================== -->
+    <h2 id="s9">9 · Advantages</h2>
+    <ul>
+      <li><strong>The right specialist for each dimension.</strong> Pattern, edit, compute, structure, filesystem, adapt — each tool is a master of one, so questions map cleanly onto tools instead of being forced through one blunt instrument.</li>
+      <li><strong>One shared interface, infinite composition.</strong> Every tool reads stdin and writes stdout, so they combine with each other and with the Lesson 3.3 tools in any order. <code>jq</code>→<code>awk</code>, <code>find</code>→<code>xargs</code>→<code>grep</code> — the pipe is the integration.</li>
+      <li><strong>Regex learned once pays off three times.</strong> The same pattern language drives <code>grep</code>, <code>sed</code> and <code>awk</code> (and your editor, and most languages). It's the highest-leverage sub-skill in the set.</li>
+      <li><strong>Interactive and automatable are the same artifact.</strong> The one-liner that found the answer at 3&nbsp;a.m. pastes verbatim into a cron job, a deploy script, or a CI step — exploration and automation share one syntax.</li>
+      <li><strong>Constant memory over unbounded data.</strong> Because they stream (Lesson 3.3), a 400&nbsp;MB log or an endless <code>tail -f</code> flows through <code>awk</code>/<code>jq</code> in tiny chunks — you compute over data far larger than RAM.</li>
+      <li><strong>Universal and stable.</strong> <code>grep</code>, <code>sed</code>, <code>awk</code>, <code>find</code>, <code>xargs</code> are on every Linux box and nearly every container; <code>jq</code> is a one-line install. Learn them once, use them on every machine for the rest of your career.</li>
+    </ul>
+
+    <!-- ============================== 10 ============================== -->
+    <h2 id="s10">10 · Limitations</h2>
+    <ul>
+      <li><strong>Regex is powerful and treacherous.</strong> The two dialects (BRE vs ERE), greedy matching, and escaping rules make patterns easy to get subtly wrong. A regex that works on your sample can over- or under-match on real data — always test against real lines.</li>
+      <li><strong>Field-splitting is fragile for anything but simple columns.</strong> <code>awk</code>'s whitespace split mishandles quoted fields with embedded spaces (the Nginx request field, real CSV with quoted commas). For true CSV use a CSV-aware tool (<code>csvkit</code>, or a small script); for JSON use <code>jq</code>, never <code>awk</code>.</li>
+      <li><strong><code>sed -i</code> and <code>xargs rm</code> are genuinely dangerous.</strong> An in-place edit with a bad regex, or a whitespace-split filename, can corrupt config or delete the wrong files irreversibly. The safety habits (dry-run first, <code>-print0</code>/<code>-0</code>, keep backups) are not optional.</li>
+      <li><strong>Portability gaps between GNU and BSD.</strong> Your Mac (BSD tools) and the Linux server (GNU tools) differ on <code>sed -i</code>, <code>find</code> options, and <code>grep -P</code>. A one-liner that works locally can fail on the server. When in doubt, test on the target.</li>
+      <li><strong>They don't scale to programming-in-the-large.</strong> Past roughly a screenful — multiple data sources, real error handling, tests, reuse — a pile of piped one-liners becomes unmaintainable. That's the signal to rewrite in Python (with its <code>json</code>, <code>re</code>, <code>csv</code> modules). Shell tools are scalpels, not load-bearing beams.</li>
+      <li><strong>Read-optimised, not audit-trailed.</strong> These tools give you an <em>answer</em>, not a durable record. For questions you'll ask repeatedly, or need alerting on, the answer is a real observability stack (Module 12) — the toolkit is the first responder, not the monitoring system.</li>
+    </ul>
+
+    <!-- ============================== 11 ============================== -->
+    <h2 id="s11">11 · Common Misconceptions</h2>
+
+    <div class="myth">
+      <div class="m">"<code>grep 500</code> finds the HTTP 500 errors."</div>
+      <div class="r"><p>It finds lines that <em>contain the substring</em> "500" anywhere — a 500-byte response, a 500&nbsp;ms latency, an IP ending in 500, the number in a message. To match the actual status you must match the <em>field</em>: <code>awk '$9==500'</code> (or <code>jq 'select(.status==500)'</code> for JSON). Substring ≠ field; conflating them produces both false positives and false negatives, and it always seems to work on your small test file.</p></div>
+    </div>
+
+    <div class="myth">
+      <div class="m">"Regex <code>*</code> means 'anything', like a glob."</div>
+      <div class="r"><p>In a regex, <code>*</code> means "zero or more of the <em>preceding</em> item," so "anything" is <code>.*</code>. <code>grep ab*</code> matches <code>a</code> followed by zero-or-more <code>b</code>s — not "ab then anything." Globs (filenames) and regexes (text patterns) are different languages that unluckily share the character; keeping them straight removes a huge class of "why didn't it match?" confusion.</p></div>
+    </div>
+
+    <div class="myth">
+      <div class="m">"<code>awk</code> and <code>jq</code> are two ways to do the same thing; pick one."</div>
+      <div class="r"><p>They serve different data shapes and are best <em>combined</em>. <code>awk</code> is for whitespace/columnar text and can do arithmetic; <code>jq</code> is for <em>nested, quoted JSON</em> and never mis-splits a value. The idiomatic pipeline uses <code>jq</code> to extract fields safely out of the structure into flat columns, then <code>awk</code> to do math on them. Using <code>awk</code> on raw JSON, or <code>jq</code> on flat text, is the wrong tool for the shape.</p></div>
+    </div>
+
+    <div class="myth">
+      <div class="m">"<code>sed</code> edits the file."</div>
+      <div class="r"><p>By default <code>sed</code> reads a file (or stdin) and writes the transformed result to <em>stdout</em>, changing nothing on disk — that's what makes it a pipeline stage. Only <code>sed -i</code> edits the file in place, and it's irreversible without a backup. Always run the substitution <em>without</em> <code>-i</code> first to preview, then add <code>-i.bak</code> to keep the original.</p></div>
+    </div>
+
+    <div class="myth">
+      <div class="m">"<code>find</code>'s <code>-exec</code> is basically the same as piping to <code>xargs</code>."</div>
+      <div class="r"><p>They overlap but differ. <code>-exec … +</code> is self-contained and needs no separator trickery, but it can't <em>pipe</em> the list through a chain or parallelise. <code>xargs</code> can filter, count, and run <code>-P</code> in parallel — but you must pair it with <code>find -print0</code> and <code>xargs -0</code> to survive spaces in filenames. Use <code>-exec +</code> for a simple act-on-each; use <code>find -print0 | xargs -0</code> when you need the pipeline's flexibility or parallelism.</p></div>
+    </div>
+
+    <div class="myth">
+      <div class="m">"<code>xargs</code> just saves typing; the defaults are fine."</div>
+      <div class="r"><p>Default <code>xargs</code> splits on <em>whitespace</em>, so a filename with a space becomes two arguments and you act on the wrong things — a real cause of data loss. Make <code>find … -print0 | xargs -0</code> automatic. Also add <code>-r</code> so an empty input doesn't run the command with no arguments (e.g. a <code>docker rm</code> that then errors). The defaults are a footgun, not a convenience.</p></div>
+    </div>
+
+    <!-- ============================== 12 ============================== -->
+    <h2 id="s12">12 · Practical Use Cases</h2>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>You need to…</th><th>The tool, applied</th></tr></thead>
+        <tbody>
+          <tr><td>Find lines about a keyword (with context)</td><td><code>grep -n -C2 -i timeout app.log</code> — case-insensitive, line numbers, 2 lines around.</td></tr>
+          <tr><td>Count 500s precisely (by field, not substring)</td><td><code>awk '$9==500' access.log | wc -l</code> — match the status column.</td></tr>
+          <tr><td>Rank URLs by error count</td><td><code>awk '$9==500{c[$7]++} END{for(u in c)print c[u],u}' access.log | sort -rn</code>.</td></tr>
+          <tr><td>Average / p-latency per route</td><td><code>awk '{s[$7]+=$NF;n[$7]++} END{for(r in s)print s[r]/n[r],r}' access.log | sort -rn</code>.</td></tr>
+          <tr><td>Pull one field out of JSON logs</td><td><code>jq -r 'select(.level=="error") | .route' app.log | sort | uniq -c</code>.</td></tr>
+          <tr><td>Read a field from a cloud CLI's JSON</td><td><code>aws ec2 … --output json | jq -r '.Reservations[].Instances[].InstanceId'</code>.</td></tr>
+          <tr><td>Bulk-edit a value across many config files</td><td><code>find /etc/app -name '*.conf' -exec sed -i.bak 's/foo/bar/g' {} +</code> (dry-run first!).</td></tr>
+          <tr><td>Reclaim disk: delete old/large files safely</td><td><code>find /srv -type f -mtime +30 -print0 | xargs -0 -r rm -v</code>.</td></tr>
+          <tr><td>Find which files mention a string</td><td><code>grep -rln "OLD_API_KEY" . </code> — recursive, list filenames only.</td></tr>
+          <tr><td>Redact numbers/IPs before sharing a log</td><td><code>sed -E 's/[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/x.x.x.x/g' app.log</code>.</td></tr>
+          <tr><td>Run a slow command over many files, in parallel</td><td><code>find . -name '*.png' -print0 | xargs -0 -P4 -n1 optipng</code>.</td></tr>
+          <tr><td>Extract all IPs from a log and count them</td><td><code>grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' access.log | sort | uniq -c | sort -rn</code>.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ============================== 13 ============================== -->
+    <h2 id="s13">13 · Summary</h2>
+    <ul class="takeaways">
+      <li>The toolkit is a <strong>division of labour</strong>: <code>grep</code> selects lines by pattern, <code>sed</code> edits text, <code>awk</code> computes over fields, <code>jq</code> queries JSON, <code>find</code> selects files by predicate, and <code>xargs</code> turns a produced list into a command's arguments. Match the question to the job, and the tool is obvious.</li>
+      <li><strong>Regular expressions</strong> are the shared language of <code>grep</code>/<code>sed</code>/<code>awk</code> — anchors (<code>^ $</code>), classes (<code>[…]</code>), quantifiers (<code>* + ?</code>), groups (<code>(…) |</code>) — with two dialects; reach for <em>extended</em> regex (<code>-E</code>) to stop escaping. Regex <code>*</code> ("zero or more of the previous") is <em>not</em> glob <code>*</code>.</li>
+      <li><strong><code>grep</code></strong> is a pure selector with a useful exit code; master <code>-i -v -c -o -r -E -F -w -A/-B/-C</code>, and remember <code>-F</code> for literal strings and <code>-o</code> for extraction.</li>
+      <li><strong><code>sed</code></strong> is <code>s/old/new/g</code> plus addressed edits and <code>-n …p</code> slicing; it writes to stdout by default — only <code>sed -i</code> touches the file, so preview first and keep a <code>.bak</code>.</li>
+      <li><strong><code>awk</code></strong> is the centrepiece: a <code>pattern { action }</code> loop over auto-split fields (<code>$1…$NF</code>, <code>NR</code>, <code>NF</code>) with <code>BEGIN</code>/<code>END</code>, arithmetic, and <em>associative arrays</em> for grouping and summing — matching a <em>field</em> (<code>$9==500</code>) instead of a substring, and computing what <code>sort|uniq</code> never can.</li>
+      <li><strong><code>jq</code></strong> is <code>awk</code> for JSON: query by <em>path</em> (<code>.route</code>, <code>.[]</code>, <code>select()</code>), pipe filters with <code>|</code>, and use <code>-r</code> to emit raw strings for the next stage. Pair it with <code>awk</code> — <code>jq</code> extracts, <code>awk</code> computes.</li>
+      <li><strong><code>find</code></strong> selects files across a tree by name/type/age/size and can act with <code>-exec … {} +</code>; <strong><code>xargs</code></strong> adapts a stream into arguments, batching past the argv limit and parallelising with <code>-P</code>. Always pair <code>find -print0</code> with <code>xargs -0</code> to survive spaces in filenames.</li>
+      <li>These are <em>first responders</em>, not a monitoring system: superb for interactive triage and scripting, but past a screenful — or for anything you'll ask repeatedly — graduate to Python (Limitations) or a real observability stack (Module 12).</li>
+    </ul>
+
+    <div class="callout def">
+      <span class="t">The lesson in one line</span>
+      <p>
+        <strong>Give each kind of question its specialist — <code>grep</code> to select, <code>sed</code> to
+        edit, <code>awk</code> to compute over columns, <code>jq</code> for JSON, <code>find</code>+<code>xargs</code>
+        for the filesystem — snap them into the pipe from Lesson 3.3, and any question you can phrase about a
+        running system becomes one line you can write.</strong>
+      </p>
+    </div>
+
+    <!-- ============================== 14 ============================== -->
+    <h2 id="s14">14 · Recommended Resources</h2>
+    <div class="res">
+      <h4>Official docs &amp; manuals</h4>
+      <ul>
+        <li><b>The <code>man</code> pages: <code>man grep</code>, <code>man sed</code>, <code>man find</code>, <code>man xargs</code></b> <span class="rank">start here</span>
+          <span class="why">The authoritative, always-on-the-box reference for every flag in §6. Read the flag list of each once; you'll come back to <code>man find</code> and <code>man grep</code> constantly.</span></li>
+        <li><b>The GNU <code>awk</code> (gawk) User's Guide — chapters "Getting Started," "Patterns and Actions," and "Arrays"</b>
+          <span class="why">The clearest complete description of the <code>awk</code> model in §6.4. The Arrays chapter is what turns "print a column" into "group, count and average."</span></li>
+        <li><b>The <code>jq</code> manual (jqlang.github.io/jq)</b>
+          <span class="why">Short and example-driven. Read "Invoking jq," "Basic filters," and <code>select</code>/<code>map</code>; keep it open the first few times you touch JSON on the box.</span></li>
+      </ul>
+
+      <h4>Books</h4>
+      <ul>
+        <li><b><em>The AWK Programming Language</em> — Aho, Kernighan &amp; Weinberger (2nd ed., 2023)</b> <span class="rank">start here</span>
+          <span class="why">By the people who wrote it. Thin, beautiful, and it teaches the <em>model</em> (§6.4), not just recipes — the best possible way to internalise fields, patterns and arrays.</span></li>
+        <li><b><em>The Linux Command Line</em> — William Shotts (free online), the "Regular Expressions," "Text Processing," and "Searching for Files" chapters</b>
+          <span class="why">The gentlest complete on-ramp to regex, <code>grep</code>/<code>sed</code>, and <code>find</code> for this exact audience. Do its exercises alongside §15.</span></li>
+        <li><b><em>sed &amp; awk</em> — Dougherty &amp; Robbins (O'Reilly)</b>
+          <span class="why">The deep, classic treatment of the two hardest tools here. Reach for it when a one-liner needs to grow into a small script.</span></li>
+      </ul>
+
+      <h4>Interactive practice &amp; tools</h4>
+      <ul>
+        <li><b><code>regex101.com</code> — build and debug regexes with a live explanation</b> <span class="rank">start here</span>
+          <span class="why">Paste a pattern and a sample line and watch exactly what matches and why. The fastest way to build regex intuition (choose the "POSIX/ERE" flavour to match grep/awk).</span></li>
+        <li><b><code>jqplay.org</code> — a live <code>jq</code> playground</b>
+          <span class="why">Paste your JSON and iterate on the filter with instant feedback — the ideal way to learn <code>select</code>, <code>.[]</code> and pipes before you're doing it on a production log.</span></li>
+        <li><b><code>explainshell.com</code> — annotates any one-liner symbol by symbol</b>
+          <span class="why">Paste a scary <code>find … | xargs …</code> and it labels every flag. Turns copied incantations into pipelines you understand — the whole goal of this lesson.</span></li>
+        <li><b>Your $5 VPS + its real logs (<code>/var/log/nginx/access.log</code>, <code>journalctl</code>, the app log)</b>
+          <span class="why">The only lab that matters: run the §15 exercises against real, messy data until reaching for the right tool is reflex.</span></li>
+      </ul>
+    </div>
+
+    <!-- ============================== 15 ============================== -->
+    <h2 id="s15">15 · Exercise</h2>
+    <p>
+      Module 3's project increment is to <strong>operate and harden your Linux server</strong>; this lesson makes
+      you <em>fluent</em> at interrogating it. Do these on the real VPS in a scratch directory
+      (<code>~/toolkit-lab</code>). E1 generates realistic data so every later step works even without live
+      traffic. Read each command before running it and <em>predict the output</em> before pressing Enter — the
+      prediction is where the learning is.
+    </p>
+
+    <div class="ex">
+      <div class="h"><span>E1</span>Build a realistic playground (text + JSON logs)</div>
+      <p>Create both log shapes from §1 so you can practise the text tools and <code>jq</code>:</p>
+<pre><code>mkdir -p ~/toolkit-lab &amp;&amp; cd ~/toolkit-lab
+
+# A space-separated access log (IP - - [time] "METHOD URL PROTO" STATUS BYTES SECS)
+cat &gt; access.log &lt;&lt;'EOF'
+203.0.113.7 - - [17/Aug/2026:14:03:11] "GET /api/boards/42 HTTP/1.1" 500 812 0.184
+198.51.100.9 - - [17/Aug/2026:14:03:11] "POST /api/login HTTP/1.1" 200 44 0.031
+203.0.113.7 - - [17/Aug/2026:14:03:12] "GET /api/boards/42 HTTP/1.1" 500 810 0.201
+203.0.113.7 - - [17/Aug/2026:14:03:12] "GET /api/health HTTP/1.1" 200 2 0.004
+198.51.100.9 - - [17/Aug/2026:14:03:13] "GET /api/boards/9 HTTP/1.1" 404 33 0.012
+203.0.113.7 - - [17/Aug/2026:14:03:14] "POST /api/login HTTP/1.1" 500 20 0.150
+EOF
+
+# A JSON-Lines app log
+cat &gt; app.log &lt;&lt;'EOF'
+{"ts":"2026-08-17T14:03:11Z","level":"error","route":"/api/boards/42","status":500,"ms":184,"msg":"pg: deadlock"}
+{"ts":"2026-08-17T14:03:11Z","level":"info","route":"/api/login","status":200,"ms":31}
+{"ts":"2026-08-17T14:03:12Z","level":"error","route":"/api/boards/42","status":500,"ms":201,"msg":"pg: deadlock"}
+{"ts":"2026-08-17T14:03:14Z","level":"error","route":"/api/login","status":500,"ms":150,"msg":"bcrypt timeout"}
+{"ts":"2026-08-17T14:03:13Z","level":"warn","route":"/api/boards/9","status":404,"ms":12}
+EOF
+wc -l access.log app.log      # confirm 6 and 5 lines</code></pre>
+      <p>(If <code>jq</code> isn't installed: <code>sudo apt-get update &amp;&amp; sudo apt-get install -y jq</code>.)</p>
+      <div class="out">Deliverable: both files created, and the <code>wc -l</code> output confirming their line counts.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E2</span>grep and the substring trap</div>
+      <p>See <em>why</em> substring matching is unsafe, and use grep's flags well:</p>
+<pre><code>grep 500 access.log            # how many lines? which ones are NOT real 500-status?
+grep -c 500 access.log         # a count
+grep -n -A0 "login" access.log # line numbers for login requests
+grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' access.log | sort | uniq -c   # extract & count IPs
+grep -F "203.0.113.7" access.log | wc -l    # -F: literal IP (dots not "any char")</code></pre>
+      <p>
+        Identify which line(s) <code>grep 500</code> matches that are <em>not</em> an HTTP-500 (hint: look at the
+        byte-count and latency columns). Explain in one sentence why <code>-F</code> is the correct flag for
+        searching an IP.
+      </p>
+      <div class="out">Deliverable: the false-positive line(s) <code>grep 500</code> wrongly includes, the IP counts, and your one-sentence <code>-F</code> justification.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E3</span>awk — from grep-clone to computation</div>
+      <p>Climb the ladder from §6.4 on real fields:</p>
+<pre><code>awk '{print $9}' access.log                      # the STATUS column
+awk '$9==500 {print $7}' access.log               # URLs of real 500s (field match!)
+awk '$9==500 {c[$7]++} END{for(u in c) print c[u], u}' access.log | sort -rn   # rank by 500s
+awk '{s[$7]+=$NF; n[$7]++} END{for(r in s) printf "%.3fs  %s\n", s[r]/n[r], r}' access.log | sort -rn
+# error RATE per IP:
+awk '{t[$1]++; if($9&gt;=500) e[$1]++} END{for(ip in t) printf "%-14s %d reqs %5.1f%%\n", ip, t[ip], 100*e[ip]/t[ip]}' access.log</code></pre>
+      <p>
+        Explain why <code>awk '$9==500'</code> is correct where <code>grep 500</code> (E2) was not. For the
+        average-latency line, explain what <code>$NF</code> refers to and why the two arrays (<code>s</code> and
+        <code>n</code>) are both needed.
+      </p>
+      <div class="out">Deliverable: the ranked 500-counts, the per-route average latencies, the per-IP error rates, and your two explanations.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E4</span>jq — the same questions, on structured JSON</div>
+      <p>Answer with structure instead of whitespace, and see why it's safer:</p>
+<pre><code>jq . app.log | head -20                                   # pretty-print to see the shape
+jq -r '.route' app.log                                     # every route (raw, unquoted)
+jq -r 'select(.status==500) | .route' app.log | sort | uniq -c | sort -rn   # rank 500 routes
+jq 'select(.level=="error" and (.route|startswith("/api/boards")))' app.log # structural predicate
+jq -r '[.route,.ms] | @tsv' app.log | awk '{s[$1]+=$2;n[$1]++} END{for(r in s) print s[r]/n[r], r}'  # jq→awk</code></pre>
+      <p>
+        Remove the <code>-r</code> from the second command and describe what changes in the output and why it
+        would break the downstream <code>sort | uniq -c</code>. Explain, for the last line, the division of
+        labour between <code>jq</code> and <code>awk</code>.
+      </p>
+      <div class="out">Deliverable: the ranked JSON 500-routes, the per-route average <code>ms</code>, and your two explanations (the effect of <code>-r</code>, and the jq/awk split).</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E5</span>sed — preview-then-edit, safely</div>
+      <p>Practise transformation and the <code>-i</code> discipline (§6.3):</p>
+<pre><code>cat &gt; app.conf &lt;&lt;'EOF'
+# DevBoard config
+db.pool=10
+cache.ttl=60
+db.host=localhost
+EOF
+sed 's/db.pool=10/db.pool=20/' app.conf     # PREVIEW to stdout — file is untouched
+sed -n '/^db\./p' app.conf                   # print only db.* lines (addressing)
+sed '/^#/d' app.conf                          # show the file with comments stripped
+sed -i.bak 's/db.pool=10/db.pool=20/' app.conf   # NOW commit, keeping app.conf.bak
+diff app.conf.bak app.conf                    # confirm exactly what changed</code></pre>
+      <p>
+        Explain why running <code>sed</code> <em>without</em> <code>-i</code> first is the safe habit, and what
+        <code>app.conf.bak</code> gives you. Then use <code>find … -exec sed</code> to imagine (don't run
+        destructively) editing this value across a whole config directory — write the command you'd use.
+      </p>
+      <div class="out">Deliverable: the <code>diff</code> output showing the single changed line, plus the <code>find … -exec sed -i.bak …</code> command you would run across a directory.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E6</span>find + xargs — select and act, null-safely</div>
+      <p>Build the filesystem half of the toolkit, including the spaces-in-names trap:</p>
+<pre><code>mkdir -p junk &amp;&amp; touch "junk/old one.tmp" junk/old2.tmp junk/keep.log
+# make two of them "old" (7+ days) so -mtime selects them:
+touch -d '10 days ago' "junk/old one.tmp" junk/old2.tmp
+
+find junk -type f                              # everything under junk
+find junk -type f -name '*.tmp' -mtime +7      # SELECT: old temp files only
+# DANGEROUS default (splits on spaces) — predict what it would do, DON'T run rm:
+find junk -name '*.tmp' -mtime +7 | xargs echo rm     # note how "old one.tmp" splits!
+# SAFE (null-separated) — echo first to preview the exact rm, THEN drop the echo:
+find junk -name '*.tmp' -mtime +7 -print0 | xargs -0 echo rm
+find junk -name '*.tmp' -mtime +7 -print0 | xargs -0 -r rm -v</code></pre>
+      <p>
+        Explain exactly how <code>"old one.tmp"</code> is mishandled by the whitespace-splitting version and how
+        <code>-print0</code>/<code>-0</code> fixes it. Explain what <code>xargs -r</code> protects against.
+      </p>
+      <div class="out">Deliverable: the two previews (unsafe vs safe) side by side, the final <code>rm -v</code> output, and your explanation of the null-separator fix and <code>-r</code>.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E7</span>Capstone — a real triage one-liner &amp; script</div>
+      <p>
+        Compose <em>your own</em> pipeline to answer a question about a real log on the box — the app's log if
+        it's running, else <code>/var/log/nginx/access.log</code> or <code>journalctl -u &lt;service&gt;</code>.
+        Pick one:
+      </p>
+      <ul style="margin:0 0 .6em">
+        <li>Top 5 routes by 500-count in the last N lines of the log (text → <code>awk</code>, or JSON → <code>jq</code>).</li>
+        <li>Average latency per route, ranked, from whichever log has timing data.</li>
+        <li>The 5 busiest client IPs and each one's error rate.</li>
+      </ul>
+<pre><code># save your chosen pipeline into a script with the safety header from Lesson 3.3:
+cat &gt; ~/toolkit-lab/triage.sh &lt;&lt;'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+LOG="${1:-/var/log/nginx/access.log}"
+awk '$9==500 {c[$7]++} END{for(u in c) print c[u], u}' "$LOG" | sort -rn | head -5
+EOF
+chmod +x ~/toolkit-lab/triage.sh
+~/toolkit-lab/triage.sh ~/toolkit-lab/access.log   # run it against E1's data</code></pre>
+      <p>
+        Narrate your pipeline stage by stage in your own words (which tool, why, what each stage adds), then save
+        it as <code>triage.sh</code> with <code>set -euo pipefail</code>. This is the operational muscle
+        Milestone&nbsp;3 expects — and the seed of the log queries you'll formalise in Module 12.
+      </p>
+      <div class="out">Deliverable: your pipeline, a stage-by-stage narration naming the tool and job at each stage, and the saved runnable <code>triage.sh</code>. Add it to your Milestone&nbsp;3 record.</div>
+    </div>
+
+    <!-- ============================== 16 ============================== -->
+    <h2 id="s16">16 · Quiz</h2>
+    <div class="callout warn">
+      <span class="t">How to use this</span>
+      <p>
+        Answer in your own words <strong>before</strong> revealing the model answer — two or three sentences each.
+        You're ready for Lesson 3.5 (packages, repositories &amp; the software supply chain) when you can answer
+        Q1, Q3, Q5 and Q8 cold and have completed E1–E7 on a real machine.
+      </p>
+    </div>
+
+    <div class="quiz">
+
+      <details class="q"><summary>Map each of the six tools to the <em>kind</em> of job it does.</summary>
+        <div class="ans"><p><strong><code>grep</code></strong> — select lines by pattern. <strong><code>sed</code></strong> — edit/rewrite text. <strong><code>awk</code></strong> — split into fields and compute (arithmetic, grouping) over columns. <strong><code>jq</code></strong> — query and transform structured JSON by path. <strong><code>find</code></strong> — select files across a tree by predicate (name/type/age/size). <strong><code>xargs</code></strong> — turn a stream of items into a command's arguments. All share the stdin→stdout interface, so they snap into the same pipe.</p></div>
+      </details>
+
+      <details class="q"><summary>Why is <code>grep 500 access.log</code> the wrong way to find HTTP 500 errors, and what's right?</summary>
+        <div class="ans"><p><code>grep 500</code> matches the <em>substring</em> "500" anywhere on the line — a 500-byte body, a 500&nbsp;ms latency, an IP, a message — giving false positives (and it can miss 500s formatted differently). The status is a specific <em>field</em>, so match it as one: <code>awk '$9==500'</code> for the space-separated log, or <code>jq 'select(.status==500)'</code> for JSON. Substring ≠ field.</p></div>
+      </details>
+
+      <details class="q"><summary>In a regex, what does <code>*</code> mean, and how is it different from a glob's <code>*</code>?</summary>
+        <div class="ans"><p>In a regex, <code>*</code> means "zero or more of the <em>preceding</em> item," so <code>ab*</code> is "a, then any number of b's" and "match anything" is <code>.*</code>. In a glob (filenames, Lesson 3.3), <code>*</code> means "any run of characters." Same symbol, two different languages; conflating them is a top source of "why didn't it match?" bugs.</p></div>
+      </details>
+
+      <details class="q"><summary>What is the difference between BRE and ERE, and how do you get ERE in grep/sed?</summary>
+        <div class="ans"><p><em>Basic</em> regex (BRE) is the default in <code>grep</code>/<code>sed</code> and requires backslash-escaping the special forms <code>+ ? ( ) { } |</code> (e.g. <code>\(…\)</code>, <code>\+</code>). <em>Extended</em> regex (ERE) lets you write those plainly and is the default in <code>awk</code>. Turn it on with <code>grep -E</code> / <code>sed -E</code>. Prefer ERE — it's far more readable and stops the escaping thicket.</p></div>
+      </details>
+
+      <details class="q"><summary>Explain <code>awk</code>'s execution model: records, fields, patterns/actions, BEGIN/END.</summary>
+        <div class="ans"><p><code>awk</code> loops over input one line (a <em>record</em>) at a time, auto-splitting it into <em>fields</em> <code>$1…$NF</code> (<code>$0</code> is the whole line). For each line it runs your <code>pattern { action }</code> rules: if the pattern is true, the action runs (default action is <code>print $0</code>; default pattern is "always"). <code>BEGIN{}</code> runs once before any input and <code>END{}</code> once after all of it — <code>END</code> is where you print totals accumulated in variables/arrays.</p></div>
+      </details>
+
+      <details class="q"><summary>How does <code>awk</code>'s <code>count[$7]++</code> differ from <code>sort | uniq -c</code>, and why does it matter?</summary>
+        <div class="ans"><p><code>uniq -c</code> counts only <em>adjacent identical lines</em>, so it needs a <code>sort</code> first and can only tally whole lines. <code>awk</code>'s <em>associative array</em> <code>count[$7]++</code> tallies by an arbitrary <em>key you choose</em> (here the URL field), in a single pass, with no pre-sorting — and because <code>awk</code> has arithmetic, it can also sum and average, which <code>sort|uniq</code> cannot do at all. That's the jump from "count identical lines" to "compute per-group statistics."</p></div>
+      </details>
+
+      <details class="q"><summary>Why use <code>jq</code> instead of <code>awk</code>/<code>grep</code> on JSON logs, and what does <code>-r</code> do?</summary>
+        <div class="ans"><p>JSON is nested and its string values can contain spaces, commas and colons, so any whitespace/delimiter splitter (<code>awk</code> default, <code>cut</code>) will eventually cut through the middle of a value and return garbage. <code>jq</code> parses the structure and lets you address values by <em>path</em> (<code>.status</code>, <code>select(.level=="error")</code>), immune to spacing and key order. <code>-r</code> ("raw") prints strings <em>without</em> their JSON quotes, so results pipe cleanly into <code>sort|uniq</code> instead of arriving as <code>"quoted"</code> tokens.</p></div>
+      </details>
+
+      <details class="q"><summary>What does <code>sed</code> do by default vs with <code>-i</code>, and what's the safe habit?</summary>
+        <div class="ans"><p>By default <code>sed</code> reads input and writes the transformed result to <em>stdout</em>, leaving files untouched — which is what makes it a pipeline stage. <code>sed -i</code> edits the file <em>in place</em>, irreversibly. The safe habit: run the substitution without <code>-i</code> first to preview the change, and when committing use <code>-i.bak</code> so the original is saved as <code>file.bak</code>. (Note the GNU vs BSD/macOS difference in how <code>-i</code> takes its suffix.)</p></div>
+      </details>
+
+      <details class="q"><summary>When would you use <code>find … -exec … {} +</code> vs <code>find … -print0 | xargs -0 …</code>?</summary>
+        <div class="ans"><p>Use <code>-exec … {} +</code> for a simple "run this command on each match" — it's self-contained and needs no separator handling. Switch to <code>find -print0 | xargs -0</code> when you need pipeline flexibility (filter/count the list first) or <em>parallelism</em> (<code>xargs -P</code>). The <code>-print0</code>/<code>-0</code> pairing separates paths by the NUL byte so filenames containing spaces or newlines aren't split into multiple arguments.</p></div>
+      </details>
+
+      <details class="q"><summary>Why is <code>find … | xargs rm</code> dangerous by default, and how do you make it safe?</summary>
+        <div class="ans"><p><code>xargs</code> splits its input on <em>whitespace</em> by default, so a filename like <code>my report.tmp</code> becomes two arguments (<code>my</code> and <code>report.tmp</code>) and <code>rm</code> deletes the wrong things. Make it safe with the null-separator pact: <code>find … -print0 | xargs -0 rm</code>, which splits only on the NUL byte that can't occur in filenames. Add <code>-r</code> so an empty input doesn't run <code>rm</code> with no arguments, and preview with <code>xargs -0 echo rm</code> before committing.</p></div>
+      </details>
+
+      <details class="q"><summary>Give the idiomatic way to combine <code>jq</code> and <code>awk</code>, and say why you'd split the work.</summary>
+        <div class="ans"><p>Use <code>jq</code> to safely pull fields <em>out of the JSON structure</em> into flat columns (e.g. <code>jq -r '[.route,.ms] | @tsv'</code>), then pipe those columns into <code>awk</code> to do the arithmetic (sum, average, per-group stats). You split the work because <code>jq</code> is the only one that parses JSON correctly, while <code>awk</code> is better at fast column math and associative-array grouping — structure-aware extraction first, computation second.</p></div>
+      </details>
+
+    </div>
+
+    <div class="callout good">
+      <span class="t">Next: Lesson 3.5</span>
+      <p>
+        You can now interrogate and reshape anything the machine produces — logs, config, JSON, whole directory
+        trees. But every one of these tools <em>arrived</em> on your server as software someone else built and
+        shipped: <code>jq</code> came from a package, <code>grep</code> from the base system. Lesson 3.5 opens
+        that box — <strong>packages, repositories and trust</strong>: how <code>apt</code> installs software,
+        what a signing key proves, and why the software supply chain is where a surprising amount of real-world
+        security lives. You've learned to <em>use</em> the tools; next you learn where they come from and how to
+        trust them.
+      </p>
+    </div>
+
+    <hr>
+
+    <nav class="pager" aria-label="Lesson navigation">
+      <a href="lesson-03-shell-programming-model.html"><em>Previous lesson</em>← 3.3 · The shell as a programming model: streams, pipes, redirection, exit codes &amp; globbing</a>
+      <span class="disabled next"><em>Next lesson</em>3.5 · Packages, repositories &amp; trust: apt, signing keys, and the software supply chain <small>(not yet generated)</small></span>
+    </nav>
+
+    <footer class="foot">
+      <b>From Commit to Production</b> · Module 3 · Lesson 3.4 — <em>The Ops Debugger's Toolkit</em><br>
+      <small>Self-contained offline document · no external assets · regenerated in full when revised.
+      Roadmap: <a href="../../index.html">course/index.html</a></small>
+    </footer>
+  </article>
+</div>
+
+<script>
+(function(){
+  var root = document.documentElement;
+
+  /* ---------- theme ---------- */
+  var KEY='ftp.theme', saved=null;
+  try { saved = localStorage.getItem(KEY); } catch(e){}
+  if (saved) root.setAttribute('data-theme', saved);
+  document.getElementById('theme').addEventListener('click', function(){
+    var cur = root.getAttribute('data-theme');
+    if (!cur) cur = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    var next = cur === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem(KEY, next); } catch(e){}
+  });
+
+  /* ---------- expand/collapse all quiz answers ---------- */
+  var btn = document.getElementById('expand');
+  btn.addEventListener('click', function(){
+    var all = document.querySelectorAll('details.q');
+    var anyClosed = Array.prototype.some.call(all, function(d){ return !d.open; });
+    Array.prototype.forEach.call(all, function(d){ d.open = anyClosed; });
+    btn.textContent = anyClosed ? '⇕ Collapse all' : '⇕ Expand all';
+  });
+
+  /* ---------- reading progress bar ---------- */
+  var barEl = document.getElementById('readbar');
+  function onScroll(){
+    var h = document.documentElement;
+    var max = h.scrollHeight - h.clientHeight;
+    barEl.style.width = (max > 0 ? (h.scrollTop / max * 100) : 0) + '%';
+  }
+  addEventListener('scroll', onScroll, {passive:true});
+  onScroll();
+
+  /* ---------- TOC scroll-spy ---------- */
+  var links = Array.prototype.slice.call(document.querySelectorAll('#tocList a'));
+  var targets = links.map(function(a){ return document.querySelector(a.getAttribute('href')); })
+                     .filter(Boolean);
+  if ('IntersectionObserver' in window && targets.length){
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if (!e.isIntersecting) return;
+        links.forEach(function(a){
+          a.classList.toggle('on', a.getAttribute('href') === '#' + e.target.id);
+        });
+      });
+    }, { rootMargin:'-80px 0px -70% 0px', threshold:0 });
+    targets.forEach(function(t){ io.observe(t); });
+  }
+})();
+</script>
+</body>
+</html>
