@@ -1,0 +1,1198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 3.5 · Packages, Repositories &amp; Trust: apt, Signing Keys &amp; the Software Supply Chain — From Commit to Production</title>
+<style>
+/* ============================================================
+   DESIGN TOKENS  (same system as the roadmap)
+   ============================================================ */
+:root{
+  color-scheme: dark light;
+  --font-sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", Consolas, "SFMono-Regular", Menlo, monospace;
+
+  --bg:#0a0e17; --bg-alt:#0e1421; --surface:#131b2b; --surface-2:#19233a;
+  --border:#243049; --border-strong:#37456a;
+  --text:#e8eefb; --text-dim:#a7b4cd; --text-faint:#78869f;
+
+  --accent:#6ea8ff;  --accent-soft:rgba(110,168,255,.14);
+  --green:#4fd39c;   --green-soft:rgba(79,211,156,.13);
+  --amber:#f2b754;   --amber-soft:rgba(242,183,84,.13);
+  --red:#ff7f76;     --red-soft:rgba(255,127,118,.13);
+  --purple:#b28cff;  --purple-soft:rgba(178,140,255,.13);
+  --teal:#4fd0d9;    --teal-soft:rgba(79,208,217,.13);
+
+  --radius:14px; --radius-sm:8px;
+  --shadow:0 1px 2px rgba(0,0,0,.45), 0 14px 34px -18px rgba(0,0,0,.75);
+  --maxw:1220px; --readw:840px;
+}
+:root[data-theme="light"]{
+  color-scheme: light;
+  --bg:#f7f9fc; --bg-alt:#eef2f8; --surface:#ffffff; --surface-2:#f2f5fa;
+  --border:#dde3ee; --border-strong:#c2ccdd;
+  --text:#131a26; --text-dim:#4b586e; --text-faint:#75839a;
+  --accent:#1f5fd0; --accent-soft:rgba(31,95,208,.09);
+  --green:#0f8a5f;  --green-soft:rgba(15,138,95,.10);
+  --amber:#9a6a06;  --amber-soft:rgba(154,106,6,.10);
+  --red:#c3352b;    --red-soft:rgba(195,53,43,.09);
+  --purple:#6d3ecb; --purple-soft:rgba(109,62,203,.09);
+  --teal:#07767e;   --teal-soft:rgba(7,118,126,.10);
+  --shadow:0 1px 2px rgba(18,28,45,.06), 0 12px 28px -18px rgba(18,28,45,.25);
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    color-scheme: light;
+    --bg:#f7f9fc; --bg-alt:#eef2f8; --surface:#ffffff; --surface-2:#f2f5fa;
+    --border:#dde3ee; --border-strong:#c2ccdd;
+    --text:#131a26; --text-dim:#4b586e; --text-faint:#75839a;
+    --accent:#1f5fd0; --accent-soft:rgba(31,95,208,.09);
+    --green:#0f8a5f;  --green-soft:rgba(15,138,95,.10);
+    --amber:#9a6a06;  --amber-soft:rgba(154,106,6,.10);
+    --red:#c3352b;    --red-soft:rgba(195,53,43,.09);
+    --purple:#6d3ecb; --purple-soft:rgba(109,62,203,.09);
+    --teal:#07767e;   --teal-soft:rgba(7,118,126,.10);
+    --shadow:0 1px 2px rgba(18,28,45,.06), 0 12px 28px -18px rgba(18,28,45,.25);
+  }
+}
+
+/* ============================================================ BASE */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth; scroll-padding-top:80px}
+body{margin:0; background:var(--bg); color:var(--text);
+  font-family:var(--font-sans); font-size:16.5px; line-height:1.72; -webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{line-height:1.28; margin:0 0 .5em; letter-spacing:-.015em; font-weight:680}
+h1{font-size:clamp(1.9rem,4vw,2.7rem)}
+h2{font-size:clamp(1.35rem,2.4vw,1.72rem); margin-top:2.6em; padding-top:.2em}
+h3{font-size:1.1rem; margin-top:2em; color:var(--text)}
+h4{font-size:.98rem; margin-top:1.5em; color:var(--text-dim)}
+p{margin:0 0 1.05em}
+a{color:var(--accent); text-decoration:none}
+a:hover{text-decoration:underline}
+strong{font-weight:660}
+em.term{font-style:normal; font-weight:680; color:var(--text)}
+code{font-family:var(--font-mono); font-size:.87em; background:var(--surface-2);
+  border:1px solid var(--border); border-radius:5px; padding:.1em .38em}
+ul,ol{padding-left:1.3em; margin:0 0 1.05em}
+li{margin:.35em 0}
+blockquote{margin:1.5em 0; padding:2px 0 2px 18px; border-left:3px solid var(--border-strong);
+  color:var(--text-dim); font-style:italic}
+blockquote footer{font-style:normal; font-size:.85rem; color:var(--text-faint); margin-top:.4em}
+hr{border:0; border-top:1px solid var(--border); margin:2.6rem 0}
+small{color:var(--text-faint)}
+sup a{font-size:.7em; padding:0 1px}
+
+/* ============================================================ BAR */
+header.bar{position:sticky; top:0; z-index:60;
+  background:color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter:blur(10px); border-bottom:1px solid var(--border)}
+.bar-in{padding:10px 22px; display:flex; align-items:center; gap:14px}
+.brand{font-weight:700; font-size:.92rem; white-space:nowrap}
+.brand a{color:var(--text)}
+.brand span{color:var(--accent)}
+.crumb{font-size:.82rem; color:var(--text-faint); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.bar .right{margin-left:auto; display:flex; gap:8px; align-items:center}
+button.ghost{font:inherit; font-size:.8rem; cursor:pointer; color:var(--text-dim);
+  background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:5px 11px}
+button.ghost:hover{border-color:var(--border-strong); color:var(--text)}
+#readbar{position:fixed; top:0; left:0; height:2px; background:var(--accent); z-index:70; width:0}
+
+/* ============================================================ LAYOUT */
+.shell{padding:0 40px;
+  display:grid; grid-template-columns:1fr; gap:36px}
+
+aside.toc{display:none}
+aside.toc .inner{position:sticky; top:74px; max-height:calc(100vh - 96px); overflow:auto;
+  padding:22px 0 40px; font-size:.86rem}
+aside.toc .lbl{font-size:.7rem; letter-spacing:.12em; text-transform:uppercase;
+  color:var(--text-faint); font-weight:700; margin:0 0 10px}
+aside.toc ol{list-style:none; padding:0; margin:0; counter-reset:t}
+aside.toc li{margin:0; counter-increment:t}
+aside.toc a{display:flex; gap:8px; padding:5px 10px 5px 8px; border-radius:6px;
+  color:var(--text-dim); border-left:2px solid transparent; line-height:1.4}
+aside.toc a:before{content:counter(t); font-family:var(--font-mono); font-size:.72rem;
+  color:var(--text-faint); flex:0 0 1.4em; text-align:right}
+aside.toc a:hover{background:var(--surface-2); color:var(--text); text-decoration:none}
+aside.toc a.on{color:var(--accent); border-left-color:var(--accent); background:var(--accent-soft)}
+article{min-width:0; padding-bottom:20px}
+
+/* ============================================================ HERO */
+.lead{padding:46px 0 26px; border-bottom:1px solid var(--border); margin-bottom:8px}
+.kicker{font-family:var(--font-mono); font-size:.74rem; letter-spacing:.16em;
+  text-transform:uppercase; color:var(--accent); margin-bottom:12px}
+.subtitle{font-size:1.1rem; color:var(--text-dim); max-width:var(--readw); margin-top:.6em}
+.meta{display:flex; flex-wrap:wrap; gap:8px; margin-top:20px}
+
+/* ============================================================ COMPONENTS */
+.pill{display:inline-block; font-family:var(--font-mono); font-size:.7rem; padding:3px 9px;
+  border-radius:999px; border:1px solid var(--border-strong); color:var(--text-dim); white-space:nowrap}
+.pill.a{color:var(--accent); border-color:var(--accent); background:var(--accent-soft)}
+.pill.g{color:var(--green); border-color:var(--green); background:var(--green-soft)}
+.pill.r{color:var(--red); border-color:var(--red); background:var(--red-soft)}
+.pill.p{color:var(--purple); border-color:var(--purple); background:var(--purple-soft)}
+
+.callout{border-left:3px solid var(--accent); background:var(--accent-soft);
+  border-radius:0 var(--radius-sm) var(--radius-sm) 0; padding:15px 19px; margin:1.7em 0}
+.callout.warn{border-color:var(--amber); background:var(--amber-soft)}
+.callout.bad{border-color:var(--red); background:var(--red-soft)}
+.callout.good{border-color:var(--green); background:var(--green-soft)}
+.callout.def{border-color:var(--purple); background:var(--purple-soft)}
+.callout .t{font-weight:700; font-size:.76rem; letter-spacing:.1em; text-transform:uppercase;
+  margin-bottom:6px; display:block; color:var(--text)}
+.callout > :last-child{margin-bottom:0}
+
+dl.terms{margin:1.4em 0; padding:0}
+dl.terms dt{font-weight:680; color:var(--text); margin-top:1em; font-size:.98rem}
+dl.terms dt:first-child{margin-top:0}
+dl.terms dd{margin:.25em 0 0; color:var(--text-dim); padding-left:0}
+
+pre{background:var(--bg-alt); border:1px solid var(--border); border-radius:var(--radius-sm);
+  padding:16px 18px; overflow-x:auto; font-family:var(--font-mono); font-size:.8rem;
+  line-height:1.5; margin:1.6em 0}
+pre code{background:none; border:0; padding:0; font-size:inherit}
+figure{margin:1.8em 0}
+figure figcaption{font-size:.82rem; color:var(--text-faint); margin-top:-.6em; padding-left:2px}
+
+.tablewrap{overflow-x:auto; margin:1.6em 0; border:1px solid var(--border); border-radius:var(--radius)}
+table{border-collapse:collapse; width:100%; font-size:.9rem; min-width:560px}
+th,td{padding:10px 14px; text-align:left; border-bottom:1px solid var(--border); vertical-align:top}
+th{background:var(--surface-2); font-size:.73rem; text-transform:uppercase; letter-spacing:.08em;
+  color:var(--text-dim); font-weight:700}
+tr:last-child td{border-bottom:0}
+td.y{color:var(--green); font-weight:600} td.n{color:var(--red); font-weight:600}
+
+.card{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+  padding:20px 22px; box-shadow:var(--shadow); margin:1.6em 0}
+.card > :first-child{margin-top:0}
+.grid2{display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; margin:1.6em 0}
+.grid2 .card{margin:0}
+
+/* misconceptions */
+.myth{border:1px solid var(--border); border-radius:var(--radius); margin:14px 0; overflow:hidden}
+.myth .m{background:var(--red-soft); border-bottom:1px solid var(--border); padding:11px 16px;
+  font-weight:660; display:flex; gap:10px}
+.myth .m:before{content:"✕"; color:var(--red); font-weight:700}
+.myth .r{padding:13px 16px}
+.myth .r:before{content:"Reality "; font-family:var(--font-mono); font-size:.68rem;
+  letter-spacing:.12em; text-transform:uppercase; color:var(--green); display:block; margin-bottom:4px}
+.myth .r > :last-child{margin-bottom:0}
+
+/* resources */
+.res{margin:1.4em 0}
+.res h4{margin:1.4em 0 .4em; color:var(--accent); font-size:.78rem;
+  letter-spacing:.1em; text-transform:uppercase}
+.res ul{list-style:none; padding:0; margin:0}
+.res li{border-bottom:1px dashed var(--border); padding:8px 0; margin:0}
+.res li:last-child{border-bottom:0}
+.res .why{display:block; font-size:.85rem; color:var(--text-dim)}
+.res .rank{font-family:var(--font-mono); font-size:.66rem; padding:1px 6px; border-radius:999px;
+  border:1px solid var(--green); color:var(--green); background:var(--green-soft); margin-left:6px}
+
+/* exercises */
+.ex{border:1px solid var(--border); border-left:3px solid var(--teal);
+  border-radius:0 var(--radius) var(--radius) 0; padding:16px 20px; margin:16px 0; background:var(--surface)}
+.ex .h{font-weight:680; margin-bottom:6px}
+.ex .h span{font-family:var(--font-mono); font-size:.72rem; color:var(--teal); margin-right:8px}
+.ex .out{font-size:.86rem; color:var(--text-faint); margin-top:8px; border-top:1px dashed var(--border); padding-top:8px}
+.ex > :last-child{margin-bottom:0}
+
+/* quiz */
+.quiz{counter-reset:q}
+.q{border:1px solid var(--border); border-radius:var(--radius); margin:12px 0;
+  background:var(--surface); overflow:hidden}
+.q > summary{cursor:pointer; list-style:none; padding:14px 18px; display:flex; gap:12px;
+  font-weight:600; align-items:flex-start}
+.q > summary::-webkit-details-marker{display:none}
+.q > summary:before{counter-increment:q; content:"Q" counter(q); font-family:var(--font-mono);
+  font-size:.72rem; color:var(--accent); background:var(--accent-soft);
+  border:1px solid var(--accent); border-radius:6px; padding:2px 7px; flex:0 0 auto; margin-top:2px}
+.q > summary::after{content:"show answer"; margin-left:auto; font-size:.7rem; font-weight:600;
+  letter-spacing:.08em; text-transform:uppercase; color:var(--text-faint); flex:0 0 auto; padding-top:4px}
+.q[open] > summary::after{content:"hide"}
+.q .ans{padding:2px 18px 16px; border-top:1px solid var(--border); margin-top:0;
+  background:var(--bg-alt); color:var(--text-dim)}
+.q .ans > :first-child{margin-top:1em}
+.q .ans > :last-child{margin-bottom:0}
+.q .ans strong{color:var(--text)}
+
+/* summary list */
+ul.takeaways{list-style:none; padding:0}
+ul.takeaways li{padding:9px 0 9px 30px; position:relative; border-bottom:1px dashed var(--border)}
+ul.takeaways li:last-child{border-bottom:0}
+ul.takeaways li:before{content:"▸"; position:absolute; left:6px; top:9px; color:var(--accent)}
+
+/* pager / footer */
+.pager{display:flex; gap:12px; margin:44px 0 30px; flex-wrap:wrap; max-width:none}
+.pager a, .pager .disabled{flex:1 1 250px; border:1px solid var(--border); border-radius:var(--radius);
+  padding:14px 18px; background:var(--surface); text-decoration:none; color:var(--text)}
+.pager a:hover{border-color:var(--accent); text-decoration:none}
+.pager .disabled{opacity:.45}
+.pager em{display:block; font-style:normal; font-size:.7rem; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--text-faint); margin-bottom:3px}
+.pager .next{text-align:right}
+footer.foot{border-top:1px solid var(--border); margin-top:20px; padding:24px 0 56px;
+  color:var(--text-faint); font-size:.85rem}
+
+@media print{
+  header.bar,aside.toc,#readbar,button.ghost,.pager{display:none}
+  body{background:#fff; color:#000; font-size:10.5pt}
+  .shell{display:block; max-width:none; padding:0}
+  .q{break-inside:avoid} .q .ans{display:block !important}
+  article > *{max-width:none}
+}
+</style>
+</head>
+<body>
+
+<div id="readbar"></div>
+<header class="bar">
+  <div class="bar-in">
+    <div class="brand"><a href="../../index.html">Commit&nbsp;<span>→</span>&nbsp;Production</a></div>
+    <div class="crumb">/ Module&nbsp;3 · Linux / Lesson&nbsp;3.5</div>
+    <div class="right">
+      <button class="ghost" id="expand">⇕ Expand all</button>
+      <button class="ghost" id="theme">◐ Theme</button>
+    </div>
+  </div>
+</header>
+
+<div class="shell">
+
+  <aside class="toc">
+    <div class="inner">
+      <p class="lbl">Lesson contents</p>
+      <ol id="tocList">
+        <li><a href="#s1">Problem Statement</a></li>
+        <li><a href="#s2">Historical Context</a></li>
+        <li><a href="#s3">Previous Solution</a></li>
+        <li><a href="#s4">Why It Failed</a></li>
+        <li><a href="#s5">New Solution</a></li>
+        <li><a href="#s6">Internal Mechanics</a></li>
+        <li><a href="#s7">Real Industry Examples</a></li>
+        <li><a href="#s8">Diagrams</a></li>
+        <li><a href="#s9">Advantages</a></li>
+        <li><a href="#s10">Limitations</a></li>
+        <li><a href="#s11">Common Misconceptions</a></li>
+        <li><a href="#s12">Practical Use Cases</a></li>
+        <li><a href="#s13">Summary</a></li>
+        <li><a href="#s14">Recommended Resources</a></li>
+        <li><a href="#s15">Exercise</a></li>
+        <li><a href="#s16">Quiz</a></li>
+      </ol>
+    </div>
+  </aside>
+
+  <article>
+    <div class="lead">
+      <div class="kicker">Module 3 · Lesson 3.5</div>
+      <h1>Packages, repositories &amp; trust: <code>apt</code>, signing keys &amp; the software supply chain</h1>
+      <p class="subtitle">
+        Every tool you learned in Lessons 3.3 and 3.4 &mdash; <code>grep</code>, <code>jq</code>, <code>awk</code>
+        &mdash; <em>arrived</em> on your server as software someone else built, somewhere else, and shipped to you.
+        This lesson opens that box. A <strong>package</strong> is software bundled with the metadata that says
+        what it is, what it needs, and where its files go. A <strong>repository</strong> is a trusted catalog of
+        packages. <code>apt</code> is the program that reads that catalog, solves the puzzle of dependencies, and
+        installs the result. And a <strong>signing key</strong> is the cryptographic proof that the bytes you're
+        about to run as root really came from who they claim to &mdash; because <em>installing a package means
+        running someone else's code with full privileges</em>, and the entire question of the <strong>software
+        supply chain</strong> is: <em>how do you know you can trust it?</em>
+      </p>
+      <div class="meta">
+        <span class="pill a">~70 min read</span>
+        <span class="pill">Prerequisites: Lessons 3.1, 3.2, 3.4</span>
+        <span class="pill">Conceptual · hands-on throughout</span>
+        <span class="pill g">Module 3 · Milestone 3</span>
+      </div>
+    </div>
+
+    <div class="callout def">
+      <span class="t">Learning objectives</span>
+      <p>By the end of this lesson you will be able to:</p>
+      <ol style="margin-bottom:0">
+        <li>Define a <em>package</em> as software plus metadata (dependencies, version, file list, maintainer scripts), and explain why bundling that metadata is what makes automated installation possible.</li>
+        <li>Explain what a <em>repository</em> is, how <code>apt</code> knows about one (<code>/etc/apt/sources.list.d/</code>), and the difference between <code>apt update</code> (refresh the catalog) and <code>apt upgrade</code> (install newer versions).</li>
+        <li>Trace what actually happens on <code>apt install nginx</code> &mdash; index read, <em>dependency resolution</em>, download, signature verification, unpack, configure &mdash; and name which step each command performs.</li>
+        <li>Explain <em>dependency resolution</em> and why "just download the <code>.deb</code> and run it" (dependency hell) is the problem package managers were invented to kill.</li>
+        <li>Describe the trust chain: a repository ships a signed <code>Release</code> file whose <em>hashes</em> vouch for the package index, which in turn vouches for every <code>.deb</code> &mdash; and how a <em>signing key</em> anchors the whole chain.</li>
+        <li>Add a third-party repository <em>safely</em> in the modern way (a keyring file + a <code>signed-by=</code> source), and explain why the old <code>apt-key add</code> pattern is deprecated and dangerous.</li>
+        <li>Explain the <em>software supply chain</em> as a real attack surface &mdash; typosquats, compromised upstreams, malicious post-install scripts, the <code>curl | sudo bash</code> anti-pattern &mdash; and state the defensive habits that address each.</li>
+        <li>Connect all of this to DevBoard: pin the exact package versions your server and your Docker images install, so a build is reproducible and a supply-chain change can't slip in unnoticed.</li>
+      </ol>
+    </div>
+
+    <div class="callout">
+      <span class="t">Where this sits on the map</span>
+      <p>
+        Lesson 3.2 taught you that installing software needs <code>sudo</code> &mdash; root privilege &mdash;
+        because it writes to system directories and runs scripts as root. This lesson is the direct sequel: it
+        asks <em>what</em> you're granting that privilege to, and <em>how you know it's safe</em>. Everything
+        downstream depends on it. Every Dockerfile in Module 7 begins with an <code>apt-get install</code> or
+        <code>apk add</code> line &mdash; the same model in a container. Every CI job in Module 9 installs its
+        toolchain from a package repository. And the whole of Module 11 (Production Reality: secrets, backups,
+        security) rests on the idea introduced here &mdash; that <em>trust is a chain you can inspect</em>, not a
+        feeling. Get packages and signing keys into your hands now, and "supply-chain security," the phrase you'll
+        hear at every turn in real DevOps, stops being jargon and becomes something you can actually reason about.
+      </p>
+    </div>
+
+    <!-- ============================== 1 ============================== -->
+    <h2 id="s1">1 · Problem Statement</h2>
+
+    <p>
+      You have a fresh Ubuntu server (per Lesson 3.2, logged in as your own unprivileged user) and DevBoard needs
+      a web server in front of it. So you need <code>nginx</code>. That one small, ordinary need &mdash;
+      <em>"get me this program"</em> &mdash; hides a startling amount of difficulty the moment you try to satisfy
+      it honestly:
+    </p>
+
+    <ul>
+      <li><strong>Where do the bytes come from?</strong> There is no <code>nginx</code> on the machine. You need to fetch it &mdash; from <em>somewhere</em> on the internet. Which somewhere, and why should you believe it?</li>
+      <li><strong>What else does it need?</strong> <code>nginx</code> doesn't stand alone: it links against libraries (<code>libssl</code>, <code>libpcre</code>, <code>zlib</code>&hellip;). Those need <em>their</em> dependencies. Install the wrong versions and it won't start &mdash; or worse, it starts and something else breaks.</li>
+      <li><strong>Where do its files go?</strong> The binary belongs in <code>/usr/sbin</code>, its config in <code>/etc/nginx</code>, its service unit in <code>/lib/systemd</code>, its docs in <code>/usr/share</code>. Who decides that, and how is it undone cleanly when you remove it?</li>
+      <li><strong>How do you update it</strong> next month when a security fix lands &mdash; without hunting the whole internet again?</li>
+      <li><strong>And the sharpest one:</strong> installing it means <em>running its installer as root</em>. That installer can do <em>anything</em>. How do you know the bytes you downloaded are the real <code>nginx</code> and not an impostor that someone swapped in on the wire or on a hacked mirror?</li>
+    </ul>
+
+    <div class="callout bad">
+      <span class="t">The core problem</span>
+      <p>
+        Getting software onto a server is not "download a file." It is: <em>find</em> the right software, <em>and
+        everything it depends on, at compatible versions</em>; <em>place</em> dozens of files in exactly the
+        right system locations; make the whole thing <em>updatable</em> and <em>removable</em> later; and &mdash;
+        because installation runs code as root &mdash; do all of it with a way to <strong>prove the bytes are
+        authentic and untampered</strong>. Doing this by hand, per program, is slow, error-prone, and
+        fundamentally insecure. We need a system that automates the finding, the dependency-solving, and the
+        placement &mdash; <em>and</em> bakes cryptographic trust into every step. That system is the
+        <em>package manager</em> plus its <em>signed repositories</em>.
+      </p>
+    </div>
+
+    <p>
+      The promise of this lesson: by the end, <code>sudo apt install nginx</code> will stop being a magic spell
+      and become a sequence you can narrate &mdash; catalog lookup, dependency solve, authenticated download,
+      verified unpack &mdash; where you know what each step does, what could go wrong, and how the signature at
+      the center of it protects you.
+    </p>
+
+    <!-- ============================== 2 ============================== -->
+    <h2 id="s2">2 · Historical Context</h2>
+
+    <p>
+      Package management wasn't designed in one stroke; it accreted, each step answering a specific pain the
+      previous one left behind. The trust machinery came <em>last</em> and most painfully &mdash; which is exactly
+      why supply-chain security is still where real incidents happen today.
+    </p>
+
+    <h3>Early 1990s &middot; "just untar it into place"</h3>
+    <p>
+      The first way to ship software for Linux was a <code>.tar.gz</code> archive: a compressed bundle of files
+      you unpacked into your filesystem. Simple, and it worked &mdash; until you needed to <em>remove</em> the
+      software (which files were even part of it?), or <em>update</em> it (overwrite blindly and hope), or find
+      out that it silently needed a library you didn't have. The archive carried the <em>files</em> but none of
+      the <em>knowledge about the files</em>. That missing knowledge is the whole story of what came next.
+    </p>
+
+    <h3>1993&ndash;1995 &middot; the birth of the package: <code>.deb</code> and <code>.rpm</code></h3>
+    <p>
+      Debian introduced the <code>.deb</code> and Red Hat the <code>.rpm</code>: an archive of files <em>plus a
+      metadata record</em> &mdash; the package's name, version, the list of every file it installs, the other
+      packages it depends on, and small <em>maintainer scripts</em> to run before and after installation. Now the
+      system could answer "what does this install?", "what does it need?", and "remove it cleanly." The
+      <code>dpkg</code> tool managed a local <em>database</em> of everything installed. This was the leap from
+      "a pile of files" to "a package."
+    </p>
+
+    <h3>1998&ndash;1999 &middot; <code>apt</code> and the repository &mdash; solving dependency hell</h3>
+    <p>
+      <code>dpkg</code> could install <em>one</em> <code>.deb</code>, but if that <code>.deb</code> needed three
+      others, you got an error and had to go find them &mdash; and <em>their</em> dependencies &mdash; by hand.
+      This misery had a name: <strong>dependency hell</strong>. Debian's <code>apt</code> (Advanced Package Tool,
+      1998) killed it by adding two ideas: a <em>repository</em> (a whole catalog of packages on a server, with an
+      <em>index</em> listing every package and its dependencies) and a <em>solver</em> that could read that index,
+      compute the complete set of packages needed, and download and install them all in the right order.
+      "Install nginx" became one command instead of an afternoon.
+    </p>
+
+    <h3>2005 onward &middot; adding trust: signed repositories</h3>
+    <p>
+      Early <code>apt</code> downloaded packages over plain HTTP with no way to verify them &mdash; a hostile
+      mirror or a man-in-the-middle could serve you a poisoned package and you'd install it as root, none the
+      wiser. The fix was <strong>Secure APT</strong>: the repository publishes a <code>Release</code> file listing
+      the cryptographic <em>hashes</em> of its indexes, and <em>signs</em> that file with a private key. Your
+      machine holds the matching <em>public key</em> and verifies the signature before trusting anything. This is
+      the trust chain at the heart of this lesson &mdash; and it was bolted on <em>after</em> the fact, which is
+      why so much of the ecosystem's security folklore is about not undoing it.
+    </p>
+
+    <div class="callout">
+      <span class="t">The through-line</span>
+      <p>
+        Each era added one missing piece to the same idea: ship the files (<em>tar</em>) &rarr; ship the
+        <em>knowledge about the files</em> (<em>the package</em>) &rarr; ship a <em>catalog</em> that resolves
+        dependencies (<em>the repository + apt</em>) &rarr; ship <em>proof the catalog is authentic</em>
+        (<em>signing keys</em>). Files, metadata, resolution, trust. Miss any one and you're back in an earlier,
+        more painful decade &mdash; and skipping the last one is exactly how supply-chain attacks succeed.
+      </p>
+    </div>
+
+    <!-- ============================== 3 ============================== -->
+    <h2 id="s3">3 · The Previous Solution (in detail)</h2>
+
+    <p>
+      To feel <em>why</em> the package/repository model is shaped the way it is, look closely at what people did
+      before it &mdash; and what many still default to when a package isn't handy. Two patterns, both reasonable
+      on the surface, both with a fatal ceiling.
+    </p>
+
+    <h3>3.1 Download-and-run (the tarball or the raw installer)</h3>
+    <p>
+      You find the software's website, download an archive or an installer script, and run it. It puts files
+      wherever its author decided. This is <em>discoverable</em> (you went to the source) and <em>direct</em> (no
+      system in the way). It is also the model behind the modern <code>curl &lt;url&gt; | sudo bash</code> one-liner
+      you'll see on countless "quick install" pages &mdash; which is the very same thing wearing a convenient
+      costume.
+    </p>
+<pre><code># the pattern, in three equivalent disguises:
+tar xzf sometool-2.3.tar.gz -C /usr/local        # unpack files into place, by hand
+sudo ./install.sh                                # run the author's installer as root
+curl -fsSL https://example.com/get | sudo bash   # download code and run it as root, unseen</code></pre>
+
+    <h3>3.2 The bespoke, hand-tracked install</h3>
+    <p>
+      The disciplined version of 3.1: you install by hand <em>and keep your own notes</em> &mdash; which files you
+      placed, which libraries you first had to install, what to delete later. Correct in principle, and exactly
+      how the very first system administrators worked. But it means <em>you</em> are the dependency solver,
+      <em>you</em> are the file database, and <em>you</em> are the audit log &mdash; a full-time job that scales
+      to roughly one server and zero teammates.
+    </p>
+
+    <div class="grid2">
+      <div class="card">
+        <h4 style="margin-top:0">The assumptions baked in</h4>
+        <ul style="margin-bottom:0">
+          <li>Software knows how to install <em>itself</em> &mdash; each author invents their own placement and update logic.</li>
+          <li>Dependencies are the <em>human's</em> problem to discover and satisfy.</li>
+          <li>Trust is implicit: "I went to the official site, so it's fine."</li>
+          <li>Removal and audit are done from memory or private notes.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4 style="margin-top:0">Why it feels fine at first</h4>
+        <ul style="margin-bottom:0">
+          <li>One program on one machine: genuinely quick.</li>
+          <li>No system to learn &mdash; just a download and a command.</li>
+          <li>Works identically on any distro (no package format needed).</li>
+          <li>The failure modes are invisible <em>until</em> you scale, update, or get attacked.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ============================== 4 ============================== -->
+    <h2 id="s4">4 · Why It Failed (as an operating model)</h2>
+
+    <p>
+      As with the shell in 3.3, "failed" is scoped: downloading and running software is not <em>wrong</em> &mdash;
+      it's the right shape for trying one thing once. It fails as the <em>model for operating a server</em>, where
+      you install dozens of interlocking programs, keep them patched for years, and must be able to <em>trust</em>
+      every byte you run as root. Each assumption becomes a concrete wall.
+    </p>
+
+    <h3>4.1 Dependency hell</h3>
+    <p>
+      If dependencies are the human's job, then installing one program can require hunting down five libraries,
+      each needing others, some conflicting on version &mdash; program A wants <code>libfoo 1.2</code>, program B
+      demands <code>libfoo 2.0</code>, and satisfying one breaks the other. Multiply across a real server's worth
+      of software and the graph of requirements is far too large and too interlocked for a person to solve by
+      hand. This is the wall that <em>defines</em> the whole field.
+    </p>
+
+    <h3>4.2 No clean update or removal</h3>
+    <p>
+      When software installs itself with no shared record of <em>which files it owns</em>, updating means
+      overwriting blind and removing means guessing. Orphaned files accumulate; a half-removed program leaves
+      landmines; two programs that both dropped a file into <code>/usr/local/bin</code> silently clobber each
+      other. The system's actual state becomes unknowable.
+    </p>
+
+    <h3>4.3 No reproducibility</h3>
+    <p>
+      "Set up another server exactly like this one" is unanswerable when the install history lives in a human's
+      memory. You cannot reliably recreate a machine, which means you cannot test safely, scale horizontally, or
+      recover from disaster &mdash; all things Modules 8&ndash;11 will demand.
+    </p>
+
+    <h3>4.4 The trust wall &mdash; the sharpest failure</h3>
+    <p>
+      This is the one that still bites in the news. <code>curl | sudo bash</code> runs code you never read, as
+      root, fetched over a connection you didn't verify, from a server that might be compromised or impersonated.
+      There is no signature, no check, no record. If the download is tampered with &mdash; on the wire, on a hacked
+      mirror, or by a typosquatted domain one letter off &mdash; you hand a stranger root on your machine and never
+      know. Individual downloads have <em>no chain of trust</em>, and at server scale that is not a risk you can
+      carry.
+    </p>
+
+    <div class="callout warn">
+      <span class="t">The pattern behind all four failures</span>
+      <p>
+        Every failure traces to one root cause: <strong>the knowledge lived in people and websites, not in the
+        system.</strong> The fix is a single inversion &mdash; move the knowledge <em>into</em> the machine.
+        Bundle each program with metadata the system can read (its files, its dependencies): the
+        <em>package</em>. Publish those packages in a catalog the system can query and solve against: the
+        <em>repository</em>. And sign that catalog so the system can <em>verify</em> what it downloads: the
+        <em>signing key</em>. Then installing is a solved, repeatable, <em>authenticated</em> transaction &mdash;
+        not a hopeful download. That inversion is &sect;5.
+      </p>
+    </div>
+
+    <!-- ============================== 5 ============================== -->
+    <h2 id="s5">5 · The New Solution</h2>
+
+    <p>
+      The solution is the <em>package manager over signed repositories</em>. Bundle every program with
+      machine-readable metadata (the <strong>package</strong>). Collect packages into a catalog with an index of
+      names, versions and dependencies (the <strong>repository</strong>). Give the system a solver that reads the
+      index and computes the full, correct install set (<strong>apt</strong>). And sign the catalog so the system
+      can prove authenticity before running anything as root (the <strong>signing key</strong>). Vocabulary first.
+    </p>
+
+    <h3>5.1 The core vocabulary</h3>
+    <dl class="terms">
+      <dt>Package (<code>.deb</code>)</dt>
+      <dd>A single file bundling a program's files <em>plus metadata</em>: its name, version, the exact list of files it installs and where, the packages it <em>depends on</em>, and optional <em>maintainer scripts</em> that run (as root) before/after install. The unit of installable software.</dd>
+
+      <dt><code>dpkg</code></dt>
+      <dd>The low-level tool that installs/removes a <em>single</em> <code>.deb</code> and maintains the local <em>database</em> of what's installed (<code>/var/lib/dpkg</code>). It does <em>not</em> fetch dependencies &mdash; it's the bricklayer, not the architect.</dd>
+
+      <dt>Repository</dt>
+      <dd>A server hosting a collection of packages plus <em>index files</em> that list every package, its version, and its dependencies &mdash; and a signed <code>Release</code> file vouching for those indexes. A trusted catalog.</dd>
+
+      <dt><code>apt</code></dt>
+      <dd>The high-level tool: it reads repository indexes, <em>resolves dependencies</em> (solves the graph), downloads the needed packages, <em>verifies their signatures</em>, and drives <code>dpkg</code> to install them in order. The architect that directs the bricklayer.</dd>
+
+      <dt>Sources list</dt>
+      <dd>The files in <code>/etc/apt/sources.list.d/</code> (and legacy <code>/etc/apt/sources.list</code>) that tell <code>apt</code> <em>which</em> repositories to trust and where they live.</dd>
+
+      <dt>Signing key</dt>
+      <dd>A public/private key pair. The repository owner signs its <code>Release</code> file with the <em>private</em> key; your machine holds the <em>public</em> key (in a keyring file) and verifies the signature. Possession of the public key is what lets you <em>trust</em> a repository.</dd>
+
+      <dt>Release file &amp; index</dt>
+      <dd>The <code>Release</code> file lists cryptographic <em>hashes</em> of the package index; the index lists hashes of every <code>.deb</code>. Signature on <code>Release</code> &rarr; trust the index &rarr; trust each package. One signature secures the whole tree.</dd>
+
+      <dt>Software supply chain</dt>
+      <dd>The full path software travels from an author's source code to running on your machine &mdash; build servers, maintainers, mirrors, keys. An <em>attack surface</em>: compromise any link and you compromise the software, without ever touching the target directly.</dd>
+    </dl>
+
+    <div class="callout def">
+      <span class="t">The one sentence to hold onto</span>
+      <p>
+        <code>apt</code> reads a <em>signed catalog</em> of <em>packages</em> (software + metadata), <em>solves</em>
+        the dependency graph into a complete install set, <em>verifies every download against a signature anchored
+        by a public key you hold</em>, and hands the verified packages to <code>dpkg</code> to place their files
+        and run their scripts &mdash; turning "get me this software" from a hopeful download into an authenticated,
+        repeatable, reversible transaction.
+      </p>
+    </div>
+
+    <h3>5.2 The shape of the solution</h3>
+    <p>
+      Return to &sect;1's need &mdash; "get me nginx" &mdash; and watch the model dissolve every sub-problem at once.
+      One command triggers finding, solving, verifying, placing:
+    </p>
+<pre><code>sudo apt update          # refresh the local copy of the catalog (indexes), verifying its signature
+sudo apt install nginx   # solve nginx's full dependency set, download + verify each, unpack, configure</code></pre>
+    <p>
+      "Where do the bytes come from?" &mdash; the repository named in your sources list. "What else does it need?"
+      &mdash; the solver reads the index and pulls every dependency. "Where do the files go?" &mdash; the package's
+      metadata says exactly, and <code>dpkg</code> records it for clean removal. "How do I update?" &mdash;
+      <code>apt upgrade</code> next month. "How do I know it's real?" &mdash; the signature on the
+      <code>Release</code> file, checked against your held public key, before a single byte is trusted. One model,
+      every sub-problem answered.
+    </p>
+
+    <!-- ============================== 6 ============================== -->
+    <h2 id="s6">6 · Internal Mechanics</h2>
+
+    <p>
+      Now the machine in detail. We'll (6.1) open a <code>.deb</code> and see the metadata; (6.2) trace exactly
+      what <code>apt install</code> does, step by step; (6.3) make dependency resolution concrete; (6.4) walk the
+      full trust chain from your held key down to a single <code>.deb</code>; (6.5) add a third-party repository
+      the <em>safe</em> modern way and see why the old way was dangerous; and (6.6) tie it to reproducible
+      DevBoard installs.
+    </p>
+
+    <h3>6.1 What's actually inside a package</h3>
+    <p>
+      A <code>.deb</code> is just an <code>ar</code> archive of three parts. You can look, and looking demystifies
+      the whole thing:
+    </p>
+<pre><code>apt download nginx          # fetch the .deb into the current dir without installing it
+ar t nginx_*.deb            # list the archive's members:
+#   debian-binary            → format version (a "2.0\n")
+#   control.tar.*            → the METADATA: dependency list, maintainer scripts, file manifest
+#   data.tar.*              → the actual FILES, laid out as they'll sit on disk (./usr/sbin/nginx …)
+
+dpkg-deb --info  nginx_*.deb   # human-readable metadata: Depends:, Version:, Maintainer: …
+dpkg-deb --contents nginx_*.deb # every file it will install, and where</code></pre>
+    <p>
+      The <code>Depends:</code> line in that metadata is the entire reason a solver exists. The
+      <code>data.tar</code> is why installation is just "unpack into <code>/</code>." And the maintainer scripts
+      inside <code>control.tar</code> are why installation <em>runs code as root</em> &mdash; the exact fact that
+      makes trust non-negotiable.
+    </p>
+
+    <div class="callout warn">
+      <span class="t">Read this twice</span>
+      <p>
+        A package can contain <code>preinst</code>/<code>postinst</code> scripts that run <strong>as root</strong>
+        during installation. That is <em>by design</em> &mdash; it's how a package creates a user, or reloads
+        <code>systemd</code>. It's also precisely why a <em>malicious</em> or tampered package is catastrophic, and
+        why the signature check in &sect;6.4 exists. Installing is not copying files; it is <em>executing the
+        maintainer's code with full privilege</em>.
+      </p>
+    </div>
+
+    <h3>6.2 What <code>apt install nginx</code> actually does</h3>
+    <p>
+      Press Enter and a precise sequence runs. Knowing it is the difference between "it installed" and "I know
+      exactly what just touched my system":
+    </p>
+    <ol>
+      <li><strong>Read local indexes.</strong> <code>apt</code> consults the catalog copies fetched by the last <code>apt update</code> (cached under <code>/var/lib/apt/lists/</code>). It does <em>not</em> hit the network to re-list here &mdash; that's why a stale <code>update</code> gives you yesterday's versions.</li>
+      <li><strong>Resolve dependencies.</strong> It reads <code>nginx</code>'s <code>Depends:</code>, then <em>their</em> <code>Depends:</code>, building the complete set, choosing versions that satisfy every constraint, and flagging conflicts. This is the solver &mdash; &sect;6.3.</li>
+      <li><strong>Plan &amp; confirm.</strong> It prints exactly what will be installed/upgraded/removed and the download size, and waits for your <code>y</code>. <em>Read this list.</em> An unexpected removal here is your early warning.</li>
+      <li><strong>Download.</strong> It fetches each needed <code>.deb</code> from the repository into <code>/var/cache/apt/archives/</code>.</li>
+      <li><strong>Verify.</strong> Each download is checked against the hash in the (signature-verified) index. A mismatch aborts the install. This is the trust chain paying off &mdash; &sect;6.4.</li>
+      <li><strong>Unpack &amp; configure.</strong> <code>apt</code> hands each verified <code>.deb</code> to <code>dpkg</code>, which unpacks <code>data.tar</code> into <code>/</code>, runs the maintainer scripts (as root), and records every file in its database so removal is exact.</li>
+    </ol>
+
+    <div class="callout">
+      <span class="t">update vs upgrade &mdash; the eternal confusion</span>
+      <p>
+        <code>apt update</code> refreshes your <em>local copy of the catalog</em> (which packages/versions exist)
+        &mdash; it installs nothing. <code>apt upgrade</code> installs newer versions of already-installed packages,
+        using whatever the last <code>update</code> learned. The idiom <code>sudo apt update &amp;&amp; sudo apt
+        upgrade</code> (the <code>&amp;&amp;</code> is Lesson 3.3's "only if the first succeeded") means "learn
+        what's new, <em>then</em> apply it." Running <code>upgrade</code> without a fresh <code>update</code> just
+        re-applies yesterday's knowledge.
+      </p>
+    </div>
+
+    <h3>6.3 Dependency resolution, made concrete</h3>
+    <p>
+      A dependency graph is a set of "needs" arrows. The solver's job is to pick one coherent version of every
+      node so all arrows are satisfied &mdash; the thing that was unbearable by hand:
+    </p>
+<pre><code>       nginx
+        ├── needs libssl3      (&ge; 3.0)
+        ├── needs libpcre2-8   (&ge; 10.x)
+        └── needs zlib1g
+                    └── (already installed at a compatible version → reused, not re-fetched)
+
+apt-cache depends nginx     # show nginx's direct dependencies
+apt-cache rdepends libssl3  # reverse: what would break if you removed libssl3
+apt list --installed        # the full solved state of your machine, as dpkg records it</code></pre>
+    <p>
+      When two requirements <em>can't</em> both be met (a version conflict), the solver says so instead of
+      silently breaking things &mdash; the exact failure mode &sect;4.1 described, now surfaced as a clear error you
+      can act on rather than a mystery you discover at 3&nbsp;a.m.
+    </p>
+
+    <h3>6.4 The trust chain: from your key down to one <code>.deb</code></h3>
+    <p>
+      This is the security heart of the lesson. The chain has four links, and each vouches for the next:
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Link</th><th>What it is</th><th>Vouched for by</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Public key</strong> (in your keyring)</td><td>The repository owner's public key, stored locally in <code>/etc/apt/keyrings/</code> or <code>/usr/share/keyrings/</code></td><td class="y">You &mdash; the root of trust. You chose to install it.</td></tr>
+          <tr><td><strong><code>Release</code> file</strong></td><td>Lists the cryptographic hashes of the package indexes, and is <em>signed</em> with the owner's private key</td><td>Its signature, verified by the public key above</td></tr>
+          <tr><td><strong>Package index</strong></td><td>Lists every package and the hash of each <code>.deb</code></td><td>Its hash appears in the (now-trusted) <code>Release</code> file</td></tr>
+          <tr><td><strong>The <code>.deb</code></strong></td><td>The actual software you install</td><td>Its hash appears in the (now-trusted) index</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      Read it top-down: <em>you</em> trust the public key &rarr; the key proves the <code>Release</code> signature
+      is authentic &rarr; the <code>Release</code> hashes prove the index is untampered &rarr; the index hashes
+      prove each <code>.deb</code> is exactly what the repository published. One signature, verified once, secures
+      an entire repository of thousands of packages. Break the chain at the top &mdash; install a malicious key
+      &mdash; and every link below it lies to you convincingly. <em>That is why which keys you install is a
+      security decision, not a formality.</em>
+    </p>
+
+    <h3>6.5 Adding a third-party repository &mdash; the safe way</h3>
+    <p>
+      You'll routinely need software newer than the base distro ships &mdash; a recent Docker, Node, or Postgres.
+      That means adding a <em>third-party</em> repository and its key. There is a right way and a dangerous
+      deprecated way, and the difference is exactly the trust chain above.
+    </p>
+
+    <div class="callout good">
+      <span class="t">The modern, safe pattern</span>
+      <p>Fetch the key into a <em>dedicated keyring file</em>, then tell one source to trust <em>only that key</em> via <code>signed-by=</code>:</p>
+<pre><code># 1) put the vendor's public key in its own keyring (not the global trust store)
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://example.com/vendor.gpg \
+  | sudo gpg --dearmor -o /etc/apt/keyrings/vendor.gpg
+
+# 2) add a source that is scoped to trust ONLY that key
+echo "deb [signed-by=/etc/apt/keyrings/vendor.gpg] https://example.com/apt stable main" \
+  | sudo tee /etc/apt/sources.list.d/vendor.list
+
+sudo apt update      # now apt verifies this repo against that one key, and nothing else</code></pre>
+    </div>
+
+    <div class="callout bad">
+      <span class="t">The deprecated, dangerous pattern &mdash; don't</span>
+      <p>
+        The old advice was <code>curl &hellip; | sudo apt-key add -</code>. This dumped the key into a
+        <em>global</em> trust store, meaning that one vendor's key could then vouch for <em>any</em> repository on
+        your system &mdash; a single compromised third party could authenticate malicious packages system-wide.
+        <code>apt-key</code> is <strong>deprecated</strong> for exactly this reason. The <code>signed-by=</code>
+        pattern <em>scopes</em> each key to its own repository, so trust stays compartmentalised. If a "quick
+        install" guide tells you to <code>apt-key add</code>, treat it as out of date.
+      </p>
+    </div>
+
+    <h3>6.6 Reproducible installs: pinning versions</h3>
+    <p>
+      "Install nginx" gives you <em>whatever version is newest today</em> &mdash; fine for a laptop, a liability
+      for a server you need to rebuild identically. Pin the exact version, and your install becomes reproducible
+      and immune to a surprise change slipping in:
+    </p>
+<pre><code>apt list -a nginx                 # see every available version
+sudo apt install nginx=1.24.0-1   # install one EXACT version, not "latest"
+
+# in a Dockerfile (Module 7 preview) — pin so every rebuild is identical:
+#   RUN apt-get update \
+#    && apt-get install -y --no-install-recommends nginx=1.24.0-1 \
+#    && rm -rf /var/lib/apt/lists/*</code></pre>
+    <p>
+      This is the bridge from "packages" to the reproducibility Modules 8&ndash;11 demand: a build you can't
+      reproduce byte-for-byte is a build you can't fully trust, and a version you didn't pin is a version an
+      attacker (or an accident) can change under you.
+    </p>
+
+    <!-- ============================== 7 ============================== -->
+    <h2 id="s7">7 · Real Industry Examples</h2>
+
+    <h3>7.1 A base Docker image is nothing but this model</h3>
+    <p>
+      Open almost any Dockerfile (Module 7) and the first real line is <code>apt-get update &amp;&amp; apt-get
+      install -y &hellip;</code>. A container image is <em>built</em> by running package installs against signed
+      repositories &mdash; the exact mechanics of this lesson, executed at build time instead of on a live server.
+      When people say "containers made deployment reproducible," a large part of what they mean is "we pinned our
+      package versions and installed from trusted repositories in a scripted, repeatable way."
+    </p>
+
+    <h3>7.2 The <code>event-stream</code> incident (2018)</h3>
+    <p>
+      A popular JavaScript package was handed off to a new "maintainer" who quietly added a dependency that stole
+      cryptocurrency wallets &mdash; downloaded millions of times before discovery. Different ecosystem (npm, not
+      apt), <em>identical lesson</em>: the attacker never touched a single victim's machine directly. They
+      compromised <em>one link in the supply chain</em> and let the normal, trusted install process do the rest.
+      This is why "who is allowed to publish, and how is it verified" is a security question, not a bureaucratic
+      one.
+    </p>
+
+    <h3>7.3 Distro security teams and the CVE feed</h3>
+    <p>
+      When a vulnerability (a CVE) is found in, say, OpenSSL, distribution security teams build a fixed package
+      and push it to the repository, signed. Every server running <code>unattended-upgrades</code> or a nightly
+      <code>apt update &amp;&amp; apt upgrade</code> pulls the verified fix automatically. The signed-repository
+      model is what makes "patch the entire fleet overnight, safely" possible &mdash; the same machinery you're
+      learning by hand here, running at planetary scale.
+    </p>
+
+    <h3>7.4 The <code>xz</code> backdoor (2024)</h3>
+    <p>
+      A multi-year social-engineering effort planted a hidden backdoor into the <code>xz</code> compression
+      library &mdash; a dependency of countless systems &mdash; by patiently becoming a trusted maintainer. It was
+      caught almost by accident. The takeaway that matters for you: <em>trust chains protect the transport, not
+      the intent of the source.</em> A signature proves the bytes came from the maintainer unchanged; it cannot
+      prove the maintainer is honest. Supply-chain security is defense in depth, and pinning + review + minimal
+      dependencies are all part of it.
+    </p>
+
+    <!-- ============================== 8 ============================== -->
+    <h2 id="s8">8 · Diagrams</h2>
+
+    <figure>
+      <pre><code>THE INSTALL, END TO END
+
+  you: sudo apt install nginx
+        │
+        ▼
+  ┌───────────────────────────────────────────────────────────────┐
+  │ apt reads LOCAL indexes (from last `apt update`)              │
+  │   → resolves the full dependency set: nginx + libssl3 + …     │
+  └───────────────────────────────────────────────────────────────┘
+        │  plan shown, you type "y"
+        ▼
+  ┌───────────────────────────────────────────────────────────────┐
+  │ DOWNLOAD each .deb  ──►  VERIFY its hash against the index     │
+  │                          (index trusted via signed Release)   │
+  └───────────────────────────────────────────────────────────────┘
+        │  all verified
+        ▼
+  ┌───────────────────────────────────────────────────────────────┐
+  │ dpkg: unpack data.tar into /  ·  run maintainer scripts (root) │
+  │       record every file in the local database                 │
+  └───────────────────────────────────────────────────────────────┘
+        │
+        ▼
+  nginx installed — removable and updatable, because the system
+  now KNOWS what it placed and where.</code></pre>
+      <figcaption>The install pipeline: resolve &rarr; download &rarr; <strong>verify</strong> &rarr; unpack &amp; configure.</figcaption>
+    </figure>
+
+    <figure>
+      <pre><code>THE TRUST CHAIN  (read top-down: each link vouches for the next)
+
+   YOU  ── choose to trust ──►  PUBLIC KEY   (in /etc/apt/keyrings/)
+                                     │  verifies the signature on…
+                                     ▼
+                                RELEASE FILE  (signed) — holds hashes of…
+                                     │
+                                     ▼
+                               PACKAGE INDEX  — holds the hash of…
+                                     │
+                                     ▼
+                                THE .deb      — the software you run as root
+
+   Break the top link (install a bad key) and every link below lies.
+   Verify the top link once, and thousands of packages are secured.</code></pre>
+      <figcaption>One signature, anchored by a key <em>you</em> chose to hold, secures an entire repository.</figcaption>
+    </figure>
+
+    <!-- ============================== 9 ============================== -->
+    <h2 id="s9">9 · Advantages</h2>
+    <ul class="takeaways">
+      <li><strong>Dependency hell, solved.</strong> One command computes and installs the complete, compatible set &mdash; the field's founding problem, gone.</li>
+      <li><strong>Clean, exact removal &amp; update.</strong> The system records every file it placed, so removal and upgrade are precise, not guesswork.</li>
+      <li><strong>Authenticated by default.</strong> Signed repositories mean you verify, cryptographically, that what you run as root is what the maintainer published &mdash; before it runs.</li>
+      <li><strong>Reproducibility.</strong> Pinned versions + scripted installs make "another identical server / image" a solved problem, the foundation of everything in Modules 7&ndash;11.</li>
+      <li><strong>Fleet-wide patching.</strong> A signed security update propagates to every machine safely and automatically &mdash; the model that keeps the internet patched.</li>
+      <li><strong>Auditability.</strong> <code>dpkg</code>'s database and <code>apt</code>'s logs (<code>/var/log/apt/</code>) give you a real record of what's installed and when it changed.</li>
+    </ul>
+
+    <!-- ============================== 10 ============================== -->
+    <h2 id="s10">10 · Limitations</h2>
+    <ul class="takeaways">
+      <li><strong>Signatures prove transport, not intent.</strong> A verified package is <em>unchanged since the maintainer built it</em> &mdash; it does not prove the maintainer is trustworthy (see <code>xz</code>, &sect;7.4).</li>
+      <li><strong>Distro packages lag.</strong> Stability means older versions; needing the newest software pushes you to third-party repos, which widens your trust surface (each new key is a new risk).</li>
+      <li><strong>Post-install scripts run as root.</strong> The convenience that lets a package configure itself is also the mechanism a malicious package abuses. Trust is unavoidable, not optional.</li>
+      <li><strong>Key management is a real, ongoing job.</strong> Keys expire, rotate, and get compromised; a mismanaged keyring silently breaks updates or, worse, weakens trust.</li>
+      <li><strong>"It verified" &ne; "it's safe to run."</strong> Verification is necessary, not sufficient. Minimal dependencies, review, and pinning are the rest of the defense.</li>
+    </ul>
+
+    <!-- ============================== 11 ============================== -->
+    <h2 id="s11">11 · Common Misconceptions</h2>
+
+    <div class="myth">
+      <div class="m"><code>apt update</code> upgrades my software.</div>
+      <div class="r"><p>It refreshes the <em>catalog</em> &mdash; the list of what's available &mdash; and installs nothing. <code>apt upgrade</code> is what installs newer versions. The pair <code>update &amp;&amp; upgrade</code> means "learn what's new, then apply it."</p></div>
+    </div>
+
+    <div class="myth">
+      <div class="m">Installing a package just copies files onto my disk.</div>
+      <div class="r"><p>It also <em>runs maintainer scripts as root</em>. That's how packages create users, enable services, or migrate config &mdash; and exactly why a malicious package is so dangerous and why the signature check exists.</p></div>
+    </div>
+
+    <div class="myth">
+      <div class="m"><code>curl &lt;url&gt; | sudo bash</code> is fine if it's the official site.</div>
+      <div class="r"><p>It runs unread code as root over a connection with no signature check, from a server that could be compromised or impersonated. "Official site" is a feeling, not a verification. Prefer a signed repository; if you must run a script, download it, <em>read it</em>, then run it.</p></div>
+    </div>
+
+    <div class="myth">
+      <div class="m">A signed package is a safe package.</div>
+      <div class="r"><p>A signature proves the bytes are unchanged since the maintainer built them &mdash; not that the maintainer is honest or the code is bug-free. The <code>xz</code> backdoor was, in effect, "properly signed." Verification protects the pipe, not the water.</p></div>
+    </div>
+
+    <div class="myth">
+      <div class="m">Adding a third-party key with <code>apt-key add</code> is the normal way.</div>
+      <div class="r"><p>It's deprecated and dangerous: it makes that key able to vouch for <em>any</em> repo on the system. The modern way puts the key in its own keyring file and scopes it with <code>signed-by=</code> so trust stays compartmentalised.</p></div>
+    </div>
+
+    <div class="myth">
+      <div class="m">Pinning versions is pedantic; "latest" is always better.</div>
+      <div class="r"><p>"Latest" means "whatever changed upstream since yesterday, unreviewed." For a server or an image you must rebuild identically &mdash; or defend against a supply-chain surprise &mdash; a pinned version is what makes the build reproducible and the change visible.</p></div>
+    </div>
+
+    <!-- ============================== 12 ============================== -->
+    <h2 id="s12">12 · Practical Use Cases</h2>
+
+    <div class="grid2">
+      <div class="card">
+        <h4 style="margin-top:0">Standing up DevBoard's server</h4>
+        <p style="margin-bottom:0">Install nginx, the Postgres client, and your runtime from signed repos; pin the versions; record them so the box is reproducible. This is Milestone 3's "operate and harden" made concrete.</p>
+      </div>
+      <div class="card">
+        <h4 style="margin-top:0">Building a Docker image</h4>
+        <p style="margin-bottom:0">The <code>apt-get install</code> lines in your Dockerfile (Module 7) are this lesson, pinned for reproducibility and cleaned up (<code>rm -rf /var/lib/apt/lists/*</code>) to keep the image small.</p>
+      </div>
+      <div class="card">
+        <h4 style="margin-top:0">Nightly security patching</h4>
+        <p style="margin-bottom:0"><code>unattended-upgrades</code> pulls signed security fixes automatically &mdash; the fleet-patching model, running on your one server.</p>
+      </div>
+      <div class="card">
+        <h4 style="margin-top:0">Adding a newer runtime safely</h4>
+        <p style="margin-bottom:0">Need a Node/Postgres/Docker newer than the distro ships? Add the vendor repo with a scoped <code>signed-by=</code> keyring &mdash; new software, trust kept compartmentalised.</p>
+      </div>
+    </div>
+
+    <!-- ============================== 13 ============================== -->
+    <h2 id="s13">13 · Summary</h2>
+    <ul class="takeaways">
+      <li>A <strong>package</strong> is software <em>plus metadata</em> &mdash; its files, its dependencies, and scripts that run as root &mdash; which is what makes automated, reversible installation possible.</li>
+      <li>A <strong>repository</strong> is a signed catalog of packages; <code>apt</code> reads its index, <em>resolves the dependency graph</em>, and installs the complete set. <code>dpkg</code> places one package; <code>apt</code> directs the whole job.</li>
+      <li><code>apt update</code> refreshes the <em>catalog</em>; <code>apt upgrade</code> installs newer versions. They are different jobs.</li>
+      <li>The <strong>trust chain</strong> runs from a <em>public key you chose to hold</em> &rarr; the signed <code>Release</code> file &rarr; the index &rarr; each <code>.deb</code>. One verified signature secures a whole repository; a bad key at the top poisons everything below.</li>
+      <li>Add third-party repos the <em>safe</em> way: a dedicated keyring + <code>signed-by=</code>. The old <code>apt-key add</code> is deprecated because it makes one key trust the whole system.</li>
+      <li>Installing runs code <strong>as root</strong>, so trust is unavoidable &mdash; and the <strong>software supply chain</strong> (typosquats, compromised maintainers, malicious scripts, <code>curl | sudo bash</code>) is a real attack surface. Verification protects the transport, not the intent; pin versions, minimise dependencies, and read before you run.</li>
+    </ul>
+
+    <!-- ============================== 14 ============================== -->
+    <h2 id="s14">14 · Recommended Resources</h2>
+    <div class="res">
+      <h4>Read</h4>
+      <ul>
+        <li>Debian Administrator's Handbook &mdash; the APT chapter
+          <span class="rank">core</span>
+          <span class="why">The clearest end-to-end tour of packages, repositories, and the dependency solver, straight from the source distro.</span></li>
+        <li>Ubuntu / Debian wiki: "Secure APT" and "DebianRepository/UseThirdParty"
+          <span class="rank">do this</span>
+          <span class="why">The authoritative explanation of the signed-Release trust chain and the modern <code>signed-by=</code> pattern &mdash; the exact commands in &sect;6.5.</span></li>
+        <li><code>man apt</code>, <code>man apt-secure</code>, <code>man sources.list</code>
+          <span class="why">Short, precise, already on your machine. <code>apt-secure</code> documents the verification model in one page.</span></li>
+      </ul>
+      <h4>Watch / explore</h4>
+      <ul>
+        <li>The <code>xz</code> backdoor write-ups (2024)
+          <span class="rank">eye-opener</span>
+          <span class="why">A concrete, recent story of a supply-chain attack via a trusted maintainer &mdash; makes &sect;7.4 visceral.</span></li>
+        <li>"What's inside a <code>.deb</code>" &mdash; any hands-on walkthrough using <code>ar</code> and <code>dpkg-deb</code>
+          <span class="why">Do it yourself on a real package (E1 below); seeing the three parts removes all the mystery.</span></li>
+      </ul>
+      <h4>Reference</h4>
+      <ul>
+        <li>SLSA (supply-chain levels for software artifacts) &mdash; framework overview
+          <span class="why">If you want the industry vocabulary for "how trustworthy is this build," this is the map. Optional, forward-looking.</span></li>
+      </ul>
+    </div>
+
+    <!-- ============================== 15 ============================== -->
+    <h2 id="s15">15 · Exercise</h2>
+
+    <div class="callout warn">
+      <span class="t">How to work these</span>
+      <p>
+        Do them on your DevBoard box (or any Ubuntu/Debian machine or container &mdash; a local
+        <code>docker run -it ubuntu bash</code> is perfect and disposable if you'd rather not touch the real
+        server). <strong>Read each command before running it, and predict the output first</strong> &mdash; that
+        prediction is where the learning is. Where a command changes the system, note what you expected vs what
+        happened.
+      </p>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E1</span>Open a package and see the metadata</div>
+      <p>Prove to yourself that a package is "files + metadata," not just files:</p>
+<pre><code>mkdir -p ~/pkg-lab &amp;&amp; cd ~/pkg-lab
+apt download jq                 # fetch the .deb, don't install it
+ar t jq_*.deb                   # list the 3 archive members — which one is metadata?
+dpkg-deb --info jq_*.deb        # read Depends:, Version:, Maintainer:
+dpkg-deb --contents jq_*.deb    # every file it WOULD install, and where</code></pre>
+      <p>Explain, from &sect;6.1, which member holds the dependency list and maintainer scripts, and which holds the actual files.</p>
+      <div class="out">Deliverable: the <code>Depends:</code> line for <code>jq</code>, and one sentence naming which archive member (control vs data) provides it.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E2</span>update vs upgrade &mdash; feel the difference</div>
+      <p>Make the distinction concrete (&sect;6.2). Run and read the output of each:</p>
+<pre><code>sudo apt update                 # watch it fetch + VERIFY indexes (note "Get"/"Hit" and any signature lines)
+apt list --upgradable           # what update just LEARNED is newer — still installs nothing
+# (optional, on a disposable box) sudo apt upgrade   # now it actually installs the newer versions</code></pre>
+      <p>Explain, from &sect;6.2, why running <code>apt upgrade</code> without a preceding <code>apt update</code> can miss a just-released security fix.</p>
+      <div class="out">Deliverable: one sentence on what <code>update</code> changed on disk, and one on what <code>upgrade</code> would change &mdash; and why the order matters.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E3</span>Walk a dependency graph</div>
+      <p>See the solver's input (&sect;6.3). Pick any installed service (e.g. <code>nginx</code> if present, else <code>bash</code>):</p>
+<pre><code>apt-cache depends nginx         # nginx's direct dependencies
+apt-cache rdepends libssl3      # reverse: what depends ON libssl3 (what breaks if it goes)
+apt list --installed | wc -l    # how many packages the solver is keeping coherent right now</code></pre>
+      <p>In your own words, explain why removing a single low-level library like <code>libssl3</code> by hand (the &sect;4.1 "download-and-run" world) is so dangerous, and how the recorded dependency graph prevents that mistake here.</p>
+      <div class="out">Deliverable: <code>nginx</code>'s direct dependency list (or your chosen package's), and two sentences on what <code>rdepends</code> protects you from.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E4</span>Inspect the trust chain</div>
+      <p>Find the keys and sources your machine actually trusts (&sect;6.4&ndash;6.5):</p>
+<pre><code>ls -l /etc/apt/sources.list.d/  /etc/apt/keyrings/ 2&gt;/dev/null
+cat /etc/apt/sources.list.d/*.list 2&gt;/dev/null   # note any [signed-by=…] scoping
+apt-key list 2&gt;/dev/null        # legacy global keyring — note the DEPRECATION warning it prints</code></pre>
+      <p>For one source line, identify: which repository it points to, and which key file (if any) it is scoped to with <code>signed-by=</code>. Explain, from &sect;6.5, why a <code>signed-by=</code> source is safer than a key in the global store.</p>
+      <div class="out">Deliverable: one source line, the key it trusts, and one sentence on why scoping the key matters.</div>
+    </div>
+
+    <div class="ex">
+      <div class="h"><span>E5</span>Add a third-party repo the safe way (capstone)</div>
+      <p>
+        Practice the modern pattern (&sect;6.5) end to end. Use a real vendor whose repo you actually want for
+        DevBoard &mdash; Docker and NodeSource both publish the exact steps. <strong>Read the vendor's official
+        instructions, and predict each command before running it.</strong>
+      </p>
+<pre><code># the SHAPE you're implementing (adapt URLs to your chosen vendor's official docs):
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://&lt;vendor&gt;/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/&lt;vendor&gt;.gpg
+echo "deb [signed-by=/etc/apt/keyrings/&lt;vendor&gt;.gpg] https://&lt;vendor&gt;/apt stable main" \
+  | sudo tee /etc/apt/sources.list.d/&lt;vendor&gt;.list
+sudo apt update      # confirm it verifies the new repo against your scoped key, with no errors</code></pre>
+      <p>
+        Then write two or three sentences comparing what you just did to the deprecated <code>curl | sudo apt-key
+        add -</code>: what specifically is safer, and what a compromised vendor key can and cannot do under the
+        <code>signed-by=</code> scoping. Save your notes into <code>~/pkg-lab/repo-notes.md</code>.
+      </p>
+      <div class="out">Deliverable: the three commands you ran (with your real vendor), the clean <code>apt update</code> output, and your <code>repo-notes.md</code> comparison. Add it to your Milestone 3 record.</div>
+    </div>
+
+    <!-- ============================== 16 ============================== -->
+    <h2 id="s16">16 · Quiz</h2>
+    <div class="callout warn">
+      <span class="t">How to use this</span>
+      <p>
+        Answer in your own words <strong>before</strong> revealing the model answer &mdash; two or three sentences
+        each. You're ready for Lesson 3.6 (services that survive reboots: <code>systemd</code> &amp;
+        <code>journald</code>) when you can answer Q1, Q4, Q6 and Q8 cold and have completed E1&ndash;E5 on a real
+        machine.
+      </p>
+    </div>
+
+    <div class="quiz">
+
+      <details class="q"><summary>What is the difference between a <em>package</em> and a plain <code>.tar.gz</code> of files?</summary>
+        <div class="ans"><p>A package bundles the files <em>plus metadata the system can read</em>: its version, the exact list of files it installs, the other packages it <em>depends on</em>, and maintainer scripts. That metadata is what lets the system resolve dependencies, place files correctly, and remove or update the software cleanly &mdash; none of which a bare tarball supports, because it carries the files but no knowledge <em>about</em> them.</p></div>
+      </details>
+
+      <details class="q"><summary>What's the difference between <code>dpkg</code> and <code>apt</code>?</summary>
+        <div class="ans"><p><code>dpkg</code> installs or removes a <em>single</em> <code>.deb</code> and maintains the local database of what's installed &mdash; but it does <em>not</em> fetch dependencies. <code>apt</code> is the high-level tool that reads repository indexes, <em>resolves the whole dependency graph</em>, downloads and verifies the packages, and then drives <code>dpkg</code> to install them in order. <code>dpkg</code> is the bricklayer; <code>apt</code> is the architect.</p></div>
+      </details>
+
+      <details class="q"><summary>Explain <code>apt update</code> vs <code>apt upgrade</code>, and why the order in <code>update &amp;&amp; upgrade</code> matters.</summary>
+        <div class="ans"><p><code>apt update</code> refreshes the local copy of the <em>catalog</em> (which packages and versions exist) and installs nothing. <code>apt upgrade</code> installs newer versions of already-installed packages, using whatever the last <code>update</code> learned. Running <code>upgrade</code> without a fresh <code>update</code> just re-applies stale knowledge and can miss a just-released fix &mdash; so <code>update &amp;&amp; upgrade</code> ("learn what's new, then apply it") is the safe idiom.</p></div>
+      </details>
+
+      <details class="q"><summary>What problem does <em>dependency resolution</em> solve, and what was the world like without it?</summary>
+        <div class="ans"><p>Software rarely stands alone; it needs libraries, which need <em>their</em> libraries, sometimes at conflicting versions. The solver reads the dependency metadata and computes one coherent set of packages that satisfies every requirement, installing them in the right order. Without it you had <em>dependency hell</em> &mdash; hunting each dependency by hand, discovering conflicts only when something broke &mdash; which is the misery <code>apt</code> was invented to end.</p></div>
+      </details>
+
+      <details class="q"><summary>Walk the trust chain from a signing key down to a single <code>.deb</code>.</summary>
+        <div class="ans"><p>You choose to hold a repository's <em>public key</em>. That key verifies the signature on the repo's <code>Release</code> file. The <code>Release</code> file contains the hashes of the package <em>index</em>, so a valid signature means the index is authentic. The index contains the hash of every <code>.deb</code>, so a matching hash means the package is exactly what the repository published. One verified signature, anchored by the key you hold, secures the entire repository top to bottom.</p></div>
+      </details>
+
+      <details class="q"><summary>Why is installing a package a bigger deal than copying files, security-wise?</summary>
+        <div class="ans"><p>Because a package can contain maintainer scripts (<code>preinst</code>/<code>postinst</code>) that run <em>as root</em> during installation &mdash; by design, so it can create users or enable services. That means installing a malicious or tampered package hands an attacker root-level code execution. It's the exact reason the signature check exists and why <em>which</em> repositories and keys you trust is a real security decision.</p></div>
+      </details>
+
+      <details class="q"><summary>Why is <code>curl &lt;url&gt; | sudo bash</code> risky even from an "official" site?</summary>
+        <div class="ans"><p>It downloads code and runs it as root <em>unread</em>, with no signature verification, from a server that could be compromised or a domain that could be a typosquat &mdash; and if the transfer is tampered with, you never know. "Official site" is trust by feeling, not by proof. A signed repository verifies authenticity cryptographically; if you must run a script, download it, read it, then run it.</p></div>
+      </details>
+
+      <details class="q"><summary>What's wrong with <code>apt-key add</code>, and what replaced it?</summary>
+        <div class="ans"><p><code>apt-key add</code> puts a key into the <em>global</em> trust store, so that one vendor's key can then vouch for <em>any</em> repository on the system &mdash; a single compromised third party could authenticate malicious packages everywhere. It's deprecated for that reason. The modern replacement stores each key in its own keyring file and scopes it to one repository with <code>signed-by=</code> in the source line, keeping trust compartmentalised.</p></div>
+      </details>
+
+      <details class="q"><summary>Does a valid signature mean a package is <em>safe</em>? Explain.</summary>
+        <div class="ans"><p>No. A signature proves the bytes are <em>unchanged since the maintainer built them</em> &mdash; it protects the transport. It cannot prove the maintainer is honest or the code is free of backdoors; the <code>xz</code> attack was, in effect, "properly signed" malicious code from a trusted maintainer. Verification is necessary but not sufficient; minimal dependencies, review, and pinning are the rest of supply-chain defense.</p></div>
+      </details>
+
+      <details class="q"><summary>Why pin an exact package version (<code>nginx=1.24.0-1</code>) instead of installing "latest"?</summary>
+        <div class="ans"><p>"Latest" resolves to whatever changed upstream since yesterday, so two installs a week apart can differ &mdash; and an unwanted or malicious change can slip in unnoticed. Pinning makes the install <em>reproducible</em> (the same server or Docker image every rebuild) and makes any version change an explicit, reviewable edit rather than a silent surprise. It's the bridge from "packages" to the reproducibility Modules 7&ndash;11 require.</p></div>
+      </details>
+
+    </div>
+
+    <div class="callout good">
+      <span class="t">Next: Lesson 3.6</span>
+      <p>
+        You can now get <em>trusted</em> software onto the box and know exactly what it placed. But installing
+        <code>nginx</code> isn't the same as <em>keeping it running</em> &mdash; through crashes, reboots, and bad
+        config. Lesson 3.6 is <strong>services that survive reboots: <code>systemd</code> units, dependencies,
+        restart policies, and <code>journald</code></strong>: how the machine turns an installed program into a
+        supervised, self-restarting, logged <em>service</em>. You've learned where software comes from and how to
+        trust it; next you learn how to make it <em>stay up</em>.
+      </p>
+    </div>
+
+    <hr>
+
+    <nav class="pager" aria-label="Lesson navigation">
+      <a href="lesson-04-ops-debuggers-toolkit.html"><em>Previous lesson</em>← 3.4 · The ops debugger's toolkit: grep, sed, awk, jq, find &amp; xargs</a>
+      <span class="disabled next"><em>Next lesson</em>3.6 · Services that survive reboots: systemd units, dependencies, restart policies, journald <small>(not yet generated)</small></span>
+    </nav>
+
+    <footer class="foot">
+      <b>From Commit to Production</b> · Module 3 · Lesson 3.5 — <em>Packages, Repositories &amp; Trust</em><br>
+      <small>Self-contained offline document · no external assets · regenerated in full when revised.
+      Roadmap: <a href="../../index.html">course/index.html</a></small>
+    </footer>
+  </article>
+</div>
+<script>
+(function(){
+  var root = document.documentElement;
+
+  /* ---------- theme ---------- */
+  var KEY='ftp.theme', saved=null;
+  try { saved = localStorage.getItem(KEY); } catch(e){}
+  if (saved) root.setAttribute('data-theme', saved);
+  document.getElementById('theme').addEventListener('click', function(){
+    var cur = root.getAttribute('data-theme');
+    if (!cur) cur = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    var next = cur === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem(KEY, next); } catch(e){}
+  });
+
+  /* ---------- expand/collapse all quiz answers ---------- */
+  var btn = document.getElementById('expand');
+  btn.addEventListener('click', function(){
+    var all = document.querySelectorAll('details.q');
+    var anyClosed = Array.prototype.some.call(all, function(d){ return !d.open; });
+    Array.prototype.forEach.call(all, function(d){ d.open = anyClosed; });
+    btn.textContent = anyClosed ? '⇕ Collapse all' : '⇕ Expand all';
+  });
+
+  /* ---------- reading progress bar ---------- */
+  var barEl = document.getElementById('readbar');
+  function onScroll(){
+    var h = document.documentElement;
+    var max = h.scrollHeight - h.clientHeight;
+    barEl.style.width = (max > 0 ? (h.scrollTop / max * 100) : 0) + '%';
+  }
+  addEventListener('scroll', onScroll, {passive:true});
+  onScroll();
+
+  /* ---------- TOC scroll-spy ---------- */
+  var links = Array.prototype.slice.call(document.querySelectorAll('#tocList a'));
+  var targets = links.map(function(a){ return document.querySelector(a.getAttribute('href')); })
+                     .filter(Boolean);
+  if ('IntersectionObserver' in window && targets.length){
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if (!e.isIntersecting) return;
+        links.forEach(function(a){
+          a.classList.toggle('on', a.getAttribute('href') === '#' + e.target.id);
+        });
+      });
+    }, { rootMargin:'-80px 0px -70% 0px', threshold:0 });
+    targets.forEach(function(t){ io.observe(t); });
+  }
+})();
+</script>
+</body>
+</html>
